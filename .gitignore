@@ -1,8 +1,28 @@
+# Gradle / Android build output
 .gradle/
 build/
-app/build/
+*/build/
+
+# Local Android SDK and downloaded build tools kept out of git
 .android-sdk/
 .tools/
 local.properties
+
+# IDE / OS files
+.idea/
+.vscode/
+*.iml
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# APK policy:
+# keep generated APKs out by default, but track this one because update.json
+# points GitHub raw URLs at it for the in-app updater.
 *.apk
 !CompraLink-debug.apk

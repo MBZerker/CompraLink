@@ -12,7 +12,13 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
@@ -21,7 +27,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -31,6 +37,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.Normalizer;
@@ -40,23 +48,24 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.zip.DeflaterOutputStream;
+import java.util.zip.InflaterInputStream;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
     private static final String KEY_LISTS = "lists";
-    private static final String HTTPS_SHARE_PREFIX = "https://compralink.app/list?payload=";
+    private static final String SHARE_BASE = "https://compralink.app/l/";
+    private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
 
     private final List<ShoppingList> lists = new ArrayList<>();
+    private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
-    private LinearLayout tabs;
-    private LinearLayout itemList;
-    private TextView title;
-    private TextView subtitle;
     private EditText itemInput;
     private EditText priceInput;
-    private int selectedIndex = 0;
-    private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
+    private int selectedIndex = -1;
+    private boolean shellReady;
+    private boolean pendingIntentHandled;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,38 +79,118 @@ public class MainActivity extends Activity {
             lists.add(first);
             save();
         }
-
-        buildShell();
-        handleIncomingIntent(getIntent());
-        render();
-        UpdateManager.checkForUpdates(this, false);
+        showSplash();
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            shellReady = true;
+            handleIncomingIntent(getIntent());
+            pendingIntentHandled = true;
+            if (selectedIndex >= 0) {
+                showListScreen();
+            } else {
+                showHomeScreen();
+            }
+            UpdateManager.checkForUpdates(this, false);
+        }, 2000);
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        handleIncomingIntent(intent);
-        render();
+        if (shellReady) {
+            handleIncomingIntent(intent);
+            if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
+        }
     }
 
-    private void buildShell() {
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(Color.rgb(248, 250, 252));
+    @Override
+    public void onBackPressed() {
+        if (selectedIndex >= 0) {
+            selectedIndex = -1;
+            showHomeScreen();
+            return;
+        }
+        super.onBackPressed();
+    }
 
+    private void showSplash() {
+        LinearLayout splash = new LinearLayout(this);
+        splash.setOrientation(LinearLayout.VERTICAL);
+        splash.setGravity(Gravity.CENTER);
+        splash.setPadding(dp(24), dp(24), dp(24), dp(24));
+        splash.setBackgroundColor(Color.rgb(240, 253, 250));
+
+        ImageView image = new ImageView(this);
+        image.setImageResource(getResources().getIdentifier("splash_art", "drawable", getPackageName()));
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        splash.addView(image, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+
+        TextView name = new TextView(this);
+        name.setText("CompraLink");
+        name.setTextColor(Color.rgb(15, 118, 110));
+        name.setTextSize(34);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setGravity(Gravity.CENTER);
+        splash.addView(name, matchWrapWithTop(dp(18)));
+
+        TextView tag = new TextView(this);
+        tag.setText("listas, precos e compartilhamento");
+        tag.setTextColor(Color.rgb(51, 65, 85));
+        tag.setTextSize(15);
+        tag.setGravity(Gravity.CENTER);
+        splash.addView(tag, matchWrapWithTop(dp(4)));
+
+        setContentView(splash);
+    }
+
+    private void showHomeScreen() {
+        selectedIndex = -1;
+        buildRoot();
+        addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
+
+        for (int i = 0; i < lists.size(); i++) {
+            root.addView(listCard(i), matchWrapWithTop(dp(10)));
+        }
+        setContentView(rootScroll());
+    }
+
+    private void showListScreen() {
+        buildRoot();
+        ShoppingList list = lists.get(selectedIndex);
+        addTopHeader(list.name, listSubtitle(list), true);
+        addInputCard();
+
+        addItems(false);
+        addItems(true);
+        setContentView(rootScroll());
+    }
+
+    private void buildRoot() {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(22));
+    }
+
+    private ScrollView rootScroll() {
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setFillViewport(true);
+        scrollView.setBackgroundColor(Color.rgb(248, 250, 252));
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+        return scrollView;
+    }
 
+    private void addTopHeader(String heading, String subheading, boolean listOpen) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(18), dp(18), dp(18), dp(18));
-        header.setBackground(round(Color.WHITE, dp(22), Color.rgb(226, 232, 240), 1));
+        header.setBackground(round(Color.WHITE, dp(20), Color.rgb(226, 232, 240), 1));
         root.addView(header, matchWrap());
 
         TextView appName = new TextView(this);
@@ -111,14 +200,16 @@ public class MainActivity extends Activity {
         appName.setTypeface(Typeface.DEFAULT_BOLD);
         header.addView(appName);
 
-        title = new TextView(this);
+        TextView title = new TextView(this);
+        title.setText(heading);
         title.setTextColor(Color.rgb(15, 23, 42));
         title.setTextSize(28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, dp(6), 0, 0);
         header.addView(title);
 
-        subtitle = new TextView(this);
+        TextView subtitle = new TextView(this);
+        subtitle.setText(subheading);
         subtitle.setTextColor(Color.rgb(71, 85, 105));
         subtitle.setTextSize(14);
         subtitle.setPadding(0, dp(4), 0, dp(14));
@@ -126,39 +217,82 @@ public class MainActivity extends Activity {
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(actions, matchWrap());
 
-        Button newList = button("+ Lista", Color.rgb(15, 118, 110), Color.WHITE);
-        newList.setOnClickListener(v -> promptNewList());
-        actions.addView(newList, weighted());
+        if (listOpen) {
+            Button back = button("Voltar", Color.rgb(226, 232, 240), Color.rgb(15, 23, 42));
+            back.setOnClickListener(v -> {
+                selectedIndex = -1;
+                showHomeScreen();
+            });
+            actions.addView(back, weighted());
 
-        Button share = button("Compartilhar", Color.rgb(20, 184, 166), Color.WHITE);
-        share.setOnClickListener(v -> shareSelectedList());
-        LinearLayout.LayoutParams shareParams = weighted();
-        shareParams.setMargins(dp(10), 0, 0, 0);
-        actions.addView(share, shareParams);
+            Button share = button("Compartilhar", Color.rgb(20, 184, 166), Color.WHITE);
+            share.setOnClickListener(v -> shareSelectedList());
+            LinearLayout.LayoutParams shareParams = weighted();
+            shareParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(share, shareParams);
+        } else {
+            Button newList = button("+ Lista", Color.rgb(15, 118, 110), Color.WHITE);
+            newList.setOnClickListener(v -> promptNewList());
+            actions.addView(newList, weighted());
 
-        Button update = button("Atualizar", Color.rgb(51, 65, 85), Color.WHITE);
-        update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-        LinearLayout.LayoutParams updateParams = weighted();
-        updateParams.setMargins(dp(10), 0, 0, 0);
-        actions.addView(update, updateParams);
+            Button update = button("Atualizar", Color.rgb(51, 65, 85), Color.WHITE);
+            update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
+            LinearLayout.LayoutParams updateParams = weighted();
+            updateParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(update, updateParams);
+        }
+    }
 
-        HorizontalScrollView tabScroll = new HorizontalScrollView(this);
-        tabScroll.setHorizontalScrollBarEnabled(false);
-        tabs = new LinearLayout(this);
-        tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setPadding(0, dp(16), 0, dp(8));
-        tabScroll.addView(tabs);
-        root.addView(tabScroll, matchWrap());
+    private View listCard(int index) {
+        ShoppingList list = lists.get(index);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(round(Color.WHITE, dp(16), Color.rgb(226, 232, 240), 1));
+        card.setOnClickListener(v -> {
+            selectedIndex = index;
+            showListScreen();
+        });
+        card.setOnLongClickListener(v -> {
+            confirmDeleteList(index);
+            return true;
+        });
 
+        TextView name = new TextView(this);
+        name.setText(list.name);
+        name.setTextSize(19);
+        name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setTextColor(Color.rgb(15, 23, 42));
+        card.addView(name);
+
+        TextView meta = new TextView(this);
+        meta.setText(listSubtitle(list));
+        meta.setTextSize(14);
+        meta.setTextColor(Color.rgb(71, 85, 105));
+        meta.setPadding(0, dp(5), 0, 0);
+        card.addView(meta);
+        return card;
+    }
+
+    private String listSubtitle(ShoppingList list) {
+        int done = 0;
+        double total = 0;
+        for (ShoppingItem item : list.items) {
+            if (item.checked) done++;
+            if (item.price > 0) total += item.price;
+        }
+        return list.items.size() + " itens, " + done + " concluidos, total " + money.format(total);
+    }
+
+    private void addInputCard() {
         LinearLayout addCard = new LinearLayout(this);
         addCard.setOrientation(LinearLayout.HORIZONTAL);
         addCard.setGravity(Gravity.CENTER_VERTICAL);
         addCard.setPadding(dp(12), dp(10), dp(12), dp(10));
         addCard.setBackground(round(Color.WHITE, dp(18), Color.rgb(226, 232, 240), 1));
-        root.addView(addCard, matchWrapWithTop(dp(6)));
+        root.addView(addCard, matchWrapWithTop(dp(12)));
 
         itemInput = new EditText(this);
         itemInput.setSingleLine(true);
@@ -175,69 +309,14 @@ public class MainActivity extends Activity {
         priceInput.setTextSize(15);
         priceInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         priceInput.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(76), ViewGroup.LayoutParams.WRAP_CONTENT);
-        priceParams.setMargins(dp(8), 0, dp(8), 0);
+        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT);
+        priceParams.setMargins(dp(6), 0, dp(6), 0);
         addCard.addView(priceInput, priceParams);
 
         Button add = button("+", Color.rgb(250, 204, 21), Color.rgb(24, 24, 27));
         add.setTextSize(22);
         add.setOnClickListener(v -> addItem());
-        addCard.addView(add, new LinearLayout.LayoutParams(dp(52), dp(48)));
-
-        itemList = new LinearLayout(this);
-        itemList.setOrientation(LinearLayout.VERTICAL);
-        root.addView(itemList, matchWrapWithTop(dp(12)));
-
-        setContentView(scrollView);
-    }
-
-    private void render() {
-        if (selectedIndex >= lists.size()) {
-            selectedIndex = Math.max(0, lists.size() - 1);
-        }
-        ShoppingList current = lists.get(selectedIndex);
-        title.setText(current.name);
-
-        int done = 0;
-        double total = 0;
-        for (ShoppingItem item : current.items) {
-            if (item.checked) done++;
-            if (item.price > 0) total += item.price;
-        }
-        subtitle.setText(current.items.size() + " itens, " + done + " concluidos, total " + money.format(total));
-
-        tabs.removeAllViews();
-        for (int i = 0; i < lists.size(); i++) {
-            final int index = i;
-            TextView chip = new TextView(this);
-            chip.setText(lists.get(i).name);
-            chip.setTextSize(14);
-            chip.setGravity(Gravity.CENTER);
-            chip.setTypeface(Typeface.DEFAULT_BOLD);
-            chip.setSingleLine(true);
-            chip.setPadding(dp(15), dp(10), dp(15), dp(10));
-            chip.setTextColor(i == selectedIndex ? Color.WHITE : Color.rgb(51, 65, 85));
-            chip.setBackground(round(i == selectedIndex ? Color.rgb(15, 118, 110) : Color.WHITE,
-                    dp(18), Color.rgb(226, 232, 240), 1));
-            chip.setOnClickListener(v -> {
-                selectedIndex = index;
-                render();
-            });
-            chip.setOnLongClickListener(v -> {
-                confirmDeleteList(index);
-                return true;
-            });
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    dp(42)
-            );
-            params.setMargins(0, 0, dp(8), 0);
-            tabs.addView(chip, params);
-        }
-
-        itemList.removeAllViews();
-        addItems(false);
-        addItems(true);
+        addCard.addView(add, new LinearLayout.LayoutParams(dp(50), dp(48)));
     }
 
     private void addItems(boolean checked) {
@@ -245,7 +324,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < current.items.size(); i++) {
             ShoppingItem item = current.items.get(i);
             if (item.checked != checked) continue;
-            itemList.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
+            root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
         }
     }
 
@@ -253,7 +332,7 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(10), dp(10), dp(10));
+        row.setPadding(dp(10), dp(9), dp(10), dp(9));
         row.setBackground(round(item.checked ? Color.rgb(241, 245, 249) : Color.WHITE,
                 dp(16), Color.rgb(226, 232, 240), 1));
 
@@ -262,13 +341,13 @@ public class MainActivity extends Activity {
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
             item.checked = isChecked;
             save();
-            render();
+            showListScreen();
         });
         row.addView(box, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         TextView name = new TextView(this);
         name.setText(item.name);
-        name.setTextSize(17);
+        name.setTextSize(16);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         boolean hasHistory = hasComparablePrices(item);
         name.setTextColor(item.checked ? Color.rgb(148, 163, 184) :
@@ -282,22 +361,22 @@ public class MainActivity extends Activity {
         TextView price = new TextView(this);
         price.setText(item.price > 0 ? money.format(item.price) : "R$ --");
         price.setGravity(Gravity.CENTER);
-        price.setTextSize(15);
+        price.setTextSize(14);
         price.setTypeface(Typeface.DEFAULT_BOLD);
         price.setTextColor(item.checked ? Color.rgb(148, 163, 184) : Color.rgb(15, 118, 110));
         price.setOnClickListener(v -> promptPrice(item));
-        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(88), dp(44));
-        priceParams.setMargins(dp(8), 0, dp(8), 0);
+        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(82), dp(44));
+        priceParams.setMargins(dp(6), 0, dp(6), 0);
         row.addView(price, priceParams);
 
         Button remove = button("x", Color.rgb(254, 226, 226), Color.rgb(153, 27, 27));
-        remove.setTextSize(20);
+        remove.setTextSize(18);
         remove.setOnClickListener(v -> {
             lists.get(selectedIndex).items.remove(index);
             save();
-            render();
+            showListScreen();
         });
-        row.addView(remove, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        row.addView(remove, new LinearLayout.LayoutParams(dp(42), dp(42)));
         return row;
     }
 
@@ -305,11 +384,9 @@ public class MainActivity extends Activity {
         String text = itemInput.getText().toString().trim();
         if (text.isEmpty()) return;
         lists.get(selectedIndex).items.add(new ShoppingItem(text, parsePrice(priceInput.getText().toString())));
-        itemInput.setText("");
-        priceInput.setText("");
         save();
-        render();
         hideKeyboard();
+        showListScreen();
     }
 
     private void promptPrice(ShoppingItem item) {
@@ -327,7 +404,7 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     item.price = parsePrice(input.getText().toString());
                     save();
-                    render();
+                    showListScreen();
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -345,11 +422,20 @@ public class MainActivity extends Activity {
         content.setPadding(dp(18), dp(10), dp(18), dp(10));
 
         for (PriceHit hit : hits) {
+            double saved = item.price > 0 ? item.price - hit.price : 0;
+            String text = money.format(hit.price) + " - " + hit.listName;
+            if (saved > 0) text += "  economiza " + money.format(saved);
+            SpannableString span = new SpannableString(text);
+            int priceEnd = money.format(hit.price).length();
+            span.setSpan(new StyleSpan(Typeface.BOLD), 0, priceEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new ForegroundColorSpan(Color.rgb(15, 118, 110)), 0, priceEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (saved > 0) {
+                int start = text.indexOf("economiza");
+                span.setSpan(new StyleSpan(Typeface.BOLD), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                span.setSpan(new ForegroundColorSpan(Color.rgb(22, 163, 74)), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
             TextView line = new TextView(this);
-            String suffix = item.price > 0 && hit.price < item.price
-                    ? "  economiza " + money.format(item.price - hit.price)
-                    : "";
-            line.setText(money.format(hit.price) + " - " + hit.listName + suffix);
+            line.setText(span);
             line.setTextSize(16);
             line.setTextColor(Color.rgb(15, 23, 42));
             line.setPadding(0, dp(8), 0, dp(8));
@@ -358,16 +444,10 @@ public class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(content);
-        scroll.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(320)
-        ));
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
 
-        String titleText = item.price > 0
-                ? "Precos mais baratos"
-                : "Precos salvos";
         new AlertDialog.Builder(this)
-                .setTitle(titleText + ": " + item.name)
+                .setTitle("Precos mais baratos: " + item.name)
                 .setView(scroll)
                 .setPositiveButton("Fechar", null)
                 .show();
@@ -380,8 +460,7 @@ public class MainActivity extends Activity {
     private List<PriceHit> findComparablePrices(ShoppingItem item) {
         String target = normalize(item.name);
         List<PriceHit> hits = new ArrayList<>();
-        for (int listIndex = 0; listIndex < lists.size(); listIndex++) {
-            ShoppingList list = lists.get(listIndex);
+        for (ShoppingList list : lists) {
             for (ShoppingItem other : list.items) {
                 if (other == item || other.price <= 0) continue;
                 if (!normalize(other.name).equals(target)) continue;
@@ -405,9 +484,8 @@ public class MainActivity extends Activity {
                     String name = input.getText().toString().trim();
                     if (name.isEmpty()) name = "Nova lista";
                     lists.add(new ShoppingList(name));
-                    selectedIndex = lists.size() - 1;
                     save();
-                    render();
+                    showHomeScreen();
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -423,9 +501,8 @@ public class MainActivity extends Activity {
                 .setMessage(lists.get(index).name)
                 .setPositiveButton("Remover", (dialog, which) -> {
                     lists.remove(index);
-                    selectedIndex = Math.max(0, selectedIndex - 1);
                     save();
-                    render();
+                    showHomeScreen();
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -444,44 +521,33 @@ public class MainActivity extends Activity {
             if (clipboard != null) {
                 clipboard.setPrimaryClip(ClipData.newPlainText("CompraLink", link));
             }
-        } catch (JSONException e) {
+        } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel compartilhar esta lista.", Toast.LENGTH_SHORT).show();
         }
     }
 
-    private String buildShareLink(ShoppingList list) throws JSONException {
-        JSONObject json = list.toJson();
-        String payload = Base64.encodeToString(
-                json.toString().getBytes(StandardCharsets.UTF_8),
-                Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING
-        );
-        return HTTPS_SHARE_PREFIX + payload;
+    private String buildShareLink(ShoppingList list) throws Exception {
+        String payload = encodeCompressed(list.toJson().toString());
+        return SHARE_BASE + payload;
     }
 
     private void handleIncomingIntent(Intent intent) {
+        if (pendingIntentHandled && intent == getIntent()) return;
         if (intent == null) return;
         Uri data = intent.getData();
         if (data != null) {
-            if ("compralink".equals(data.getScheme()) && "list".equals(data.getHost())) {
-                importPayload(data.getQueryParameter("payload"));
-                return;
-            }
+            String payload = null;
             if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
-                    && "compralink.app".equals(data.getHost())
-                    && "/list".equals(data.getPath())) {
-                importPayload(data.getQueryParameter("payload"));
-                return;
-            }
-        }
-        if (Intent.ACTION_SEND.equals(intent.getAction())) {
-            String text = intent.getStringExtra(Intent.EXTRA_TEXT);
-            if (text != null) {
-                int start = text.indexOf(HTTPS_SHARE_PREFIX);
-                if (start < 0) start = text.indexOf(CUSTOM_SHARE_PREFIX);
-                if (start >= 0) {
-                    importPayload(text.substring(start).trim());
+                    && "compralink.app".equals(data.getHost())) {
+                if (data.getPath() != null && data.getPath().startsWith("/l/")) {
+                    payload = data.getLastPathSegment();
+                } else if ("/list".equals(data.getPath())) {
+                    payload = data.getQueryParameter("payload");
                 }
+            } else if ("compralink".equals(data.getScheme()) && "list".equals(data.getHost())) {
+                payload = data.getQueryParameter("payload");
             }
+            if (payload != null) importPayload(payload);
         }
     }
 
@@ -489,25 +555,54 @@ public class MainActivity extends Activity {
         if (rawPayload == null || rawPayload.trim().isEmpty()) return;
         String payload = rawPayload.trim();
         int marker = payload.indexOf("payload=");
-        if (marker >= 0) {
-            payload = payload.substring(marker + "payload=".length());
-        }
+        if (marker >= 0) payload = payload.substring(marker + "payload=".length());
         int end = payload.indexOf('\n');
         if (end >= 0) payload = payload.substring(0, end);
         int space = payload.indexOf(' ');
         if (space >= 0) payload = payload.substring(0, space);
         try {
-            byte[] decoded = Base64.decode(payload, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
-            ShoppingList imported = ShoppingList.fromJson(new JSONObject(new String(decoded, StandardCharsets.UTF_8)));
+            String json = decodeCompressed(payload);
+            ShoppingList imported = ShoppingList.fromJson(new JSONObject(json));
             imported.id = UUID.randomUUID().toString();
             imported.name = imported.name + " compartilhada";
             lists.add(imported);
             selectedIndex = lists.size() - 1;
             save();
             Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "Link de lista invalido.", Toast.LENGTH_SHORT).show();
+        } catch (Exception compressedFailed) {
+            try {
+                byte[] decoded = Base64.decode(payload, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+                ShoppingList imported = ShoppingList.fromJson(new JSONObject(new String(decoded, StandardCharsets.UTF_8)));
+                imported.id = UUID.randomUUID().toString();
+                imported.name = imported.name + " compartilhada";
+                lists.add(imported);
+                selectedIndex = lists.size() - 1;
+                save();
+            } catch (Exception e) {
+                Toast.makeText(this, "Link de lista invalido.", Toast.LENGTH_SHORT).show();
+            }
         }
+    }
+
+    private String encodeCompressed(String json) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (DeflaterOutputStream zip = new DeflaterOutputStream(out)) {
+            zip.write(json.getBytes(StandardCharsets.UTF_8));
+        }
+        return Base64.encodeToString(out.toByteArray(), Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+    }
+
+    private String decodeCompressed(String payload) throws Exception {
+        byte[] packed = Base64.decode(payload, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (InflaterInputStream unzip = new InflaterInputStream(new ByteArrayInputStream(packed))) {
+            byte[] buffer = new byte[1024];
+            int read;
+            while ((read = unzip.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+            }
+        }
+        return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private void load() {
@@ -531,10 +626,7 @@ public class MainActivity extends Activity {
             } catch (JSONException ignored) {
             }
         }
-        getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
-                .putString(KEY_LISTS, array.toString())
-                .apply();
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LISTS, array.toString()).apply();
     }
 
     private double parsePrice(String raw) {
@@ -561,15 +653,18 @@ public class MainActivity extends Activity {
 
     private void hideKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        if (imm != null) imm.hideSoftInputFromWindow(itemInput.getWindowToken(), 0);
+        if (imm != null && itemInput != null) imm.hideSoftInputFromWindow(itemInput.getWindowToken(), 0);
     }
 
     private Button button(String text, int bg, int fg) {
         Button button = new Button(this);
         button.setText(text);
         button.setTextColor(fg);
+        button.setTextSize(14);
+        button.setMinHeight(dp(48));
         button.setAllCaps(false);
         button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setPadding(dp(8), 0, dp(8), 0);
         button.setBackground(round(bg, dp(14), Color.TRANSPARENT, 0));
         return button;
     }
@@ -583,10 +678,7 @@ public class MainActivity extends Activity {
     }
 
     private LinearLayout.LayoutParams matchWrap() {
-        return new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
     private LinearLayout.LayoutParams matchWrapWithTop(int top) {
@@ -627,9 +719,7 @@ public class MainActivity extends Activity {
             json.put("id", id);
             json.put("name", name);
             JSONArray array = new JSONArray();
-            for (ShoppingItem item : items) {
-                array.put(item.toJson());
-            }
+            for (ShoppingItem item : items) array.put(item.toJson());
             json.put("items", array);
             return json;
         }

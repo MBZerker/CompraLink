@@ -1,6 +1,7 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1",
-  "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink-debug.apk",
-  "notes": "Atualizacao com links clicaveis, precos por produto, comparacao de precos e atualizador pelo git."
+  "versionCode": 3,
+  "versionName": "1.2",
+  "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
+  "releaseUrl": "https://github.com/MBZerker/CompraLink",
+  "notes": "Visual novo, links compactos, splash de apresentacao e atualizacao mais segura via GitHub."
 }

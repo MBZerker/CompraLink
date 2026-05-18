@@ -7,6 +7,8 @@ build/
 .android-sdk/
 .tools/
 local.properties
+keystore.properties
+*.jks
 
 # IDE / OS files
 .idea/
@@ -25,4 +27,4 @@ Thumbs.db
 # keep generated APKs out by default, but track this one because update.json
 # points GitHub raw URLs at it for the in-app updater.
 *.apk
-!CompraLink-debug.apk
+!CompraLink.apk

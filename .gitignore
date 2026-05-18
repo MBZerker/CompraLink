@@ -1,0 +1,8 @@
+.gradle/
+build/
+app/build/
+.android-sdk/
+.tools/
+local.properties
+*.apk
+!CompraLink-debug.apk

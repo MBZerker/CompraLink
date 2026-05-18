@@ -1,34 +1,24 @@
-# Gradle files
+# Gradle / Android build output
 .gradle/
 build/
-
-# Local configuration file (sdk path, etc)
+*/build/
+# Local Android SDK and downloaded build tools kept out of git
+.android-sdk/
+.tools/
 local.properties
-
-# Log/OS Files
-*.log
-
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
-
-# IntelliJ
-*.iml
+# IDE / OS files
 .idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
-
-# Keystore files
-*.jks
-*.keystore
-
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
-*.hprof
+.vscode/
+*.iml
+desktop.ini
+Thumbs.db
+.DS_Store
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+# APK policy:
+# keep generated APKs out by default, but track this one because update.json
+# points GitHub raw URLs at it for the in-app updater.
+*.apk
+!CompraLink-debug.apk

@@ -14,6 +14,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.content.res.Configuration;
 import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -54,6 +55,10 @@ import java.util.zip.InflaterInputStream;
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
     private static final String KEY_LISTS = "lists";
+    private static final String KEY_THEME = "theme_mode";
+    private static final int THEME_SYSTEM = 0;
+    private static final int THEME_LIGHT = 1;
+    private static final int THEME_DARK = 2;
     private static final String SHARE_BASE = "https://compralink.app/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
@@ -66,10 +71,12 @@ public class MainActivity extends Activity {
     private int selectedIndex = -1;
     private boolean shellReady;
     private boolean pendingIntentHandled;
+    private int themeMode = THEME_SYSTEM;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        themeMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_THEME, THEME_SYSTEM);
         load();
         if (lists.isEmpty()) {
             ShoppingList first = new ShoppingList("Mercado da semana");
@@ -118,7 +125,7 @@ public class MainActivity extends Activity {
         splash.setOrientation(LinearLayout.VERTICAL);
         splash.setGravity(Gravity.CENTER);
         splash.setPadding(dp(24), dp(24), dp(24), dp(24));
-        splash.setBackgroundColor(Color.rgb(240, 253, 250));
+        splash.setBackgroundColor(screenBg());
 
         ImageView image = new ImageView(this);
         image.setImageResource(getResources().getIdentifier("splash_art", "drawable", getPackageName()));
@@ -131,7 +138,7 @@ public class MainActivity extends Activity {
 
         TextView name = new TextView(this);
         name.setText("CompraLink");
-        name.setTextColor(Color.rgb(15, 118, 110));
+        name.setTextColor(accent());
         name.setTextSize(34);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setGravity(Gravity.CENTER);
@@ -139,7 +146,7 @@ public class MainActivity extends Activity {
 
         TextView tag = new TextView(this);
         tag.setText("listas, precos e compartilhamento");
-        tag.setTextColor(Color.rgb(51, 65, 85));
+        tag.setTextColor(mutedText());
         tag.setTextSize(15);
         tag.setGravity(Gravity.CENTER);
         splash.addView(tag, matchWrapWithTop(dp(4)));
@@ -178,7 +185,7 @@ public class MainActivity extends Activity {
     private ScrollView rootScroll() {
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(Color.rgb(248, 250, 252));
+        scrollView.setBackgroundColor(screenBg());
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -190,19 +197,19 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(18), dp(18), dp(18), dp(18));
-        header.setBackground(round(Color.WHITE, dp(20), Color.rgb(226, 232, 240), 1));
+        header.setBackground(round(cardBg(), dp(20), stroke(), 1));
         root.addView(header, matchWrap());
 
         TextView appName = new TextView(this);
         appName.setText("CompraLink");
-        appName.setTextColor(Color.rgb(15, 118, 110));
+        appName.setTextColor(accent());
         appName.setTextSize(14);
         appName.setTypeface(Typeface.DEFAULT_BOLD);
         header.addView(appName);
 
         TextView title = new TextView(this);
         title.setText(heading);
-        title.setTextColor(Color.rgb(15, 23, 42));
+        title.setTextColor(primaryText());
         title.setTextSize(28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, dp(6), 0, 0);
@@ -210,7 +217,7 @@ public class MainActivity extends Activity {
 
         TextView subtitle = new TextView(this);
         subtitle.setText(subheading);
-        subtitle.setTextColor(Color.rgb(71, 85, 105));
+        subtitle.setTextColor(mutedText());
         subtitle.setTextSize(14);
         subtitle.setPadding(0, dp(4), 0, dp(14));
         header.addView(subtitle);
@@ -220,7 +227,7 @@ public class MainActivity extends Activity {
         header.addView(actions, matchWrap());
 
         if (listOpen) {
-            Button back = button("Voltar", Color.rgb(226, 232, 240), Color.rgb(15, 23, 42));
+            Button back = button("Voltar", softButtonBg(), primaryText());
             back.setOnClickListener(v -> {
                 selectedIndex = -1;
                 showHomeScreen();
@@ -232,16 +239,28 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams shareParams = weighted();
             shareParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(share, shareParams);
+
+            Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
+            theme.setOnClickListener(v -> toggleTheme());
+            LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            themeParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(theme, themeParams);
         } else {
             Button newList = button("+ Lista", Color.rgb(15, 118, 110), Color.WHITE);
             newList.setOnClickListener(v -> promptNewList());
             actions.addView(newList, weighted());
 
-            Button update = button("Atualizar", Color.rgb(51, 65, 85), Color.WHITE);
+            Button update = button("Atualizar", isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
             update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
             LinearLayout.LayoutParams updateParams = weighted();
             updateParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(update, updateParams);
+
+            Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
+            theme.setOnClickListener(v -> toggleTheme());
+            LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            themeParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(theme, themeParams);
         }
     }
 
@@ -250,7 +269,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(round(Color.WHITE, dp(16), Color.rgb(226, 232, 240), 1));
+        card.setBackground(round(cardBg(), dp(16), stroke(), 1));
         card.setOnClickListener(v -> {
             selectedIndex = index;
             showListScreen();
@@ -264,13 +283,13 @@ public class MainActivity extends Activity {
         name.setText(list.name);
         name.setTextSize(19);
         name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setTextColor(Color.rgb(15, 23, 42));
+        name.setTextColor(primaryText());
         card.addView(name);
 
         TextView meta = new TextView(this);
         meta.setText(listSubtitle(list));
         meta.setTextSize(14);
-        meta.setTextColor(Color.rgb(71, 85, 105));
+        meta.setTextColor(mutedText());
         meta.setPadding(0, dp(5), 0, 0);
         card.addView(meta);
         return card;
@@ -288,35 +307,55 @@ public class MainActivity extends Activity {
 
     private void addInputCard() {
         LinearLayout addCard = new LinearLayout(this);
-        addCard.setOrientation(LinearLayout.HORIZONTAL);
+        boolean compact = isCompactWidth();
+        addCard.setOrientation(compact ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
         addCard.setGravity(Gravity.CENTER_VERTICAL);
         addCard.setPadding(dp(12), dp(10), dp(12), dp(10));
-        addCard.setBackground(round(Color.WHITE, dp(18), Color.rgb(226, 232, 240), 1));
+        addCard.setBackground(round(cardBg(), dp(18), stroke(), 1));
         root.addView(addCard, matchWrapWithTop(dp(12)));
 
         itemInput = new EditText(this);
         itemInput.setSingleLine(true);
         itemInput.setHint("Produto");
+        itemInput.setTextColor(primaryText());
+        itemInput.setHintTextColor(mutedText());
         itemInput.setTextSize(16);
         itemInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        itemInput.setBackgroundColor(Color.TRANSPARENT);
-        addCard.addView(itemInput, weighted());
+        itemInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
+        itemInput.setPadding(dp(12), 0, dp(12), 0);
+        addCard.addView(itemInput, compact ? matchHeight(dp(54)) : weightedHeight(dp(54)));
 
         priceInput = new EditText(this);
         priceInput.setSingleLine(true);
-        priceInput.setHint("R$");
-        priceInput.setGravity(Gravity.CENTER);
+        priceInput.setHint("Preco");
+        priceInput.setGravity(Gravity.CENTER_VERTICAL);
+        priceInput.setTextColor(primaryText());
+        priceInput.setHintTextColor(mutedText());
         priceInput.setTextSize(15);
         priceInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        priceInput.setBackgroundColor(Color.TRANSPARENT);
-        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT);
-        priceParams.setMargins(dp(6), 0, dp(6), 0);
-        addCard.addView(priceInput, priceParams);
+        priceInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
+        priceInput.setPadding(dp(12), 0, dp(12), 0);
 
         Button add = button("+", Color.rgb(250, 204, 21), Color.rgb(24, 24, 27));
         add.setTextSize(22);
         add.setOnClickListener(v -> addItem());
-        addCard.addView(add, new LinearLayout.LayoutParams(dp(50), dp(48)));
+
+        if (compact) {
+            LinearLayout bottom = new LinearLayout(this);
+            bottom.setOrientation(LinearLayout.HORIZONTAL);
+            bottom.setGravity(Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams bottomParams = matchWrapWithTop(dp(8));
+            addCard.addView(bottom, bottomParams);
+            bottom.addView(priceInput, weightedHeight(dp(54)));
+            LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(dp(56), dp(54));
+            addParams.setMargins(dp(8), 0, 0, 0);
+            bottom.addView(add, addParams);
+        } else {
+            LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(110), dp(54));
+            priceParams.setMargins(dp(8), 0, dp(8), 0);
+            addCard.addView(priceInput, priceParams);
+            addCard.addView(add, new LinearLayout.LayoutParams(dp(56), dp(54)));
+        }
     }
 
     private void addItems(boolean checked) {
@@ -329,12 +368,13 @@ public class MainActivity extends Activity {
     }
 
     private View itemRow(ShoppingItem item, int index) {
+        String priceText = item.price > 0 ? money.format(item.price) : "R$ --";
+        boolean priceBelow = isCompactWidth() || item.price >= 10 || priceText.length() > 7;
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(10), dp(9), dp(10), dp(9));
-        row.setBackground(round(item.checked ? Color.rgb(241, 245, 249) : Color.WHITE,
-                dp(16), Color.rgb(226, 232, 240), 1));
+        row.setBackground(round(item.checked ? checkedBg() : cardBg(), dp(16), stroke(), 1));
 
         CheckBox box = new CheckBox(this);
         box.setChecked(item.checked);
@@ -350,24 +390,35 @@ public class MainActivity extends Activity {
         name.setTextSize(16);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         boolean hasHistory = hasComparablePrices(item);
-        name.setTextColor(item.checked ? Color.rgb(148, 163, 184) :
-                (hasHistory ? Color.rgb(37, 99, 235) : Color.rgb(15, 23, 42)));
+        name.setTextColor(item.checked ? disabledText() :
+                (hasHistory ? Color.rgb(37, 99, 235) : primaryText()));
         name.setPaintFlags(item.checked
                 ? name.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                 : name.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
         name.setOnClickListener(v -> showPriceComparison(item));
-        row.addView(name, weighted());
+
+        LinearLayout itemText = new LinearLayout(this);
+        itemText.setOrientation(LinearLayout.VERTICAL);
+        itemText.setGravity(Gravity.CENTER_VERTICAL);
+        itemText.addView(name, matchWrap());
 
         TextView price = new TextView(this);
-        price.setText(item.price > 0 ? money.format(item.price) : "R$ --");
-        price.setGravity(Gravity.CENTER);
+        price.setText(priceText);
+        price.setGravity(priceBelow ? Gravity.START : Gravity.CENTER);
         price.setTextSize(14);
         price.setTypeface(Typeface.DEFAULT_BOLD);
-        price.setTextColor(item.checked ? Color.rgb(148, 163, 184) : Color.rgb(15, 118, 110));
+        price.setSingleLine(false);
+        price.setTextColor(item.checked ? disabledText() : accent());
         price.setOnClickListener(v -> promptPrice(item));
-        LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(82), dp(44));
-        priceParams.setMargins(dp(6), 0, dp(6), 0);
-        row.addView(price, priceParams);
+        if (priceBelow) {
+            itemText.addView(price, matchWrapWithTop(dp(3)));
+            row.addView(itemText, weighted());
+        } else {
+            row.addView(itemText, weighted());
+            LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(94), ViewGroup.LayoutParams.WRAP_CONTENT);
+            priceParams.setMargins(dp(6), 0, dp(6), 0);
+            row.addView(price, priceParams);
+        }
 
         Button remove = button("x", Color.rgb(254, 226, 226), Color.rgb(153, 27, 27));
         remove.setTextSize(18);
@@ -393,6 +444,8 @@ public class MainActivity extends Activity {
         EditText input = new EditText(this);
         input.setHint("Preco");
         input.setSingleLine(true);
+        input.setTextColor(primaryText());
+        input.setHintTextColor(mutedText());
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         if (item.price > 0) {
             input.setText(String.format(Locale.US, "%.2f", item.price));
@@ -437,7 +490,7 @@ public class MainActivity extends Activity {
             TextView line = new TextView(this);
             line.setText(span);
             line.setTextSize(16);
-            line.setTextColor(Color.rgb(15, 23, 42));
+            line.setTextColor(primaryText());
             line.setPadding(0, dp(8), 0, dp(8));
             content.addView(line, matchWrap());
         }
@@ -656,6 +709,67 @@ public class MainActivity extends Activity {
         if (imm != null && itemInput != null) imm.hideSoftInputFromWindow(itemInput.getWindowToken(), 0);
     }
 
+    private void toggleTheme() {
+        themeMode = isDarkTheme() ? THEME_LIGHT : THEME_DARK;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_THEME, themeMode).apply();
+        if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
+    }
+
+    private String themeIcon() {
+        return isDarkTheme() ? "☀" : "☾";
+    }
+
+    private boolean isCompactWidth() {
+        return getResources().getConfiguration().screenWidthDp < 390;
+    }
+
+    private boolean isDarkTheme() {
+        if (themeMode == THEME_DARK) return true;
+        if (themeMode == THEME_LIGHT) return false;
+        int mask = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+        return mask == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private int screenBg() {
+        return isDarkTheme() ? Color.rgb(2, 6, 23) : Color.rgb(248, 250, 252);
+    }
+
+    private int cardBg() {
+        return isDarkTheme() ? Color.rgb(15, 23, 42) : Color.WHITE;
+    }
+
+    private int checkedBg() {
+        return isDarkTheme() ? Color.rgb(30, 41, 59) : Color.rgb(241, 245, 249);
+    }
+
+    private int inputBg() {
+        return isDarkTheme() ? Color.rgb(30, 41, 59) : Color.rgb(248, 250, 252);
+    }
+
+    private int softButtonBg() {
+        return isDarkTheme() ? Color.rgb(51, 65, 85) : Color.rgb(226, 232, 240);
+    }
+
+    private int stroke() {
+        return isDarkTheme() ? Color.rgb(51, 65, 85) : Color.rgb(226, 232, 240);
+    }
+
+    private int primaryText() {
+        return isDarkTheme() ? Color.rgb(241, 245, 249) : Color.rgb(15, 23, 42);
+    }
+
+    private int mutedText() {
+        return isDarkTheme() ? Color.rgb(148, 163, 184) : Color.rgb(71, 85, 105);
+    }
+
+    private int disabledText() {
+        return isDarkTheme() ? Color.rgb(100, 116, 139) : Color.rgb(148, 163, 184);
+    }
+
+    private int accent() {
+        return isDarkTheme() ? Color.rgb(45, 212, 191) : Color.rgb(15, 118, 110);
+    }
+
     private Button button(String text, int bg, int fg) {
         Button button = new Button(this);
         button.setText(text);
@@ -666,6 +780,14 @@ public class MainActivity extends Activity {
         button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setPadding(dp(8), 0, dp(8), 0);
         button.setBackground(round(bg, dp(14), Color.TRANSPARENT, 0));
+        return button;
+    }
+
+    private Button iconButton(String text, int bg, int fg) {
+        Button button = button(text, bg, fg);
+        button.setTextSize(22);
+        button.setMinWidth(dp(48));
+        button.setPadding(0, 0, 0, 0);
         return button;
     }
 
@@ -687,8 +809,16 @@ public class MainActivity extends Activity {
         return params;
     }
 
+    private LinearLayout.LayoutParams matchHeight(int height) {
+        return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height);
+    }
+
     private LinearLayout.LayoutParams weighted() {
         return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+    }
+
+    private LinearLayout.LayoutParams weightedHeight(int height) {
+        return new LinearLayout.LayoutParams(0, height, 1);
     }
 
     private int dp(int value) {

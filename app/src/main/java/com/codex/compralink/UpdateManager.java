@@ -28,16 +28,16 @@ public final class UpdateManager {
                 String versionName = info.optString("versionName", "");
                 String notes = info.optString("notes", "");
                 String releaseUrl = info.optString("releaseUrl", "https://github.com/MBZerker/CompraLink");
+                String apkUrl = info.optString("apkUrl", releaseUrl);
 
                 if (versionCode <= BuildConfig.VERSION_CODE) {
                     if (manual) {
-                        activity.runOnUiThread(() ->
-                                Toast.makeText(activity, "Seu app ja esta atualizado.", Toast.LENGTH_SHORT).show());
+                        activity.runOnUiThread(() -> showCurrentDialog(activity, releaseUrl, apkUrl));
                     }
                     return;
                 }
 
-                activity.runOnUiThread(() -> showUpdateDialog(activity, versionName, notes, releaseUrl));
+                activity.runOnUiThread(() -> showUpdateDialog(activity, versionName, notes, apkUrl, releaseUrl));
             } catch (Exception e) {
                 if (manual) {
                     activity.runOnUiThread(() ->
@@ -47,19 +47,33 @@ public final class UpdateManager {
         }).start();
     }
 
-    private static void showUpdateDialog(Activity activity, String versionName, String notes, String releaseUrl) {
+    private static void showUpdateDialog(Activity activity, String versionName, String notes, String apkUrl, String releaseUrl) {
         String message = "Existe uma nova versao";
         if (!versionName.isEmpty()) message += " (" + versionName + ")";
         if (!notes.isEmpty()) message += ".\n\n" + notes;
-        message += "\n\nPor seguranca, o app abre o GitHub para voce baixar a atualizacao.";
+        message += "\n\nO Android vai abrir o link do APK para voce confirmar o download e instalar.";
 
         new AlertDialog.Builder(activity)
                 .setTitle("Atualizacao disponivel")
                 .setMessage(message)
-                .setPositiveButton("Abrir GitHub", (dialog, which) ->
-                        activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(releaseUrl))))
+                .setPositiveButton("Baixar APK", (dialog, which) -> openUrl(activity, apkUrl))
+                .setNeutralButton("GitHub", (dialog, which) -> openUrl(activity, releaseUrl))
                 .setNegativeButton("Depois", null)
                 .show();
+    }
+
+    private static void showCurrentDialog(Activity activity, String releaseUrl, String apkUrl) {
+        new AlertDialog.Builder(activity)
+                .setTitle("App atualizado")
+                .setMessage("Esta versao ja esta atualizada. Se quiser reinstalar ou baixar o APK publicado, use uma das opcoes abaixo.")
+                .setPositiveButton("Baixar APK", (dialog, which) -> openUrl(activity, apkUrl))
+                .setNeutralButton("GitHub", (dialog, which) -> openUrl(activity, releaseUrl))
+                .setNegativeButton("Fechar", null)
+                .show();
+    }
+
+    private static void openUrl(Activity activity, String url) {
+        activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
     }
 
     private static JSONObject readJson(String urlText) throws Exception {

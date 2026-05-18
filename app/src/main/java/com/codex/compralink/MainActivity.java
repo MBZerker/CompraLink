@@ -7,6 +7,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.content.res.ColorStateList;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -59,7 +60,7 @@ public class MainActivity extends Activity {
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
-    private static final String SHARE_BASE = "https://compralink.app/l/";
+    private static final String SHARE_BASE = "compralink://list?payload=";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
 
@@ -319,6 +320,7 @@ public class MainActivity extends Activity {
         itemInput.setHint("Produto");
         itemInput.setTextColor(primaryText());
         itemInput.setHintTextColor(mutedText());
+        itemInput.setLinkTextColor(accent());
         itemInput.setTextSize(16);
         itemInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         itemInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
@@ -331,6 +333,7 @@ public class MainActivity extends Activity {
         priceInput.setGravity(Gravity.CENTER_VERTICAL);
         priceInput.setTextColor(primaryText());
         priceInput.setHintTextColor(mutedText());
+        priceInput.setLinkTextColor(accent());
         priceInput.setTextSize(15);
         priceInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         priceInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
@@ -378,6 +381,7 @@ public class MainActivity extends Activity {
 
         CheckBox box = new CheckBox(this);
         box.setChecked(item.checked);
+        tintCheckBox(box);
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
             item.checked = isChecked;
             save();
@@ -446,6 +450,9 @@ public class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setTextColor(primaryText());
         input.setHintTextColor(mutedText());
+        input.setLinkTextColor(accent());
+        input.setBackground(round(inputBg(), dp(12), stroke(), 1));
+        input.setPadding(dp(12), 0, dp(12), 0);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         if (item.price > 0) {
             input.setText(String.format(Locale.US, "%.2f", item.price));
@@ -529,6 +536,10 @@ public class MainActivity extends Activity {
         EditText input = new EditText(this);
         input.setHint("Nome da lista");
         input.setSingleLine(true);
+        input.setTextColor(primaryText());
+        input.setHintTextColor(mutedText());
+        input.setBackground(round(inputBg(), dp(12), stroke(), 1));
+        input.setPadding(dp(12), 0, dp(12), 0);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         new AlertDialog.Builder(this)
                 .setTitle("Nova lista")
@@ -566,8 +577,7 @@ public class MainActivity extends Activity {
             String link = buildShareLink(lists.get(selectedIndex));
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
-            send.putExtra(Intent.EXTRA_SUBJECT, "Lista de compras: " + lists.get(selectedIndex).name);
-            send.putExtra(Intent.EXTRA_TEXT, "Lista de compras CompraLink:\n" + link);
+            send.putExtra(Intent.EXTRA_TEXT, link);
             startActivity(Intent.createChooser(send, "Compartilhar lista"));
 
             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -707,6 +717,17 @@ public class MainActivity extends Activity {
     private void hideKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null && itemInput != null) imm.hideSoftInputFromWindow(itemInput.getWindowToken(), 0);
+    }
+
+    private void tintCheckBox(CheckBox box) {
+        int[][] states = new int[][]{
+                new int[]{android.R.attr.state_checked},
+                new int[]{}
+        };
+        int unchecked = isDarkTheme() ? Color.rgb(241, 245, 249) : Color.rgb(71, 85, 105);
+        int[] colors = new int[]{accent(), unchecked};
+        box.setButtonTintList(new ColorStateList(states, colors));
+        box.setTextColor(primaryText());
     }
 
     private void toggleTheme() {

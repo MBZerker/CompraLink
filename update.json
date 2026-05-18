@@ -1,7 +1,7 @@
 {
-  "versionCode": 4,
-  "versionName": "1.3",
+  "versionCode": 5,
+  "versionName": "1.4",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Tema claro/escuro, entrada de produto e preco separada, e layout de preco responsivo."
+  "notes": "Correcoes de contraste, checkbox no modo escuro, compartilhamento seguro por link interno e update por APK direto."
 }

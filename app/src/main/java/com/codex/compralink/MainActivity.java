@@ -235,9 +235,9 @@ public class MainActivity extends Activity {
             });
             actions.addView(back, weighted());
 
-            Button share = button("Compartilhar", Color.rgb(20, 184, 166), Color.WHITE);
+            Button share = iconButton("↗", Color.rgb(20, 184, 166), Color.WHITE);
             share.setOnClickListener(v -> shareSelectedList());
-            LinearLayout.LayoutParams shareParams = weighted();
+            LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             shareParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(share, shareParams);
 

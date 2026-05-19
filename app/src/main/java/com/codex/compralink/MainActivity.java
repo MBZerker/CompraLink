@@ -532,6 +532,13 @@ public class MainActivity extends Activity {
             product.total += total;
             product.quantity += entry.quantity;
             product.times += 1;
+            product.priceSum += entry.price;
+            if (product.times == 1 || entry.price < product.minPrice) product.minPrice = entry.price;
+            if (product.times == 1 || entry.price > product.maxPrice) product.maxPrice = entry.price;
+            if (entry.addedAt >= product.latestAt) {
+                product.latestAt = entry.addedAt;
+                product.latestPrice = entry.price;
+            }
         }
         double max = 1;
         double sum = 0;
@@ -548,6 +555,7 @@ public class MainActivity extends Activity {
         addMetricGrid(currentTotal, previousTotal, difference, average, forecast, biggestEntry, products);
         addMonthlyBars(totals, max);
         addProductRanking(products);
+        addPriceInsights(products);
     }
 
     private void addSpendingFilters() {
@@ -675,6 +683,54 @@ public class MainActivity extends Activity {
             card.addView(barBg, matchWrapWithTop(dp(8)));
             root.addView(card, matchWrapWithTop(dp(8)));
         }
+    }
+
+    private void addPriceInsights(Map<String, SpendingProduct> products) {
+        List<SpendingProduct> insights = new ArrayList<>();
+        for (SpendingProduct product : products.values()) {
+            if (product.times >= 2) insights.add(product);
+        }
+        Collections.sort(insights, (a, b) -> Double.compare(priceSpread(b), priceSpread(a)));
+        root.addView(label("Histórico de preços", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        if (insights.isEmpty()) {
+            root.addView(infoCard("Pouco histórico", "Quando um produto aparecer em compras diferentes, o app mostra mínimo, médio, máximo e variação."), matchWrapWithTop(dp(8)));
+            return;
+        }
+        int limit = Math.min(6, insights.size());
+        for (int i = 0; i < limit; i++) {
+            SpendingProduct product = insights.get(i);
+            double average = product.priceSum / product.times;
+            double economy = Math.max(0, product.latestPrice - product.minPrice);
+            int trendColor = economy > 0 ? Color.rgb(225, 29, 72) : Color.rgb(22, 163, 74);
+
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+            card.addView(label(product.name, 15, true, primaryText()));
+
+            TextView range = label("Mín. " + money.format(product.minPrice)
+                    + " - Médio " + money.format(average)
+                    + " - Máx. " + money.format(product.maxPrice), 13, false, mutedText());
+            range.setPadding(0, dp(5), 0, 0);
+            card.addView(range, matchWrap());
+
+            TextView latest = label("Último: " + money.format(product.latestPrice)
+                    + " em " + formatDateLabel(product.latestAt), 13, true, trendColor);
+            latest.setPadding(0, dp(5), 0, 0);
+            card.addView(latest, matchWrap());
+
+            if (economy > 0) {
+                TextView tip = label("Se comprar pelo menor histórico, economiza " + money.format(economy) + " por unidade.", 13, false, Color.rgb(22, 163, 74));
+                tip.setPadding(0, dp(5), 0, 0);
+                card.addView(tip, matchWrap());
+            }
+            root.addView(card, matchWrapWithTop(dp(8)));
+        }
+    }
+
+    private double priceSpread(SpendingProduct product) {
+        return product.maxPrice - product.minPrice;
     }
 
     private boolean sameMonth(Calendar a, Calendar b) {
@@ -1909,6 +1965,11 @@ public class MainActivity extends Activity {
         double total;
         double quantity;
         int times;
+        double priceSum;
+        double minPrice;
+        double maxPrice;
+        double latestPrice;
+        long latestAt;
 
         SpendingProduct(String name) {
             this.name = name;

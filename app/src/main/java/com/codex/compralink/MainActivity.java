@@ -90,6 +90,7 @@ public class MainActivity extends Activity {
     private EditText unitInput;
     private int selectedIndex = -1;
     private int homeTab = 0;
+    private int spendingRangeMonths = 6;
     private boolean shellReady;
     private boolean pendingIntentHandled;
     private int themeMode = THEME_SYSTEM;
@@ -502,7 +503,8 @@ public class MainActivity extends Activity {
         double currentTotal = 0;
         double previousTotal = 0;
         StockEntry biggestEntry = null;
-        for (int i = 5; i >= 0; i--) {
+        int visibleMonths = spendingRangeMonths <= 0 ? Math.max(6, countMonthsWithData()) : spendingRangeMonths;
+        for (int i = visibleMonths - 1; i >= 0; i--) {
             cal.setTimeInMillis(now);
             cal.add(Calendar.MONTH, -i);
             totals.put(monthKey(cal), 0.0);
@@ -512,12 +514,14 @@ public class MainActivity extends Activity {
             double total = entry.price * entry.quantity;
             cal.setTimeInMillis(entry.addedAt);
             String key = monthKey(cal);
+            boolean inSelectedRange = spendingRangeMonths <= 0 || totals.containsKey(key);
             if (totals.containsKey(key)) {
                 totals.put(key, totals.get(key) + total);
             }
             if (sameMonth(cal, currentMonth)) currentTotal += total;
             if (sameMonth(cal, previousMonth)) previousTotal += total;
             if (biggestEntry == null || total > biggestEntry.price * biggestEntry.quantity) biggestEntry = entry;
+            if (!inSelectedRange) continue;
 
             String productKey = normalize(entry.name);
             SpendingProduct product = products.get(productKey);
@@ -537,14 +541,39 @@ public class MainActivity extends Activity {
         }
         double average = totals.isEmpty() ? 0 : sum / totals.size();
         double difference = currentTotal - previousTotal;
+        double forecast = forecastMonthTotal(currentTotal);
 
-        root.addView(infoCard("Resumo", "Total dos últimos 6 meses: " + money.format(sum)), matchWrapWithTop(dp(10)));
-        addMetricGrid(currentTotal, previousTotal, difference, average, biggestEntry, products);
+        addSpendingFilters();
+        root.addView(infoCard("Resumo", "Total do período selecionado: " + money.format(sum)), matchWrapWithTop(dp(10)));
+        addMetricGrid(currentTotal, previousTotal, difference, average, forecast, biggestEntry, products);
         addMonthlyBars(totals, max);
         addProductRanking(products);
     }
 
-    private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, StockEntry biggestEntry, Map<String, SpendingProduct> products) {
+    private void addSpendingFilters() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(row, matchWrapWithTop(dp(10)));
+        addSpendingFilterButton(row, "1m", 1);
+        addSpendingFilterButton(row, "3m", 3);
+        addSpendingFilterButton(row, "6m", 6);
+        addSpendingFilterButton(row, "12m", 12);
+        addSpendingFilterButton(row, "Tudo", 0);
+    }
+
+    private void addSpendingFilterButton(LinearLayout row, String label, int months) {
+        Button button = button(label, spendingRangeMonths == months ? accent() : softButtonBg(), spendingRangeMonths == months ? Color.WHITE : primaryText());
+        button.setTextSize(12);
+        button.setOnClickListener(v -> {
+            spendingRangeMonths = months;
+            showStockWindow(true);
+        });
+        LinearLayout.LayoutParams params = weighted();
+        if (row.getChildCount() > 0) params.setMargins(dp(5), 0, 0, 0);
+        row.addView(button, params);
+    }
+
+    private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, double forecast, StockEntry biggestEntry, Map<String, SpendingProduct> products) {
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row1, matchWrapWithTop(dp(8)));
@@ -561,6 +590,15 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams avgParams = weighted();
         avgParams.setMargins(dp(8), 0, 0, 0);
         row2.addView(metricCard("Média mensal", money.format(average), primaryText()), avgParams);
+
+        LinearLayout rowForecast = new LinearLayout(this);
+        rowForecast.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(rowForecast, matchWrapWithTop(dp(8)));
+        rowForecast.addView(metricCard("Previsão do mês", money.format(forecast), forecast > previousTotal && previousTotal > 0 ? Color.rgb(225, 29, 72) : accent()), weighted());
+        LinearLayout.LayoutParams paceParams = weighted();
+        paceParams.setMargins(dp(8), 0, 0, 0);
+        String pace = previousTotal <= 0 ? "Sem comparação" : (forecast > previousTotal ? "Acima do mês anterior" : "Dentro do ritmo");
+        rowForecast.addView(metricCard("Ritmo", pace, primaryText()), paceParams);
 
         SpendingProduct mostBought = mostBoughtProduct(products);
         LinearLayout row3 = new LinearLayout(this);
@@ -642,6 +680,32 @@ public class MainActivity extends Activity {
     private boolean sameMonth(Calendar a, Calendar b) {
         return a.get(Calendar.YEAR) == b.get(Calendar.YEAR)
                 && a.get(Calendar.MONTH) == b.get(Calendar.MONTH);
+    }
+
+    private double forecastMonthTotal(double currentTotal) {
+        Calendar today = Calendar.getInstance();
+        int day = Math.max(1, today.get(Calendar.DAY_OF_MONTH));
+        int maxDay = today.getActualMaximum(Calendar.DAY_OF_MONTH);
+        return currentTotal / day * maxDay;
+    }
+
+    private int countMonthsWithData() {
+        if (stock.isEmpty()) return 6;
+        Calendar first = Calendar.getInstance();
+        Calendar last = Calendar.getInstance();
+        long min = Long.MAX_VALUE;
+        long max = 0;
+        for (StockEntry entry : stock) {
+            if (entry.price <= 0) continue;
+            min = Math.min(min, entry.addedAt);
+            max = Math.max(max, entry.addedAt);
+        }
+        if (min == Long.MAX_VALUE) return 6;
+        first.setTimeInMillis(min);
+        last.setTimeInMillis(max);
+        int months = (last.get(Calendar.YEAR) - first.get(Calendar.YEAR)) * 12
+                + last.get(Calendar.MONTH) - first.get(Calendar.MONTH) + 1;
+        return Math.max(1, months);
     }
 
     private SpendingProduct mostBoughtProduct(Map<String, SpendingProduct> products) {

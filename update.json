@@ -1,7 +1,7 @@
 {
-  "versionCode": 18,
-  "versionName": "2.7",
+  "versionCode": 19,
+  "versionName": "2.8",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Dashboard de gastos com resumo mensal, comparacao, media, maior compra e ranking de produtos."
+  "notes": "Gastos agora tem filtros por periodo e previsao simples para o fim do mes."
 }

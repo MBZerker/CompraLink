@@ -272,10 +272,21 @@ public class MainActivity extends Activity {
             actions.addView(back, weighted());
 
             ImageButton share = imageIconButton(R.drawable.ic_share_nodes, Color.rgb(20, 184, 166), Color.WHITE);
-            share.setOnClickListener(v -> shareSelectedList());
+            boolean canShare = selectedIndex >= 0 && !lists.get(selectedIndex).items.isEmpty();
+            share.setEnabled(canShare);
+            share.setAlpha(canShare ? 1.0f : 0.38f);
+            share.setOnClickListener(v -> {
+                if (canShare) shareSelectedList();
+            });
             LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             shareParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(share, shareParams);
+
+            ImageButton print = imageIconButton(R.drawable.ic_print, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+            print.setOnClickListener(v -> showPrintPreview());
+            LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            printParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(print, printParams);
 
             Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
             theme.setOnClickListener(v -> toggleTheme());
@@ -301,9 +312,9 @@ public class MainActivity extends Activity {
             }
 
             if (homeTab == 0) {
-                Button update = button("Atualizar", isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                ImageButton update = imageIconButton(R.drawable.ic_update, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
                 update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-                LinearLayout.LayoutParams updateParams = weighted();
+                LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 updateParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(update, updateParams);
 
@@ -376,6 +387,66 @@ public class MainActivity extends Activity {
             if (item.price > 0) total += item.price * quantityOf(item);
         }
         return list.items.size() + " itens, " + done + " concluidos, total " + money.format(total);
+    }
+
+    private void showPrintPreview() {
+        if (selectedIndex < 0) return;
+        ShoppingList list = lists.get(selectedIndex);
+        applySystemBars();
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setPadding(dp(14), dp(14), dp(14), dp(18));
+        screen.setBackgroundColor(screenBg());
+
+        Button close = iconButton("X", softButtonBg(), primaryText());
+        close.setTextSize(18);
+        close.setOnClickListener(v -> showListScreen());
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        closeParams.gravity = Gravity.START;
+        screen.addView(close, closeParams);
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(28), dp(32), dp(28), dp(32));
+        page.setBackgroundColor(Color.WHITE);
+        int pageWidth = Math.min(getResources().getDisplayMetrics().widthPixels - dp(28), dp(420));
+        int pageHeight = (int) (pageWidth * 1.414f);
+        LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(pageWidth, pageHeight);
+        pageParams.gravity = Gravity.CENTER_HORIZONTAL;
+        pageParams.setMargins(0, dp(12), 0, dp(20));
+
+        TextView title = printText(list.name, 22, true);
+        title.setGravity(Gravity.CENTER);
+        page.addView(title, matchWrap());
+
+        TextView spacer = printText("\n", 14, false);
+        page.addView(spacer, matchWrap());
+
+        for (ShoppingItem item : list.items) {
+            double qty = quantityOf(item);
+            String unitPrice = item.price > 0 ? money.format(item.price) : "R$ --";
+            String total = item.price > 0 ? money.format(item.price * qty) : "R$ --";
+            TextView line = printText("• " + item.name + "\n  " + formatQty(qty) + " x " + unitPrice + " (" + total + ")", 15, false);
+            line.setPadding(0, 0, 0, dp(10));
+            page.addView(line, matchWrap());
+        }
+
+        scroll.addView(page, pageParams);
+        screen.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(screen);
+    }
+
+    private TextView printText(String text, int size, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setTextColor(Color.BLACK);
+        view.setLineSpacing(dp(2), 1.0f);
+        if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
+        return view;
     }
 
     private void addStockScreen() {

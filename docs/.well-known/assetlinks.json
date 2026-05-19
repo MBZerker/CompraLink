@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.codex.compralink",
+      "sha256_cert_fingerprints": [
+        "E7:ED:E1:C6:1F:02:E8:C5:6B:4E:A2:64:87:0B:81:40:E7:07:44:D7:C0:4A:4C:33:D4:7E:97:E8:8B:CC:FB:60"
+      ]
+    }
+  }
+]

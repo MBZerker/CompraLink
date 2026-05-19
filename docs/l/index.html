@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Abrir lista CompraLink</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    main {
+      width: min(560px, calc(100% - 32px));
+      padding: 28px;
+      border: 1px solid #e2e8f0;
+      border-radius: 18px;
+      background: white;
+      box-shadow: 0 18px 50px rgba(15, 23, 42, .12);
+    }
+    h1 { color: #0f766e; margin: 0 0 8px; }
+    a {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: #0f766e;
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Lista CompraLink</h1>
+    <p>Se o app estiver instalado, o Android deve abrir a lista automaticamente.</p>
+    <a id="open" href="#">Abrir no app</a>
+  </main>
+  <script>
+    const payload = new URLSearchParams(location.search).get("payload") || "";
+    const appUrl = "compralink://list?payload=" + encodeURIComponent(payload);
+    document.getElementById("open").href = appUrl;
+    if (payload) {
+      location.href = appUrl;
+    }
+  </script>
+</body>
+</html>

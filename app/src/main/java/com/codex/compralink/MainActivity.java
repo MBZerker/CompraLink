@@ -60,7 +60,9 @@ public class MainActivity extends Activity {
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
-    private static final String SHARE_BASE = "compralink://list?payload=";
+    private static final String SHARE_BASE = "https://mbzerker.github.io/CompraLink/l/?payload=";
+    private static final String PAGES_HOST = "mbzerker.github.io";
+    private static final String PAGES_PATH = "/CompraLink/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
 
@@ -607,6 +609,11 @@ public class MainActivity extends Activity {
                 } else if ("/list".equals(data.getPath())) {
                     payload = data.getQueryParameter("payload");
                 }
+            } else if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
+                    && PAGES_HOST.equals(data.getHost())
+                    && data.getPath() != null
+                    && data.getPath().startsWith(PAGES_PATH)) {
+                payload = data.getQueryParameter("payload");
             } else if ("compralink".equals(data.getScheme()) && "list".equals(data.getHost())) {
                 payload = data.getQueryParameter("payload");
             }

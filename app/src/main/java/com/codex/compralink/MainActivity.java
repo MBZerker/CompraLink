@@ -493,8 +493,15 @@ public class MainActivity extends Activity {
 
     private void addSpendingScreen() {
         Map<String, Double> totals = new LinkedHashMap<>();
+        Map<String, SpendingProduct> products = new LinkedHashMap<>();
         long now = System.currentTimeMillis();
         Calendar cal = Calendar.getInstance();
+        Calendar currentMonth = Calendar.getInstance();
+        Calendar previousMonth = Calendar.getInstance();
+        previousMonth.add(Calendar.MONTH, -1);
+        double currentTotal = 0;
+        double previousTotal = 0;
+        StockEntry biggestEntry = null;
         for (int i = 5; i >= 0; i--) {
             cal.setTimeInMillis(now);
             cal.add(Calendar.MONTH, -i);
@@ -502,11 +509,25 @@ public class MainActivity extends Activity {
         }
         for (StockEntry entry : stock) {
             if (entry.price <= 0) continue;
+            double total = entry.price * entry.quantity;
             cal.setTimeInMillis(entry.addedAt);
             String key = monthKey(cal);
             if (totals.containsKey(key)) {
-                totals.put(key, totals.get(key) + entry.price * entry.quantity);
+                totals.put(key, totals.get(key) + total);
             }
+            if (sameMonth(cal, currentMonth)) currentTotal += total;
+            if (sameMonth(cal, previousMonth)) previousTotal += total;
+            if (biggestEntry == null || total > biggestEntry.price * biggestEntry.quantity) biggestEntry = entry;
+
+            String productKey = normalize(entry.name);
+            SpendingProduct product = products.get(productKey);
+            if (product == null) {
+                product = new SpendingProduct(entry.name);
+                products.put(productKey, product);
+            }
+            product.total += total;
+            product.quantity += entry.quantity;
+            product.times += 1;
         }
         double max = 1;
         double sum = 0;
@@ -514,7 +535,60 @@ public class MainActivity extends Activity {
             max = Math.max(max, value);
             sum += value;
         }
-        root.addView(infoCard("Gastos recentes", "Total dos ultimos meses: " + money.format(sum)), matchWrapWithTop(dp(10)));
+        double average = totals.isEmpty() ? 0 : sum / totals.size();
+        double difference = currentTotal - previousTotal;
+
+        root.addView(infoCard("Resumo", "Total dos últimos 6 meses: " + money.format(sum)), matchWrapWithTop(dp(10)));
+        addMetricGrid(currentTotal, previousTotal, difference, average, biggestEntry, products);
+        addMonthlyBars(totals, max);
+        addProductRanking(products);
+    }
+
+    private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, StockEntry biggestEntry, Map<String, SpendingProduct> products) {
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(row1, matchWrapWithTop(dp(8)));
+        row1.addView(metricCard("Mês atual", money.format(currentTotal), accent()), weighted());
+        LinearLayout.LayoutParams right = weighted();
+        right.setMargins(dp(8), 0, 0, 0);
+        row1.addView(metricCard("Mês anterior", money.format(previousTotal), primaryText()), right);
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(row2, matchWrapWithTop(dp(8)));
+        int diffColor = difference <= 0 ? Color.rgb(22, 163, 74) : Color.rgb(225, 29, 72);
+        row2.addView(metricCard("Diferença", money.format(difference), diffColor), weighted());
+        LinearLayout.LayoutParams avgParams = weighted();
+        avgParams.setMargins(dp(8), 0, 0, 0);
+        row2.addView(metricCard("Média mensal", money.format(average), primaryText()), avgParams);
+
+        SpendingProduct mostBought = mostBoughtProduct(products);
+        LinearLayout row3 = new LinearLayout(this);
+        row3.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(row3, matchWrapWithTop(dp(8)));
+        String biggest = biggestEntry == null ? "Sem dados" : biggestEntry.name + " - " + money.format(biggestEntry.price * biggestEntry.quantity);
+        row3.addView(metricCard("Maior compra", biggest, primaryText()), weighted());
+        LinearLayout.LayoutParams boughtParams = weighted();
+        boughtParams.setMargins(dp(8), 0, 0, 0);
+        String bought = mostBought == null ? "Sem dados" : mostBought.name + " - " + formatQty(mostBought.quantity) + " un";
+        row3.addView(metricCard("Mais comprado", bought, primaryText()), boughtParams);
+    }
+
+    private View metricCard(String title, String value, int valueColor) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+        card.addView(label(title, 12, true, mutedText()));
+        TextView valueView = label(value, 16, true, valueColor);
+        valueView.setPadding(0, dp(5), 0, 0);
+        valueView.setSingleLine(false);
+        card.addView(valueView, matchWrap());
+        return card;
+    }
+
+    private void addMonthlyBars(Map<String, Double> totals, double max) {
+        root.addView(label("Gastos por mês", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         for (String key : totals.keySet()) {
             double value = totals.get(key);
             LinearLayout card = new LinearLayout(this);
@@ -532,6 +606,50 @@ public class MainActivity extends Activity {
             card.addView(barBg, matchWrapWithTop(dp(8)));
             root.addView(card, matchWrapWithTop(dp(8)));
         }
+    }
+
+    private void addProductRanking(Map<String, SpendingProduct> products) {
+        List<SpendingProduct> ranking = new ArrayList<>(products.values());
+        Collections.sort(ranking, (a, b) -> Double.compare(b.total, a.total));
+        root.addView(label("Produtos que mais pesam", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        if (ranking.isEmpty()) {
+            root.addView(infoCard("Sem dados", "Marque itens com preço para criar o ranking de gastos."), matchWrapWithTop(dp(8)));
+            return;
+        }
+        int limit = Math.min(8, ranking.size());
+        double max = Math.max(1, ranking.get(0).total);
+        for (int i = 0; i < limit; i++) {
+            SpendingProduct product = ranking.get(i);
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+            card.addView(label((i + 1) + ". " + product.name, 15, true, primaryText()));
+            TextView meta = label(money.format(product.total) + " - " + formatQty(product.quantity) + " un - " + product.times + " compra(s)", 13, false, mutedText());
+            meta.setPadding(0, dp(4), 0, 0);
+            card.addView(meta, matchWrap());
+            LinearLayout barBg = new LinearLayout(this);
+            barBg.setBackground(round(inputBg(), dp(8), Color.TRANSPARENT, 0));
+            LinearLayout bar = new LinearLayout(this);
+            bar.setBackground(round(Color.rgb(250, 204, 21), dp(8), Color.TRANSPARENT, 0));
+            int width = Math.max(dp(8), (int) (getResources().getDisplayMetrics().widthPixels * 0.72 * (product.total / max)));
+            barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(12)));
+            card.addView(barBg, matchWrapWithTop(dp(8)));
+            root.addView(card, matchWrapWithTop(dp(8)));
+        }
+    }
+
+    private boolean sameMonth(Calendar a, Calendar b) {
+        return a.get(Calendar.YEAR) == b.get(Calendar.YEAR)
+                && a.get(Calendar.MONTH) == b.get(Calendar.MONTH);
+    }
+
+    private SpendingProduct mostBoughtProduct(Map<String, SpendingProduct> products) {
+        SpendingProduct best = null;
+        for (SpendingProduct product : products.values()) {
+            if (best == null || product.quantity > best.quantity) best = product;
+        }
+        return best;
     }
 
     private View infoCard(String title, String body) {
@@ -1719,6 +1837,17 @@ public class MainActivity extends Activity {
             this.itemName = itemName;
             this.price = price;
             this.updatedAt = updatedAt;
+        }
+    }
+
+    private static class SpendingProduct {
+        final String name;
+        double total;
+        double quantity;
+        int times;
+
+        SpendingProduct(String name) {
+            this.name = name;
         }
     }
 

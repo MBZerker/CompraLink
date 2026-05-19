@@ -22,6 +22,7 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
+CompraLink.zip
 
 # APK policy:
 # keep generated APKs out by default, but track this one because update.json

@@ -129,6 +129,14 @@
       font-size: 13px;
       color: #64748b;
     }
+    .steps {
+      margin: 0;
+      padding-left: 20px;
+      color: #334155;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    .hidden { display: none; }
     @media (max-width: 760px) {
       main { grid-template-columns: 1fr; }
       .hero { min-height: 0; }
@@ -148,27 +156,67 @@
     </section>
     <section class="panel">
       <div class="status" id="status">Tentando abrir o CompraLink...</div>
+      <ol class="steps" id="steps">
+        <li>Baixe e instale o APK.</li>
+        <li>Volte para esta tela.</li>
+        <li>Toque em <strong>Abrir e salvar lista no app</strong>.</li>
+      </ol>
       <div class="actions">
-        <a class="button primary" id="open" href="#">Abrir no app</a>
-        <a class="button secondary" href="../CompraLink.apk">Baixar CompraLink APK</a>
+        <a class="button primary" id="open" href="#">Abrir e salvar lista no app</a>
+        <a class="button secondary" id="download" href="../CompraLink.apk">Baixar CompraLink APK</a>
       </div>
-      <p class="note">Se o app nao abrir automaticamente, instale o APK e depois toque de novo no link da lista.</p>
+      <p class="note">Ao tocar em baixar, esta pagina tenta copiar o link da lista. Ao abrir o CompraLink depois da instalacao, o app procura esse link na area de transferencia e salva a lista.</p>
     </section>
   </main>
   <script>
     const payload = new URLSearchParams(location.search).get("payload") || "";
     const appUrl = "compralink://list?payload=" + encodeURIComponent(payload);
     const open = document.getElementById("open");
+    const download = document.getElementById("download");
     const status = document.getElementById("status");
+    const steps = document.getElementById("steps");
     open.href = appUrl;
     if (payload) {
-      setTimeout(() => { location.href = appUrl; }, 300);
+      localStorage.setItem("compralink:lastPayload", payload);
+      download.href = "../CompraLink.apk?from=shared-list";
+    }
+    function tryOpenApp() {
+      if (!payload) return;
+      location.href = appUrl;
+    }
+    open.addEventListener("click", function () {
+      status.textContent = "Abrindo o CompraLink para salvar a lista...";
+    });
+    async function copySharedLink() {
+      if (!payload || !navigator.clipboard) return false;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+    download.addEventListener("click", async function () {
+      const copied = await copySharedLink();
+      status.textContent = copied
+        ? "Link copiado. Instale o app e abra o CompraLink para salvar a lista automaticamente."
+        : "Instale o app. Depois volte aqui e toque em Abrir e salvar lista no app.";
+    });
+    if (payload) {
+      steps.classList.remove("hidden");
+      setTimeout(tryOpenApp, 300);
       setTimeout(() => {
-        status.textContent = "Se voce ainda esta vendo esta tela, talvez o app nao esteja instalado. Baixe o APK e abra o link novamente.";
+        status.textContent = "Se voce ainda esta vendo esta tela, instale o app. Depois volte aqui e toque em Abrir e salvar lista no app.";
       }, 1800);
     } else {
+      steps.classList.add("hidden");
       status.textContent = "Este link nao trouxe uma lista valida, mas voce ainda pode baixar o app.";
     }
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && payload) {
+        status.textContent = "Se o app ja foi instalado, toque em Abrir e salvar lista no app.";
+      }
+    });
   </script>
 </body>
 </html>

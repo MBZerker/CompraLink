@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     private static final String KEY_STOCK = "stock";
     private static final String KEY_THEME = "theme_mode";
     private static final String KEY_ACCENT = "accent_color";
+    private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
@@ -97,18 +98,11 @@ public class MainActivity extends Activity {
         accentColor = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_ACCENT, Color.rgb(15, 118, 110));
         load();
         loadStock();
-        if (lists.isEmpty()) {
-            ShoppingList first = new ShoppingList("Mercado da semana");
-            first.items.add(new ShoppingItem("Arroz", 4.50, "2"));
-            first.items.add(new ShoppingItem("Leite", 5.49, "1"));
-            first.items.add(new ShoppingItem("Frutas", 0, "1"));
-            lists.add(first);
-            save();
-        }
         showSplash();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             shellReady = true;
             handleIncomingIntent(getIntent());
+            if (selectedIndex < 0) importClipboardListIfPresent();
             pendingIntentHandled = true;
             if (selectedIndex >= 0) {
                 showListScreen();
@@ -183,6 +177,9 @@ public class MainActivity extends Activity {
 
         for (int i = 0; i < lists.size(); i++) {
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
+        }
+        if (lists.isEmpty()) {
+            root.addView(infoCard("Nenhuma lista criada", "Toque no carrinho para criar sua primeira lista."), matchWrapWithTop(dp(10)));
         }
         setContentView(rootScroll());
     }
@@ -1149,35 +1146,66 @@ public class MainActivity extends Activity {
         if (intent == null) return;
         Uri data = intent.getData();
         if (data != null) {
-            String payload = null;
-            if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
-                    && "compralink.app".equals(data.getHost())) {
-                if (data.getPath() != null && data.getPath().startsWith("/l/")) {
-                    payload = data.getLastPathSegment();
-                } else if ("/list".equals(data.getPath())) {
-                    payload = data.getQueryParameter("payload");
-                }
-            } else if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
-                    && PAGES_HOST.equals(data.getHost())
-                    && data.getPath() != null
-                    && data.getPath().startsWith(PAGES_PATH)) {
-                payload = data.getQueryParameter("payload");
-            } else if ("compralink".equals(data.getScheme()) && "list".equals(data.getHost())) {
-                payload = data.getQueryParameter("payload");
-            }
+            String payload = extractPayload(data);
             if (payload != null) importPayload(payload);
         }
     }
 
-    private void importPayload(String rawPayload) {
-        if (rawPayload == null || rawPayload.trim().isEmpty()) return;
-        String payload = rawPayload.trim();
-        int marker = payload.indexOf("payload=");
-        if (marker >= 0) payload = payload.substring(marker + "payload=".length());
-        int end = payload.indexOf('\n');
-        if (end >= 0) payload = payload.substring(0, end);
-        int space = payload.indexOf(' ');
-        if (space >= 0) payload = payload.substring(0, space);
+    private String extractPayload(Uri data) {
+        if (data == null) return null;
+        if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
+                && "compralink.app".equals(data.getHost())) {
+            if (data.getPath() != null && data.getPath().startsWith("/l/")) {
+                return data.getLastPathSegment();
+            } else if ("/list".equals(data.getPath())) {
+                return data.getQueryParameter("payload");
+            }
+        } else if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
+                && PAGES_HOST.equals(data.getHost())
+                && data.getPath() != null
+                && data.getPath().startsWith(PAGES_PATH)) {
+            return data.getQueryParameter("payload");
+        } else if ("compralink".equals(data.getScheme()) && "list".equals(data.getHost())) {
+            return data.getQueryParameter("payload");
+        }
+        return null;
+    }
+
+    private String extractPayload(String text) {
+        if (text == null) return null;
+        String value = text.trim();
+        int start = value.indexOf("http");
+        if (start > 0) value = value.substring(start);
+        try {
+            String payload = extractPayload(Uri.parse(value));
+            if (payload != null && !payload.trim().isEmpty()) return payload;
+        } catch (Exception ignored) {
+        }
+        int marker = value.indexOf("payload=");
+        if (marker >= 0) return value.substring(marker + "payload=".length());
+        return null;
+    }
+
+    private void importClipboardListIfPresent() {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null || !clipboard.hasPrimaryClip() || clipboard.getPrimaryClip() == null) return;
+        ClipData clip = clipboard.getPrimaryClip();
+        if (clip.getItemCount() == 0) return;
+        CharSequence text = clip.getItemAt(0).coerceToText(this);
+        String payload = extractPayload(text == null ? null : text.toString());
+        if (payload == null || payload.trim().isEmpty()) return;
+        String clean = cleanPayload(payload);
+        String last = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LAST_CLIPBOARD_PAYLOAD, "");
+        if (clean.equals(last)) return;
+        if (importPayload(clean)) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LAST_CLIPBOARD_PAYLOAD, clean).apply();
+            Toast.makeText(this, "Lista importada da área de transferência.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private boolean importPayload(String rawPayload) {
+        if (rawPayload == null || rawPayload.trim().isEmpty()) return false;
+        String payload = cleanPayload(rawPayload);
         try {
             String json = decodeCompressed(payload);
             ShoppingList imported = ShoppingList.fromJson(new JSONObject(json));
@@ -1187,6 +1215,7 @@ public class MainActivity extends Activity {
             selectedIndex = 0;
             save();
             Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
+            return true;
         } catch (Exception compressedFailed) {
             try {
                 byte[] decoded = Base64.decode(payload, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
@@ -1196,10 +1225,25 @@ public class MainActivity extends Activity {
                 lists.add(0, imported);
                 selectedIndex = 0;
                 save();
+                return true;
             } catch (Exception e) {
-                Toast.makeText(this, "Link de lista invalido.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Link de lista inválido.", Toast.LENGTH_SHORT).show();
+                return false;
             }
         }
+    }
+
+    private String cleanPayload(String rawPayload) {
+        String payload = rawPayload.trim();
+        int marker = payload.indexOf("payload=");
+        if (marker >= 0) payload = payload.substring(marker + "payload=".length());
+        int end = payload.indexOf('\n');
+        if (end >= 0) payload = payload.substring(0, end);
+        int space = payload.indexOf(' ');
+        if (space >= 0) payload = payload.substring(0, space);
+        int amp = payload.indexOf('&');
+        if (amp >= 0) payload = payload.substring(0, amp);
+        return payload;
     }
 
     private String encodeCompressed(String json) throws Exception {

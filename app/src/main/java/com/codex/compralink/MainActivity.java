@@ -87,6 +87,7 @@ public class MainActivity extends Activity {
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
     private static final String CUSTOM_CATEGORY = "Personalizada...";
+    private static final long AUTO_LOCK_AFTER_MS = 24L * 60L * 60L * 1000L;
 
     private final List<ShoppingList> lists = new ArrayList<>();
     private final List<StockEntry> stock = new ArrayList<>();
@@ -186,14 +187,33 @@ public class MainActivity extends Activity {
     private void showHomeScreen() {
         selectedIndex = -1;
         homeTab = 0;
+        updateAutoLockedLists();
         buildRoot();
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
 
         for (int i = 0; i < lists.size(); i++) {
+            if (lists.get(i).archived) continue;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
         }
-        if (lists.isEmpty()) {
+        if (!hasVisibleLists(false)) {
             root.addView(infoCard("Nenhuma lista criada", "Toque no carrinho para criar sua primeira lista."), matchWrapWithTop(dp(10)));
+        }
+        setContentView(rootScroll());
+    }
+
+    private void showHistoryScreen() {
+        selectedIndex = -1;
+        homeTab = 3;
+        updateAutoLockedLists();
+        buildRoot();
+        addTopHeader("Historico", "Listas protegidas ficam guardadas aqui.", false);
+
+        for (int i = 0; i < lists.size(); i++) {
+            if (!lists.get(i).archived) continue;
+            root.addView(listCard(i), matchWrapWithTop(dp(10)));
+        }
+        if (!hasVisibleLists(true)) {
+            root.addView(infoCard("Historico vazio", "Listas completas aparecem aqui depois de protegidas automaticamente."), matchWrapWithTop(dp(10)));
         }
         setContentView(rootScroll());
     }
@@ -213,10 +233,17 @@ public class MainActivity extends Activity {
     }
 
     private void showListScreen() {
+        if (selectedIndex >= 0 && selectedIndex < lists.size()) {
+            updateAutoLockedList(lists.get(selectedIndex));
+        }
         buildRoot();
         ShoppingList list = lists.get(selectedIndex);
         addTopHeader(list.name, listSubtitle(list), true);
-        addInputCard();
+        if (list.locked) {
+            root.addView(infoCard("Lista protegida", "Desbloqueie pelo cadeado para editar esta lista."), matchWrapWithTop(dp(10)));
+        } else {
+            addInputCard();
+        }
 
         addItems();
         setContentView(rootScroll());
@@ -300,7 +327,10 @@ public class MainActivity extends Activity {
 
             ShoppingList current = lists.get(selectedIndex);
             ImageButton sort = imageIconButton(sortIcon(current.sortMode), softButtonBg(), primaryText());
+            sort.setEnabled(!current.locked);
+            sort.setAlpha(current.locked ? 0.38f : 1.0f);
             sort.setOnClickListener(v -> {
+                if (current.locked) return;
                 current.sortMode = (current.sortMode + 1) % 3;
                 save();
                 showListScreen();
@@ -330,6 +360,12 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(stockButton, stockParams);
+
+                ImageButton history = imageIconButton(R.drawable.ic_history, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                history.setOnClickListener(v -> showHistoryScreen());
+                LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                historyParams.setMargins(dp(8), 0, 0, 0);
+                actions.addView(history, historyParams);
             }
 
             if (homeTab == 0) {
@@ -384,12 +420,26 @@ public class MainActivity extends Activity {
             return true;
         });
 
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(titleRow, matchWrap());
+
         TextView name = new TextView(this);
         name.setText(list.name);
         name.setTextSize(19);
         name.setTypeface(Typeface.DEFAULT_BOLD);
         name.setTextColor(listColor == 0 ? primaryText() : readableOnTint(listColor));
-        card.addView(name);
+        titleRow.addView(name, weighted());
+
+        ImageButton lock = imageIconButton(list.locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open,
+                list.locked ? Color.rgb(225, 29, 72) : Color.rgb(22, 163, 74),
+                Color.WHITE);
+        lock.setOnClickListener(v -> {
+            toggleListLock(list);
+            showHomeTab();
+        });
+        titleRow.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
         TextView meta = new TextView(this);
         meta.setText(listSubtitle(list));
@@ -407,7 +457,55 @@ public class MainActivity extends Activity {
             if (item.checked) done++;
             if (item.price > 0) total += item.price * quantityOf(item);
         }
-        return formatShortDate(list.createdAt) + " - " + list.items.size() + " itens, " + done + " concluidos, total " + money.format(total);
+        String status = list.locked ? " - protegida" : "";
+        return formatShortDate(list.createdAt) + " - " + list.items.size() + " itens, " + done + " concluidos, total " + money.format(total) + status;
+    }
+
+    private void showHomeTab() {
+        if (homeTab == 3) {
+            showHistoryScreen();
+        } else {
+            showHomeScreen();
+        }
+    }
+
+    private boolean hasVisibleLists(boolean archived) {
+        for (ShoppingList list : lists) {
+            if (list.archived == archived) return true;
+        }
+        return false;
+    }
+
+    private void toggleListLock(ShoppingList list) {
+        if (list.locked) {
+            list.locked = false;
+            list.archived = false;
+            list.lockedAt = 0;
+        } else {
+            list.locked = true;
+            list.lockedAt = System.currentTimeMillis();
+        }
+        save();
+    }
+
+    private void updateAutoLockedLists() {
+        boolean changed = false;
+        for (ShoppingList list : lists) {
+            changed = updateAutoLockedList(list) || changed;
+        }
+        if (changed) save();
+    }
+
+    private boolean updateAutoLockedList(ShoppingList list) {
+        if (list.locked || list.items.isEmpty()) return false;
+        if (System.currentTimeMillis() - list.createdAt < AUTO_LOCK_AFTER_MS) return false;
+        for (ShoppingItem item : list.items) {
+            if (!item.checked) return false;
+        }
+        list.locked = true;
+        list.archived = true;
+        list.lockedAt = System.currentTimeMillis();
+        return true;
     }
 
     private void showPrintPreview() {
@@ -1294,6 +1392,7 @@ public class MainActivity extends Activity {
     }
 
     private View itemRow(ShoppingItem item, int index) {
+        ShoppingList current = lists.get(selectedIndex);
         String qtyText = formatQty(quantityOf(item));
         String priceText = item.price > 0
                 ? qtyText + " x " + money.format(item.price) + " (" + money.format(item.price * quantityOf(item)) + ")"
@@ -1305,14 +1404,18 @@ public class MainActivity extends Activity {
         row.setPadding(dp(10), dp(9), dp(10), dp(9));
         row.setBackground(round(item.checked ? checkedBg() : cardBg(), dp(16), stroke(), 1));
         row.setOnLongClickListener(v -> {
+            if (current.locked) return true;
             promptEditItem(item);
             return true;
         });
 
         CheckBox box = new CheckBox(this);
         box.setChecked(item.checked);
+        box.setEnabled(!current.locked);
+        box.setAlpha(current.locked ? 0.55f : 1.0f);
         tintCheckBox(box);
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (current.locked) return;
             if (isChecked) {
                 item.checked = true;
                 if (lists.get(selectedIndex).saveCheckedToStock) {
@@ -1344,6 +1447,7 @@ public class MainActivity extends Activity {
         }
         name.setOnClickListener(v -> showPriceComparison(item));
         name.setOnLongClickListener(v -> {
+            if (current.locked) return true;
             promptEditItem(item);
             return true;
         });
@@ -1361,6 +1465,7 @@ public class MainActivity extends Activity {
         price.setSingleLine(false);
         price.setTextColor(item.checked ? disabledText() : accent());
         price.setOnLongClickListener(v -> {
+            if (current.locked) return true;
             promptEditItem(item);
             return true;
         });
@@ -1374,18 +1479,21 @@ public class MainActivity extends Activity {
             row.addView(price, priceParams);
         }
 
-        Button remove = button("x", Color.rgb(254, 226, 226), Color.rgb(153, 27, 27));
-        remove.setTextSize(18);
-        remove.setOnClickListener(v -> {
-            lists.get(selectedIndex).items.remove(index);
-            save();
-            showListScreen();
-        });
-        row.addView(remove, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        if (!current.locked) {
+            Button remove = button("x", Color.rgb(254, 226, 226), Color.rgb(153, 27, 27));
+            remove.setTextSize(18);
+            remove.setOnClickListener(v -> {
+                lists.get(selectedIndex).items.remove(index);
+                save();
+                showListScreen();
+            });
+            row.addView(remove, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        }
         return row;
     }
 
     private void addItem() {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
         String text = itemInput.getText().toString().trim();
         if (text.isEmpty()) return;
         String unit = unitInput == null ? "" : unitInput.getText().toString().trim();
@@ -1490,6 +1598,7 @@ public class MainActivity extends Activity {
     }
 
     private void promptEditItem(ShoppingItem item) {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
         LinearLayout form = dialogForm();
         EditText name = dialogInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
@@ -1639,16 +1748,19 @@ public class MainActivity extends Activity {
     }
 
     private void showListOptions(int index) {
-        String[] options = new String[]{"Editar nome", "Mudar cor", "Remover"};
+        ShoppingList list = lists.get(index);
+        String[] options = list.locked
+                ? new String[]{"Remover"}
+                : new String[]{"Editar nome", "Mudar cor", "Remover"};
         new AlertDialog.Builder(this)
-                .setTitle(lists.get(index).name)
+                .setTitle(list.name)
                 .setItems(options, (dialog, which) -> {
-                    if (which == 0) {
-                        promptEditList(index);
-                    } else if (which == 1) {
-                        promptListColor(index);
-                    } else {
+                    if (list.locked || which == 2) {
                         confirmDeleteList(index);
+                    } else if (which == 0) {
+                        promptEditList(index);
+                    } else {
+                        promptListColor(index);
                     }
                 })
                 .show();
@@ -1661,6 +1773,7 @@ public class MainActivity extends Activity {
 
     private void promptEditList(int index) {
         ShoppingList list = lists.get(index);
+        if (list.locked) return;
         EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setText(list.name);
         input.setSelection(input.getText().length());
@@ -1678,6 +1791,7 @@ public class MainActivity extends Activity {
     }
 
     private void promptListColor(int index) {
+        if (lists.get(index).locked) return;
         final int[] colors = new int[]{
                 0,
                 Color.rgb(15, 118, 110),
@@ -1736,17 +1850,14 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDeleteList(int index) {
-        if (lists.size() == 1) {
-            Toast.makeText(this, "Mantenha pelo menos uma lista.", Toast.LENGTH_SHORT).show();
-            return;
-        }
         new AlertDialog.Builder(this)
                 .setTitle("Remover lista?")
                 .setMessage(lists.get(index).name)
                 .setPositiveButton("Remover", (dialog, which) -> {
                     lists.remove(index);
+                    selectedIndex = -1;
                     save();
-                    showHomeScreen();
+                    showHomeTab();
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -2471,7 +2582,10 @@ public class MainActivity extends Activity {
         String name;
         int color;
         long createdAt = System.currentTimeMillis();
+        long lockedAt;
         boolean saveCheckedToStock = true;
+        boolean locked;
+        boolean archived;
         int sortMode = SORT_CHECKED_BOTTOM;
         final List<ShoppingItem> items = new ArrayList<>();
 
@@ -2485,7 +2599,10 @@ public class MainActivity extends Activity {
             json.put("name", name);
             json.put("color", color);
             json.put("createdAt", createdAt);
+            json.put("lockedAt", lockedAt);
             json.put("saveCheckedToStock", saveCheckedToStock);
+            json.put("locked", locked);
+            json.put("archived", archived);
             json.put("sortMode", sortMode);
             JSONArray array = new JSONArray();
             for (ShoppingItem item : items) array.put(item.toJson());
@@ -2498,7 +2615,10 @@ public class MainActivity extends Activity {
             list.id = json.optString("id", UUID.randomUUID().toString());
             list.color = json.optInt("color", 0);
             list.createdAt = json.optLong("createdAt", System.currentTimeMillis());
+            list.lockedAt = json.optLong("lockedAt", 0);
             list.saveCheckedToStock = json.optBoolean("saveCheckedToStock", true);
+            list.locked = json.optBoolean("locked", false);
+            list.archived = json.optBoolean("archived", false);
             list.sortMode = json.optInt("sortMode", SORT_CHECKED_BOTTOM);
             JSONArray array = json.optJSONArray("items");
             if (array != null) {

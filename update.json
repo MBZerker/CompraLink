@@ -1,7 +1,7 @@
 {
-  "versionCode": 11,
-  "versionName": "2.0",
+  "versionCode": 12,
+  "versionName": "2.1",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Mais cores por lista, comparacao reorganizada, links destacados e novos icones de carrinho/estoque."
+  "notes": "Estoque sem duplicar itens, datas nas listas, datas no estoque e edicao de quantidade em estoque."
 }

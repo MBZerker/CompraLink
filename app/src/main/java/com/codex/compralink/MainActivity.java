@@ -386,7 +386,7 @@ public class MainActivity extends Activity {
             if (item.checked) done++;
             if (item.price > 0) total += item.price * quantityOf(item);
         }
-        return list.items.size() + " itens, " + done + " concluidos, total " + money.format(total);
+        return formatShortDate(list.createdAt) + " - " + list.items.size() + " itens, " + done + " concluidos, total " + money.format(total);
     }
 
     private void showPrintPreview() {
@@ -460,21 +460,22 @@ public class MainActivity extends Activity {
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
             card.setBackground(round(cardBg(), dp(16), stroke(), 1));
             card.setOnLongClickListener(v -> {
-                confirmDeleteStock(entry);
+                showStockOptions(entry);
                 return true;
             });
             TextView name = label(entry.name, 18, true, primaryText());
             card.addView(name);
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
-            String total = entry.price > 0 ? " total " + money.format(entry.price * Math.max(1, entry.quantity)) : "";
-            TextView meta = label(formatQty(entry.quantity) + " " + entry.unit + " - unitario " + price + total, 14, false, mutedText());
+            String total = entry.price > 0 ? money.format(entry.price * Math.max(1, entry.quantity)) : "sem preco";
+            TextView meta = label(formatQty(entry.quantity) + " x " + price + " (" + total + ")", 14, true, mutedText());
             meta.setPadding(0, dp(4), 0, 0);
             card.addView(meta);
-            long days = stockDays(entry);
-            String status = entry.consumedAt > 0 ? "durou " + days + " dias" : "em estoque ha " + days + " dias";
-            TextView duration = label(status, 14, true, entry.consumedAt > 0 ? Color.rgb(22, 163, 74) : accent());
+            TextView duration = label(formatStockAge(entry), 14, false, accent());
             duration.setPadding(0, dp(5), 0, 0);
             card.addView(duration);
+            TextView edited = label("Editado: " + formatDateTime(entry.updatedAt), 13, false, mutedText());
+            edited.setPadding(0, dp(4), 0, 0);
+            card.addView(edited);
             root.addView(card, matchWrapWithTop(dp(10)));
         }
     }
@@ -638,11 +639,14 @@ public class MainActivity extends Activity {
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
                 item.checked = true;
-                addToStock(item, quantityOf(item), "un");
+                if (lists.get(selectedIndex).saveCheckedToStock) {
+                    addToStock(item, quantityOf(item), "un");
+                }
                 save();
                 showListScreen();
             } else {
                 item.checked = false;
+                removeStockForItem(item);
                 save();
                 showListScreen();
             }
@@ -742,15 +746,71 @@ public class MainActivity extends Activity {
 
     private void addToStock(ShoppingItem item, double amount, String unit) {
         long now = System.currentTimeMillis();
-        String key = normalize(item.name);
-        for (StockEntry entry : stock) {
-            if (entry.consumedAt == 0 && normalize(entry.name).equals(key)) {
-                entry.consumedAt = now;
+        if (item.stockId != null && !item.stockId.isEmpty()) {
+            StockEntry existing = findStockById(item.stockId);
+            if (existing != null) {
+                existing.name = item.name;
+                existing.quantity = amount;
+                existing.unit = unit == null || unit.isEmpty() ? "un" : unit;
+                existing.price = item.price;
+                existing.updatedAt = now;
+                saveStock();
+                return;
             }
         }
+        StockEntry linked = findStockBySourceItem(item.id);
+        if (linked != null) {
+            linked.name = item.name;
+            linked.quantity = amount;
+            linked.unit = unit == null || unit.isEmpty() ? "un" : unit;
+            linked.price = item.price;
+            linked.updatedAt = now;
+            item.stockId = linked.id;
+            saveStock();
+            return;
+        }
         StockEntry entry = new StockEntry(item.name, amount, unit, item.price, now);
+        entry.sourceItemId = item.id;
         stock.add(0, entry);
+        item.stockId = entry.id;
         saveStock();
+    }
+
+    private void removeStockForItem(ShoppingItem item) {
+        StockEntry existing = findStockById(item.stockId);
+        if (existing == null) existing = findStockBySourceItem(item.id);
+        if (existing == null) existing = findRecentStockByItem(item);
+        if (existing != null) {
+            stock.remove(existing);
+            saveStock();
+        }
+        item.stockId = "";
+    }
+
+    private StockEntry findStockById(String id) {
+        if (id == null || id.isEmpty()) return null;
+        for (StockEntry entry : stock) {
+            if (id.equals(entry.id)) return entry;
+        }
+        return null;
+    }
+
+    private StockEntry findStockBySourceItem(String itemId) {
+        if (itemId == null || itemId.isEmpty()) return null;
+        for (StockEntry entry : stock) {
+            if (itemId.equals(entry.sourceItemId)) return entry;
+        }
+        return null;
+    }
+
+    private StockEntry findRecentStockByItem(ShoppingItem item) {
+        String key = normalize(item.name);
+        for (StockEntry entry : stock) {
+            if (normalize(entry.name).equals(key) && Math.abs(entry.price - item.price) < 0.001) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private void promptEditItem(ShoppingItem item) {
@@ -774,6 +834,9 @@ public class MainActivity extends Activity {
                     item.unit = unit.getText().toString().trim();
                     if (item.unit.isEmpty()) item.unit = "1";
                     item.updatedAt = System.currentTimeMillis();
+                    if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
+                        addToStock(item, quantityOf(item), "un");
+                    }
                     save();
                     showListScreen();
                 })
@@ -873,14 +936,25 @@ public class MainActivity extends Activity {
     }
 
     private void promptNewList() {
+        LinearLayout form = dialogForm();
         EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        form.addView(input, matchHeight(dp(54)));
+        CheckBox saveToStock = new CheckBox(this);
+        saveToStock.setText("Salvar itens marcados no estoque");
+        saveToStock.setTextColor(primaryText());
+        saveToStock.setTextSize(14);
+        saveToStock.setChecked(true);
+        tintCheckBox(saveToStock);
+        form.addView(saveToStock, matchWrapWithTop(dp(8)));
         new AlertDialog.Builder(this)
                 .setTitle("Nova lista")
-                .setView(input)
+                .setView(form)
                 .setPositiveButton("Criar", (dialog, which) -> {
                     String name = input.getText().toString().trim();
                     if (name.isEmpty()) name = "Nova lista";
-                    lists.add(0, new ShoppingList(name));
+                    ShoppingList list = new ShoppingList(name);
+                    list.saveCheckedToStock = saveToStock.isChecked();
+                    lists.add(0, list);
                     save();
                     showHomeScreen();
                 })
@@ -1008,6 +1082,39 @@ public class MainActivity extends Activity {
                 .setMessage(entry.name)
                 .setPositiveButton("Remover", (dialog, which) -> {
                     stock.remove(entry);
+                    saveStock();
+                    showStockWindow(false);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void showStockOptions(StockEntry entry) {
+        String[] options = new String[]{"Editar quantidade", "Remover"};
+        new AlertDialog.Builder(this)
+                .setTitle(entry.name)
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        promptEditStockQuantity(entry);
+                    } else {
+                        confirmDeleteStock(entry);
+                    }
+                })
+                .show();
+    }
+
+    private void promptEditStockQuantity(StockEntry entry) {
+        EditText qty = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        qty.setText(formatQty(entry.quantity));
+        qty.setSelection(qty.getText().length());
+        new AlertDialog.Builder(this)
+                .setTitle("Editar quantidade")
+                .setMessage(entry.name)
+                .setView(qty)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    double amount = parsePrice(qty.getText().toString());
+                    entry.quantity = amount <= 0 ? 1 : amount;
+                    entry.updatedAt = System.currentTimeMillis();
                     saveStock();
                     showStockWindow(false);
                 })
@@ -1232,6 +1339,37 @@ public class MainActivity extends Activity {
     private long stockDays(StockEntry entry) {
         long end = entry.consumedAt > 0 ? entry.consumedAt : System.currentTimeMillis();
         return Math.max(0, (end - entry.addedAt) / 86400000L);
+    }
+
+    private String formatStockAge(StockEntry entry) {
+        long now = System.currentTimeMillis();
+        long diff = Math.max(0, now - entry.addedAt);
+        if (diff < 86400000L) {
+            return formatShortDate(entry.addedAt) + " - " + formatTime(entry.addedAt);
+        }
+        long days = diff / 86400000L;
+        return formatShortDate(entry.addedAt) + " - Há " + days + (days == 1 ? " dia" : " dias");
+    }
+
+    private String formatShortDate(long when) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        return String.format(Locale.ROOT, "%02d/%02d/%04d",
+                date.get(Calendar.DAY_OF_MONTH),
+                date.get(Calendar.MONTH) + 1,
+                date.get(Calendar.YEAR));
+    }
+
+    private String formatTime(long when) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        return String.format(Locale.ROOT, "%02d:%02d",
+                date.get(Calendar.HOUR_OF_DAY),
+                date.get(Calendar.MINUTE));
+    }
+
+    private String formatDateTime(long when) {
+        return formatShortDate(when) + " às " + formatTime(when);
     }
 
     private String formatDateLabel(long when) {
@@ -1460,6 +1598,8 @@ public class MainActivity extends Activity {
         String id = UUID.randomUUID().toString();
         String name;
         int color;
+        long createdAt = System.currentTimeMillis();
+        boolean saveCheckedToStock = true;
         final List<ShoppingItem> items = new ArrayList<>();
 
         ShoppingList(String name) {
@@ -1471,6 +1611,8 @@ public class MainActivity extends Activity {
             json.put("id", id);
             json.put("name", name);
             json.put("color", color);
+            json.put("createdAt", createdAt);
+            json.put("saveCheckedToStock", saveCheckedToStock);
             JSONArray array = new JSONArray();
             for (ShoppingItem item : items) array.put(item.toJson());
             json.put("items", array);
@@ -1481,6 +1623,8 @@ public class MainActivity extends Activity {
             ShoppingList list = new ShoppingList(json.optString("name", "Lista"));
             list.id = json.optString("id", UUID.randomUUID().toString());
             list.color = json.optInt("color", 0);
+            list.createdAt = json.optLong("createdAt", System.currentTimeMillis());
+            list.saveCheckedToStock = json.optBoolean("saveCheckedToStock", true);
             JSONArray array = json.optJSONArray("items");
             if (array != null) {
                 for (int i = 0; i < array.length(); i++) {
@@ -1496,11 +1640,13 @@ public class MainActivity extends Activity {
     }
 
     private static class ShoppingItem {
+        String id = UUID.randomUUID().toString();
         String name;
         boolean checked;
         double price;
         String unit;
         long updatedAt;
+        String stockId = "";
 
         ShoppingItem(String name, double price, String unit) {
             this.name = name;
@@ -1511,11 +1657,13 @@ public class MainActivity extends Activity {
 
         JSONObject toJson() throws JSONException {
             JSONObject json = new JSONObject();
+            json.put("id", id);
             json.put("name", name);
             json.put("checked", checked);
             json.put("price", price);
             json.put("unit", unit);
             json.put("updatedAt", updatedAt);
+            json.put("stockId", stockId);
             return json;
         }
 
@@ -1525,8 +1673,10 @@ public class MainActivity extends Activity {
                     json.optDouble("price", 0),
                     json.optString("unit", "1")
             );
+            item.id = json.optString("id", UUID.randomUUID().toString());
             item.checked = json.optBoolean("checked", false);
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
+            item.stockId = json.optString("stockId", "");
             return item;
         }
     }
@@ -1538,7 +1688,9 @@ public class MainActivity extends Activity {
         String unit;
         double price;
         long addedAt;
+        long updatedAt;
         long consumedAt;
+        String sourceItemId = "";
 
         StockEntry(String name, double quantity, String unit, double price, long addedAt) {
             this.name = name;
@@ -1546,6 +1698,7 @@ public class MainActivity extends Activity {
             this.unit = unit == null || unit.isEmpty() ? "un" : unit;
             this.price = price;
             this.addedAt = addedAt;
+            this.updatedAt = addedAt;
         }
 
         JSONObject toJson() throws JSONException {
@@ -1556,7 +1709,9 @@ public class MainActivity extends Activity {
             json.put("unit", unit);
             json.put("price", price);
             json.put("addedAt", addedAt);
+            json.put("updatedAt", updatedAt);
             json.put("consumedAt", consumedAt);
+            json.put("sourceItemId", sourceItemId);
             return json;
         }
 
@@ -1569,7 +1724,9 @@ public class MainActivity extends Activity {
                     json.optLong("addedAt", System.currentTimeMillis())
             );
             entry.id = json.optString("id", UUID.randomUUID().toString());
+            entry.updatedAt = json.optLong("updatedAt", entry.addedAt);
             entry.consumedAt = json.optLong("consumedAt", 0);
+            entry.sourceItemId = json.optString("sourceItemId", "");
             return entry;
         }
     }

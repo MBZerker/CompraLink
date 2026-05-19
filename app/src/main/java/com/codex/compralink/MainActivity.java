@@ -563,6 +563,7 @@ public class MainActivity extends Activity {
         root.addView(infoCard("Resumo", "Total do período selecionado: " + money.format(sum)), matchWrapWithTop(dp(10)));
         addMetricGrid(currentTotal, previousTotal, difference, average, forecast, biggestEntry, products);
         addGoalCard(currentTotal, forecast);
+        addSpendingAlerts(currentTotal, forecast, products);
         addMonthlyBars(totals, max);
         addCategoryBreakdown(categories);
         addProductRanking(products);
@@ -682,6 +683,46 @@ public class MainActivity extends Activity {
         barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(14)));
         card.addView(barBg, matchWrapWithTop(dp(8)));
         root.addView(card, matchWrapWithTop(dp(10)));
+    }
+
+    private void addSpendingAlerts(double currentTotal, double forecast, Map<String, SpendingProduct> products) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+        card.addView(label("Alertas", 18, true, primaryText()));
+        int count = 0;
+        if (monthlyGoal > 0 && currentTotal > monthlyGoal) {
+            addAlertLine(card, "Meta mensal ultrapassada em " + money.format(currentTotal - monthlyGoal), Color.rgb(225, 29, 72));
+            count++;
+        } else if (monthlyGoal > 0 && forecast > monthlyGoal) {
+            addAlertLine(card, "Previsão acima da meta em " + money.format(forecast - monthlyGoal), Color.rgb(234, 88, 12));
+            count++;
+        }
+        List<SpendingProduct> expensive = new ArrayList<>();
+        for (SpendingProduct product : products.values()) {
+            if (product.times >= 2 && product.latestPrice > product.priceSum / product.times) expensive.add(product);
+        }
+        Collections.sort(expensive, (a, b) -> Double.compare(
+                (b.latestPrice - (b.priceSum / b.times)),
+                (a.latestPrice - (a.priceSum / a.times))));
+        int limit = Math.min(3, expensive.size());
+        for (int i = 0; i < limit; i++) {
+            SpendingProduct product = expensive.get(i);
+            double average = product.priceSum / product.times;
+            addAlertLine(card, product.name + " acima da média em " + money.format(product.latestPrice - average), Color.rgb(234, 88, 12));
+            count++;
+        }
+        if (count == 0) {
+            addAlertLine(card, "Nenhum alerta importante no período selecionado.", Color.rgb(22, 163, 74));
+        }
+        root.addView(card, matchWrapWithTop(dp(10)));
+    }
+
+    private void addAlertLine(LinearLayout card, String text, int color) {
+        TextView line = label(text, 14, true, color);
+        line.setPadding(0, dp(6), 0, 0);
+        card.addView(line, matchWrap());
     }
 
     private void promptMonthlyGoal() {
@@ -1773,7 +1814,8 @@ public class MainActivity extends Activity {
     private LinearLayout dialogForm() {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
-        form.setPadding(dp(8), dp(8), dp(8), 0);
+        form.setPadding(dp(12), dp(12), dp(12), dp(12));
+        form.setBackground(round(cardBg(), dp(14), stroke(), 1));
         return form;
     }
 

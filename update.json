@@ -1,7 +1,7 @@
 {
-  "versionCode": 27,
-  "versionName": "3.6",
+  "versionCode": 28,
+  "versionName": "3.7",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Organiza os controles de gastos com periodo em menu suspenso, icones para meta e relatorio, e resumo do historico."
+  "notes": "Adiciona seletor visual de cores para listas e melhora o acabamento de botoes e cards."
 }

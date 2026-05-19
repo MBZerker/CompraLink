@@ -6,6 +6,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.content.res.ColorStateList;
 import android.graphics.Paint;
@@ -27,6 +29,7 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.util.Base64;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -42,6 +45,7 @@ import android.widget.ImageView;
 import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -290,6 +294,7 @@ public class MainActivity extends Activity {
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(18), dp(18), dp(18), dp(18));
         header.setBackground(round(cardBg(), dp(20), stroke(), 1));
+        elevate(header, 3);
         root.addView(header, matchWrap());
 
         TextView appName = new TextView(this);
@@ -429,6 +434,7 @@ public class MainActivity extends Activity {
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         int listColor = list.displayColor();
         card.setBackground(round(tintSurface(listColor), dp(16), listColor == 0 ? stroke() : listColor, 1));
+        elevate(card, 3);
         card.setOnClickListener(v -> {
             selectedIndex = index;
             showListScreen();
@@ -1072,6 +1078,7 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
         card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+        elevate(card, 2);
         card.addView(label(title, 12, true, mutedText()));
         TextView valueView = label(value, 16, true, valueColor);
         valueView.setPadding(0, dp(5), 0, 0);
@@ -1368,6 +1375,7 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+        elevate(card, 2);
         card.addView(label(title, 18, true, primaryText()));
         TextView b = label(body, 14, false, mutedText());
         b.setPadding(0, dp(5), 0, 0);
@@ -1874,61 +1882,71 @@ public class MainActivity extends Activity {
 
     private void promptListColor(int index) {
         if (lists.get(index).locked) return;
-        final int[] colors = new int[]{
-                0,
-                Color.rgb(15, 118, 110),
-                Color.rgb(13, 148, 136),
-                Color.rgb(6, 182, 212),
-                Color.rgb(37, 99, 235),
-                Color.rgb(59, 130, 246),
-                Color.rgb(124, 58, 237),
-                Color.rgb(147, 51, 234),
-                Color.rgb(219, 39, 119),
-                Color.rgb(225, 29, 72),
-                Color.rgb(234, 88, 12),
-                Color.rgb(245, 158, 11),
-                Color.rgb(202, 138, 4),
-                Color.rgb(22, 163, 74),
-                Color.rgb(132, 204, 22),
-                Color.rgb(71, 85, 105),
-                Color.rgb(120, 113, 108)
+        LinearLayout form = dialogForm();
+        final int[] selected = new int[]{lists.get(index).displayColor() == 0 ? accentColor : lists.get(index).displayColor()};
+        ColorSpectrumView spectrum = new ColorSpectrumView(this);
+        spectrum.setSelectedColor(selected[0]);
+        form.addView(spectrum, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(220)));
+
+        View preview = new View(this);
+        preview.setBackground(round(selected[0], dp(14), stroke(), 1));
+        LinearLayout.LayoutParams previewParams = matchWrapWithTop(dp(10));
+        previewParams.height = dp(46);
+        form.addView(preview, previewParams);
+
+        TextView values = label(colorLabel(selected[0]), 13, true, primaryText());
+        values.setGravity(Gravity.CENTER);
+        form.addView(values, matchWrapWithTop(dp(8)));
+
+        TextView brightLabel = label("Brilho", 13, true, mutedText());
+        form.addView(brightLabel, matchWrapWithTop(dp(10)));
+        SeekBar brightness = new SeekBar(this);
+        brightness.setMax(100);
+        brightness.setProgress(100);
+        form.addView(brightness, matchWrapWithTop(dp(4)));
+
+        Button reset = button("Usar cor padrao", softButtonBg(), primaryText());
+        form.addView(reset, matchHeight(dp(44)));
+
+        Runnable refresh = () -> {
+            preview.setBackground(round(selected[0], dp(14), stroke(), 1));
+            values.setText(colorLabel(selected[0]));
         };
-        LinearLayout grid = dialogForm();
-        final AlertDialog[] dialogRef = new AlertDialog[1];
-        Button lighter = button("Clarear cor atual", Color.rgb(226, 232, 240), Color.rgb(15, 23, 42));
-        lighter.setOnClickListener(v -> {
-            lists.get(index).color = lighten(lists.get(index).displayColor() == 0 ? accentColor : lists.get(index).displayColor());
-            save();
-            if (dialogRef[0] != null) dialogRef[0].dismiss();
-            showHomeScreen();
+        spectrum.setOnColorChanged(color -> {
+            selected[0] = applyBrightness(color, brightness.getProgress());
+            refresh.run();
         });
-        grid.addView(lighter, matchHeight(dp(42)));
+        brightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                selected[0] = applyBrightness(spectrum.baseColor(), progress);
+                refresh.run();
+            }
 
-        Button darker = button("Escurecer cor atual", Color.rgb(51, 65, 85), Color.WHITE);
-        darker.setOnClickListener(v -> {
-            lists.get(index).color = darken(lists.get(index).displayColor() == 0 ? accentColor : lists.get(index).displayColor());
-            save();
-            if (dialogRef[0] != null) dialogRef[0].dismiss();
-            showHomeScreen();
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
         });
-        grid.addView(darker, matchWrapWithTop(dp(8)));
+        reset.setOnClickListener(v -> {
+            selected[0] = 0;
+            preview.setBackground(round(softButtonBg(), dp(14), stroke(), 1));
+            values.setText("Padrao do app");
+        });
 
-        for (int color : colors) {
-            Button swatch = button(color == 0 ? "Padrao" : " ", color == 0 ? softButtonBg() : color, color == 0 ? primaryText() : Color.WHITE);
-            swatch.setOnClickListener(v -> {
-                lists.get(index).color = color;
-                save();
-                if (dialogRef[0] != null) dialogRef[0].dismiss();
-                showHomeScreen();
-            });
-            grid.addView(swatch, matchHeight(dp(42)));
-        }
-        dialogRef[0] = new AlertDialog.Builder(this)
+        new AlertDialog.Builder(this)
                 .setTitle("Cor da lista")
-                .setView(grid)
-                .setNegativeButton("Fechar", null)
-                .create();
-        dialogRef[0].show();
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    lists.get(index).color = selected[0];
+                    save();
+                    showHomeTab();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private void confirmDeleteList(int index) {
@@ -1943,6 +1961,23 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    private int applyBrightness(int color, int brightness) {
+        float[] hsv = new float[3];
+        Color.colorToHSV(color, hsv);
+        hsv[2] = Math.max(0.08f, brightness / 100f);
+        return Color.HSVToColor(hsv);
+    }
+
+    private String colorLabel(int color) {
+        if (color == 0) return "Padrao do app";
+        float[] hsv = new float[3];
+        Color.colorToHSV(color, hsv);
+        return "Hue " + Math.round(hsv[0])
+                + "  Sat " + Math.round(hsv[1] * 100)
+                + "  Lum " + Math.round(hsv[2] * 100)
+                + "  RGB " + Color.red(color) + ", " + Color.green(color) + ", " + Color.blue(color);
     }
 
     private void confirmDeleteStock(StockEntry entry) {
@@ -2567,7 +2602,8 @@ public class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setPadding(dp(8), 0, dp(8), 0);
-        button.setBackground(round(bg, dp(14), Color.TRANSPARENT, 0));
+        button.setBackground(glowRound(bg, dp(14)));
+        elevate(button, 5);
         return button;
     }
 
@@ -2583,9 +2619,10 @@ public class MainActivity extends Activity {
         ImageButton button = new ImageButton(this);
         button.setImageResource(drawable);
         button.setColorFilter(fg);
-        button.setBackground(round(bg, dp(14), Color.TRANSPARENT, 0));
+        button.setBackground(glowRound(bg, dp(14)));
         button.setPadding(dp(11), dp(11), dp(11), dp(11));
         button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        elevate(button, 6);
         return button;
     }
 
@@ -2601,6 +2638,23 @@ public class MainActivity extends Activity {
         drawable.setCornerRadius(radius);
         if (strokeWidth > 0) drawable.setStroke(strokeWidth, strokeColor);
         return drawable;
+    }
+
+    private GradientDrawable glowRound(int color, int radius) {
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{lighten(color), color, darken(color)}
+        );
+        drawable.setCornerRadius(radius);
+        drawable.setStroke(1, blend(Color.WHITE, color, isDarkTheme() ? 0.22f : 0.38f));
+        return drawable;
+    }
+
+    private void elevate(View view, int amount) {
+        if (Build.VERSION.SDK_INT >= 21) {
+            view.setElevation(dp(amount));
+            view.setTranslationZ(dp(1));
+        }
     }
 
     private LinearLayout.LayoutParams matchWrap() {
@@ -2714,6 +2768,89 @@ public class MainActivity extends Activity {
         int displayColor() {
             return color;
         }
+    }
+
+    private static class ColorSpectrumView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private Bitmap bitmap;
+        private int baseColor = Color.rgb(15, 118, 110);
+        private OnColorChanged listener;
+
+        ColorSpectrumView(Context context) {
+            super(context);
+        }
+
+        void setSelectedColor(int color) {
+            baseColor = color == 0 ? Color.rgb(15, 118, 110) : color;
+            invalidate();
+        }
+
+        int baseColor() {
+            return baseColor;
+        }
+
+        void setOnColorChanged(OnColorChanged listener) {
+            this.listener = listener;
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+            super.onSizeChanged(w, h, oldw, oldh);
+            bitmap = null;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (getWidth() <= 0 || getHeight() <= 0) return;
+            if (bitmap == null) bitmap = buildSpectrum(getWidth(), getHeight());
+            canvas.drawBitmap(bitmap, 0, 0, paint);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(4);
+            paint.setColor(Color.WHITE);
+            float[] hsv = new float[3];
+            Color.colorToHSV(baseColor, hsv);
+            float x = hsv[0] / 360f * getWidth();
+            float y = (1f - hsv[1]) * getHeight();
+            canvas.drawCircle(x, y, 10, paint);
+            paint.setColor(Color.BLACK);
+            paint.setStrokeWidth(2);
+            canvas.drawCircle(x, y, 13, paint);
+            paint.setStyle(Paint.Style.FILL);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (event.getAction() == MotionEvent.ACTION_DOWN || event.getAction() == MotionEvent.ACTION_MOVE) {
+                float x = Math.max(0, Math.min(getWidth(), event.getX()));
+                float y = Math.max(0, Math.min(getHeight(), event.getY()));
+                float hue = getWidth() == 0 ? 0 : (x / getWidth()) * 360f;
+                float saturation = getHeight() == 0 ? 1 : 1f - (y / getHeight());
+                baseColor = Color.HSVToColor(new float[]{hue, saturation, 1f});
+                if (listener != null) listener.onChanged(baseColor);
+                invalidate();
+                return true;
+            }
+            return true;
+        }
+
+        private Bitmap buildSpectrum(int width, int height) {
+            Bitmap bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            int[] pixels = new int[width * height];
+            for (int y = 0; y < height; y++) {
+                float saturation = 1f - (float) y / Math.max(1, height - 1);
+                for (int x = 0; x < width; x++) {
+                    float hue = (float) x / Math.max(1, width - 1) * 360f;
+                    pixels[y * width + x] = Color.HSVToColor(new float[]{hue, saturation, 1f});
+                }
+            }
+            bmp.setPixels(pixels, 0, width, 0, 0, width, height);
+            return bmp;
+        }
+    }
+
+    private interface OnColorChanged {
+        void onChanged(int color);
     }
 
     private static class ShoppingItem {

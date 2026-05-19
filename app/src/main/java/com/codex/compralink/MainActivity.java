@@ -13,6 +13,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.content.res.Configuration;
@@ -25,6 +26,8 @@ import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CheckBox;
@@ -45,10 +48,14 @@ import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
@@ -56,7 +63,9 @@ import java.util.zip.InflaterInputStream;
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
     private static final String KEY_LISTS = "lists";
+    private static final String KEY_STOCK = "stock";
     private static final String KEY_THEME = "theme_mode";
+    private static final String KEY_ACCENT = "accent_color";
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
@@ -67,25 +76,31 @@ public class MainActivity extends Activity {
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
 
     private final List<ShoppingList> lists = new ArrayList<>();
+    private final List<StockEntry> stock = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
     private EditText itemInput;
     private EditText priceInput;
+    private EditText unitInput;
     private int selectedIndex = -1;
+    private int homeTab = 0;
     private boolean shellReady;
     private boolean pendingIntentHandled;
     private int themeMode = THEME_SYSTEM;
+    private int accentColor = Color.rgb(15, 118, 110);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         themeMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_THEME, THEME_SYSTEM);
+        accentColor = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_ACCENT, Color.rgb(15, 118, 110));
         load();
+        loadStock();
         if (lists.isEmpty()) {
             ShoppingList first = new ShoppingList("Mercado da semana");
-            first.items.add(new ShoppingItem("Arroz", 24.90));
-            first.items.add(new ShoppingItem("Leite", 5.49));
-            first.items.add(new ShoppingItem("Frutas", 0));
+            first.items.add(new ShoppingItem("Arroz", 24.90, "kg"));
+            first.items.add(new ShoppingItem("Leite", 5.49, "un"));
+            first.items.add(new ShoppingItem("Frutas", 0, "kg"));
             lists.add(first);
             save();
         }
@@ -124,6 +139,7 @@ public class MainActivity extends Activity {
     }
 
     private void showSplash() {
+        applySystemBars();
         LinearLayout splash = new LinearLayout(this);
         splash.setOrientation(LinearLayout.VERTICAL);
         splash.setGravity(Gravity.CENTER);
@@ -161,9 +177,16 @@ public class MainActivity extends Activity {
         selectedIndex = -1;
         buildRoot();
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
+        addHomeTabs();
 
-        for (int i = 0; i < lists.size(); i++) {
-            root.addView(listCard(i), matchWrapWithTop(dp(10)));
+        if (homeTab == 0) {
+            for (int i = 0; i < lists.size(); i++) {
+                root.addView(listCard(i), matchWrapWithTop(dp(10)));
+            }
+        } else if (homeTab == 1) {
+            addStockScreen();
+        } else {
+            addSpendingScreen();
         }
         setContentView(rootScroll());
     }
@@ -180,6 +203,7 @@ public class MainActivity extends Activity {
     }
 
     private void buildRoot() {
+        applySystemBars();
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(18), dp(18), dp(18), dp(22));
@@ -237,7 +261,7 @@ public class MainActivity extends Activity {
             });
             actions.addView(back, weighted());
 
-            Button share = iconButton("↗", Color.rgb(20, 184, 166), Color.WHITE);
+            Button share = iconButton("\u21AA", Color.rgb(20, 184, 166), Color.WHITE);
             share.setOnClickListener(v -> shareSelectedList());
             LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             shareParams.setMargins(dp(8), 0, 0, 0);
@@ -248,6 +272,12 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             themeParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(theme, themeParams);
+
+            Button edit = iconButton("\u270E", softButtonBg(), primaryText());
+            edit.setOnClickListener(v -> promptEditList());
+            LinearLayout.LayoutParams editParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            editParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(edit, editParams);
         } else {
             Button newList = button("+ Lista", Color.rgb(15, 118, 110), Color.WHITE);
             newList.setOnClickListener(v -> promptNewList());
@@ -264,7 +294,35 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             themeParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(theme, themeParams);
+
+            Button color = iconButton("\u25CF", accent(), Color.WHITE);
+            color.setOnClickListener(v -> promptAccentColor());
+            LinearLayout.LayoutParams colorParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            colorParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(color, colorParams);
         }
+    }
+
+    private void addHomeTabs() {
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setPadding(0, dp(12), 0, 0);
+        root.addView(tabs, matchWrap());
+        addTabButton(tabs, "Listas", 0);
+        addTabButton(tabs, "Estoque", 1);
+        addTabButton(tabs, "Gastos", 2);
+    }
+
+    private void addTabButton(LinearLayout tabs, String label, int tab) {
+        Button btn = button(label, homeTab == tab ? accent() : softButtonBg(), homeTab == tab ? Color.WHITE : primaryText());
+        btn.setTextSize(13);
+        btn.setOnClickListener(v -> {
+            homeTab = tab;
+            showHomeScreen();
+        });
+        LinearLayout.LayoutParams params = weighted();
+        if (tabs.getChildCount() > 0) params.setMargins(dp(6), 0, 0, 0);
+        tabs.addView(btn, params);
     }
 
     private View listCard(int index) {
@@ -308,6 +366,86 @@ public class MainActivity extends Activity {
         return list.items.size() + " itens, " + done + " concluidos, total " + money.format(total);
     }
 
+    private void addStockScreen() {
+        if (stock.isEmpty()) {
+            root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
+            return;
+        }
+        for (StockEntry entry : stock) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(16), dp(14), dp(16), dp(14));
+            card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+            TextView name = label(entry.name, 18, true, primaryText());
+            card.addView(name);
+            String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
+            TextView meta = label(formatQty(entry.quantity) + " " + entry.unit + " · ultimo preco " + price, 14, false, mutedText());
+            meta.setPadding(0, dp(4), 0, 0);
+            card.addView(meta);
+            long days = stockDays(entry);
+            String status = entry.consumedAt > 0 ? "durou " + days + " dias" : "em estoque ha " + days + " dias";
+            TextView duration = label(status, 14, true, entry.consumedAt > 0 ? Color.rgb(22, 163, 74) : accent());
+            duration.setPadding(0, dp(5), 0, 0);
+            card.addView(duration);
+            root.addView(card, matchWrapWithTop(dp(10)));
+        }
+    }
+
+    private void addSpendingScreen() {
+        Map<String, Double> totals = new LinkedHashMap<>();
+        long now = System.currentTimeMillis();
+        Calendar cal = Calendar.getInstance();
+        for (int i = 5; i >= 0; i--) {
+            cal.setTimeInMillis(now);
+            cal.add(Calendar.MONTH, -i);
+            totals.put(monthKey(cal), 0.0);
+        }
+        for (StockEntry entry : stock) {
+            if (entry.price <= 0) continue;
+            cal.setTimeInMillis(entry.addedAt);
+            String key = monthKey(cal);
+            if (totals.containsKey(key)) {
+                totals.put(key, totals.get(key) + entry.price * Math.max(1, entry.quantity));
+            }
+        }
+        double max = 1;
+        double sum = 0;
+        for (double value : totals.values()) {
+            max = Math.max(max, value);
+            sum += value;
+        }
+        root.addView(infoCard("Gastos recentes", "Total dos ultimos meses: " + money.format(sum)), matchWrapWithTop(dp(10)));
+        for (String key : totals.keySet()) {
+            double value = totals.get(key);
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+            card.addView(label(key + " · " + money.format(value), 15, true, primaryText()));
+            LinearLayout barBg = new LinearLayout(this);
+            barBg.setPadding(0, 0, 0, 0);
+            barBg.setBackground(round(inputBg(), dp(8), Color.TRANSPARENT, 0));
+            LinearLayout bar = new LinearLayout(this);
+            bar.setBackground(round(accent(), dp(8), Color.TRANSPARENT, 0));
+            int width = Math.max(dp(8), (int) (getResources().getDisplayMetrics().widthPixels * 0.72 * (value / max)));
+            barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(14)));
+            card.addView(barBg, matchWrapWithTop(dp(8)));
+            root.addView(card, matchWrapWithTop(dp(8)));
+        }
+    }
+
+    private View infoCard(String title, String body) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+        card.addView(label(title, 18, true, primaryText()));
+        TextView b = label(body, 14, false, mutedText());
+        b.setPadding(0, dp(5), 0, 0);
+        card.addView(b);
+        return card;
+    }
+
     private void addInputCard() {
         LinearLayout addCard = new LinearLayout(this);
         boolean compact = isCompactWidth();
@@ -341,6 +479,17 @@ public class MainActivity extends Activity {
         priceInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
         priceInput.setPadding(dp(12), 0, dp(12), 0);
 
+        unitInput = new EditText(this);
+        unitInput.setSingleLine(true);
+        unitInput.setHint("Un");
+        unitInput.setGravity(Gravity.CENTER_VERTICAL);
+        unitInput.setTextColor(primaryText());
+        unitInput.setHintTextColor(mutedText());
+        unitInput.setTextSize(15);
+        unitInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        unitInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
+        unitInput.setPadding(dp(12), 0, dp(12), 0);
+
         Button add = button("+", Color.rgb(250, 204, 21), Color.rgb(24, 24, 27));
         add.setTextSize(22);
         add.setOnClickListener(v -> addItem());
@@ -352,6 +501,9 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams bottomParams = matchWrapWithTop(dp(8));
             addCard.addView(bottom, bottomParams);
             bottom.addView(priceInput, weightedHeight(dp(54)));
+            LinearLayout.LayoutParams unitParams = new LinearLayout.LayoutParams(dp(70), dp(54));
+            unitParams.setMargins(dp(8), 0, 0, 0);
+            bottom.addView(unitInput, unitParams);
             LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(dp(56), dp(54));
             addParams.setMargins(dp(8), 0, 0, 0);
             bottom.addView(add, addParams);
@@ -359,6 +511,9 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams priceParams = new LinearLayout.LayoutParams(dp(110), dp(54));
             priceParams.setMargins(dp(8), 0, dp(8), 0);
             addCard.addView(priceInput, priceParams);
+            LinearLayout.LayoutParams unitParams = new LinearLayout.LayoutParams(dp(74), dp(54));
+            unitParams.setMargins(0, 0, dp(8), 0);
+            addCard.addView(unitInput, unitParams);
             addCard.addView(add, new LinearLayout.LayoutParams(dp(56), dp(54)));
         }
     }
@@ -373,7 +528,8 @@ public class MainActivity extends Activity {
     }
 
     private View itemRow(ShoppingItem item, int index) {
-        String priceText = item.price > 0 ? money.format(item.price) : "R$ --";
+        String unitSuffix = item.unit == null || item.unit.isEmpty() ? "" : "/" + item.unit;
+        String priceText = item.price > 0 ? money.format(item.price) + unitSuffix : "R$ --" + unitSuffix;
         boolean priceBelow = isCompactWidth() || item.price >= 10 || priceText.length() > 7;
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -385,9 +541,21 @@ public class MainActivity extends Activity {
         box.setChecked(item.checked);
         tintCheckBox(box);
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            item.checked = isChecked;
-            save();
-            showListScreen();
+            if (isChecked) {
+                promptStockQuantity(item, () -> {
+                    item.checked = true;
+                    save();
+                    showListScreen();
+                }, () -> {
+                    box.setOnCheckedChangeListener(null);
+                    box.setChecked(false);
+                    tintCheckBox(box);
+                });
+            } else {
+                item.checked = false;
+                save();
+                showListScreen();
+            }
         });
         row.addView(box, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
@@ -402,6 +570,10 @@ public class MainActivity extends Activity {
                 ? name.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                 : name.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
         name.setOnClickListener(v -> showPriceComparison(item));
+        name.setOnLongClickListener(v -> {
+            promptEditItem(item);
+            return true;
+        });
 
         LinearLayout itemText = new LinearLayout(this);
         itemText.setOrientation(LinearLayout.VERTICAL);
@@ -416,6 +588,10 @@ public class MainActivity extends Activity {
         price.setSingleLine(false);
         price.setTextColor(item.checked ? disabledText() : accent());
         price.setOnClickListener(v -> promptPrice(item));
+        price.setOnLongClickListener(v -> {
+            promptEditItem(item);
+            return true;
+        });
         if (priceBelow) {
             itemText.addView(price, matchWrapWithTop(dp(3)));
             row.addView(itemText, weighted());
@@ -440,10 +616,76 @@ public class MainActivity extends Activity {
     private void addItem() {
         String text = itemInput.getText().toString().trim();
         if (text.isEmpty()) return;
-        lists.get(selectedIndex).items.add(new ShoppingItem(text, parsePrice(priceInput.getText().toString())));
+        String unit = unitInput == null ? "" : unitInput.getText().toString().trim();
+        if (unit.isEmpty()) unit = "un";
+        lists.get(selectedIndex).items.add(new ShoppingItem(text, parsePrice(priceInput.getText().toString()), unit));
         save();
         hideKeyboard();
         showListScreen();
+    }
+
+    private void promptStockQuantity(ShoppingItem item, Runnable onSaved, Runnable onCancel) {
+        LinearLayout form = dialogForm();
+        EditText qty = dialogInput("Quantidade", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        qty.setText("1");
+        EditText unit = dialogInput("Unidade", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        unit.setText(item.unit == null || item.unit.isEmpty() ? "un" : item.unit);
+        form.addView(qty, matchHeight(dp(54)));
+        form.addView(unit, matchWrapWithTop(dp(8)));
+        new AlertDialog.Builder(this)
+                .setTitle("Adicionar ao estoque")
+                .setMessage(item.name)
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    double amount = parsePrice(qty.getText().toString());
+                    if (amount <= 0) amount = 1;
+                    String unitText = unit.getText().toString().trim();
+                    if (unitText.isEmpty()) unitText = item.unit == null || item.unit.isEmpty() ? "un" : item.unit;
+                    addToStock(item, amount, unitText);
+                    onSaved.run();
+                })
+                .setNegativeButton("Cancelar", (dialog, which) -> onCancel.run())
+                .show();
+    }
+
+    private void addToStock(ShoppingItem item, double amount, String unit) {
+        long now = System.currentTimeMillis();
+        String key = normalize(item.name);
+        for (StockEntry entry : stock) {
+            if (entry.consumedAt == 0 && normalize(entry.name).equals(key)) {
+                entry.consumedAt = now;
+            }
+        }
+        StockEntry entry = new StockEntry(item.name, amount, unit, item.price, now);
+        stock.add(0, entry);
+        saveStock();
+    }
+
+    private void promptEditItem(ShoppingItem item) {
+        LinearLayout form = dialogForm();
+        EditText name = dialogInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        name.setText(item.name);
+        EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if (item.price > 0) price.setText(String.format(Locale.US, "%.2f", item.price));
+        EditText unit = dialogInput("Unidade", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        unit.setText(item.unit == null ? "" : item.unit);
+        form.addView(name, matchHeight(dp(54)));
+        form.addView(price, matchWrapWithTop(dp(8)));
+        form.addView(unit, matchWrapWithTop(dp(8)));
+        new AlertDialog.Builder(this)
+                .setTitle("Editar item")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    String newName = name.getText().toString().trim();
+                    if (!newName.isEmpty()) item.name = newName;
+                    item.price = parsePrice(price.getText().toString());
+                    item.unit = unit.getText().toString().trim();
+                    if (item.unit.isEmpty()) item.unit = "un";
+                    save();
+                    showListScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private void promptPrice(ShoppingItem item) {
@@ -535,25 +777,63 @@ public class MainActivity extends Activity {
     }
 
     private void promptNewList() {
-        EditText input = new EditText(this);
-        input.setHint("Nome da lista");
-        input.setSingleLine(true);
-        input.setTextColor(primaryText());
-        input.setHintTextColor(mutedText());
-        input.setBackground(round(inputBg(), dp(12), stroke(), 1));
-        input.setPadding(dp(12), 0, dp(12), 0);
-        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         new AlertDialog.Builder(this)
                 .setTitle("Nova lista")
                 .setView(input)
                 .setPositiveButton("Criar", (dialog, which) -> {
                     String name = input.getText().toString().trim();
                     if (name.isEmpty()) name = "Nova lista";
-                    lists.add(new ShoppingList(name));
+                    lists.add(0, new ShoppingList(name));
                     save();
                     showHomeScreen();
                 })
                 .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptEditList() {
+        if (selectedIndex < 0) return;
+        ShoppingList list = lists.get(selectedIndex);
+        EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        input.setText(list.name);
+        input.setSelection(input.getText().length());
+        new AlertDialog.Builder(this)
+                .setTitle("Editar lista")
+                .setView(input)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    String name = input.getText().toString().trim();
+                    if (!name.isEmpty()) list.name = name;
+                    save();
+                    showListScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptAccentColor() {
+        final int[] colors = new int[]{
+                Color.rgb(15, 118, 110),
+                Color.rgb(37, 99, 235),
+                Color.rgb(124, 58, 237),
+                Color.rgb(225, 29, 72),
+                Color.rgb(234, 88, 12),
+                Color.rgb(22, 163, 74)
+        };
+        LinearLayout grid = dialogForm();
+        for (int color : colors) {
+            Button swatch = button(" ", color, Color.WHITE);
+            swatch.setOnClickListener(v -> {
+                accentColor = color;
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_ACCENT, accentColor).apply();
+                showHomeScreen();
+            });
+            grid.addView(swatch, matchHeight(dp(42)));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Cor do app")
+                .setView(grid)
+                .setNegativeButton("Fechar", null)
                 .show();
     }
 
@@ -688,6 +968,19 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void loadStock() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_STOCK, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            stock.clear();
+            for (int i = 0; i < array.length(); i++) {
+                stock.add(StockEntry.fromJson(array.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            stock.clear();
+        }
+    }
+
     private void save() {
         JSONArray array = new JSONArray();
         for (ShoppingList list : lists) {
@@ -697,6 +990,17 @@ public class MainActivity extends Activity {
             }
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LISTS, array.toString()).apply();
+    }
+
+    private void saveStock() {
+        JSONArray array = new JSONArray();
+        for (StockEntry entry : stock) {
+            try {
+                array.put(entry.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_STOCK, array.toString()).apply();
     }
 
     private double parsePrice(String raw) {
@@ -724,6 +1028,70 @@ public class MainActivity extends Activity {
     private void hideKeyboard() {
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null && itemInput != null) imm.hideSoftInputFromWindow(itemInput.getWindowToken(), 0);
+    }
+
+    private LinearLayout dialogForm() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(8), dp(8), dp(8), 0);
+        return form;
+    }
+
+    private EditText dialogInput(String hint, int inputType) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setSingleLine(true);
+        input.setTextColor(primaryText());
+        input.setHintTextColor(mutedText());
+        input.setBackground(round(inputBg(), dp(12), stroke(), 1));
+        input.setPadding(dp(12), 0, dp(12), 0);
+        input.setInputType(inputType);
+        return input;
+    }
+
+    private TextView label(String text, int size, boolean bold, int color) {
+        TextView view = new TextView(this);
+        view.setText(text);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
+        return view;
+    }
+
+    private String formatQty(double value) {
+        if (Math.abs(value - Math.round(value)) < 0.001) return String.valueOf((long) Math.round(value));
+        return String.format(Locale.US, "%.2f", value);
+    }
+
+    private long stockDays(StockEntry entry) {
+        long end = entry.consumedAt > 0 ? entry.consumedAt : System.currentTimeMillis();
+        return Math.max(0, (end - entry.addedAt) / 86400000L);
+    }
+
+    private String monthKey(Calendar cal) {
+        return String.format(Locale.ROOT, "%02d/%04d", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
+    }
+
+    private void applySystemBars() {
+        Window window = getWindow();
+        window.setStatusBarColor(screenBg());
+        window.setNavigationBarColor(screenBg());
+        if (Build.VERSION.SDK_INT >= 23) {
+            int flags = window.getDecorView().getSystemUiVisibility();
+            if (isDarkTheme()) {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            } else {
+                flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            }
+            if (Build.VERSION.SDK_INT >= 26) {
+                if (isDarkTheme()) {
+                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                } else {
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                }
+            }
+            window.getDecorView().setSystemUiVisibility(flags);
+        }
     }
 
     private void tintCheckBox(CheckBox box) {
@@ -795,7 +1163,14 @@ public class MainActivity extends Activity {
     }
 
     private int accent() {
-        return isDarkTheme() ? Color.rgb(45, 212, 191) : Color.rgb(15, 118, 110);
+        return isDarkTheme() ? lighten(accentColor) : accentColor;
+    }
+
+    private int lighten(int color) {
+        int r = Math.min(255, (int) (Color.red(color) * 1.25 + 24));
+        int g = Math.min(255, (int) (Color.green(color) * 1.25 + 24));
+        int b = Math.min(255, (int) (Color.blue(color) * 1.25 + 24));
+        return Color.rgb(r, g, b);
     }
 
     private Button button(String text, int bg, int fg) {
@@ -899,10 +1274,12 @@ public class MainActivity extends Activity {
         String name;
         boolean checked;
         double price;
+        String unit;
 
-        ShoppingItem(String name, double price) {
+        ShoppingItem(String name, double price, String unit) {
             this.name = name;
             this.price = price;
+            this.unit = unit == null || unit.isEmpty() ? "un" : unit;
         }
 
         JSONObject toJson() throws JSONException {
@@ -910,13 +1287,61 @@ public class MainActivity extends Activity {
             json.put("name", name);
             json.put("checked", checked);
             json.put("price", price);
+            json.put("unit", unit);
             return json;
         }
 
         static ShoppingItem fromJson(JSONObject json) {
-            ShoppingItem item = new ShoppingItem(json.optString("name", "Item"), json.optDouble("price", 0));
+            ShoppingItem item = new ShoppingItem(
+                    json.optString("name", "Item"),
+                    json.optDouble("price", 0),
+                    json.optString("unit", "un")
+            );
             item.checked = json.optBoolean("checked", false);
             return item;
+        }
+    }
+
+    private static class StockEntry {
+        String id = UUID.randomUUID().toString();
+        String name;
+        double quantity;
+        String unit;
+        double price;
+        long addedAt;
+        long consumedAt;
+
+        StockEntry(String name, double quantity, String unit, double price, long addedAt) {
+            this.name = name;
+            this.quantity = quantity;
+            this.unit = unit == null || unit.isEmpty() ? "un" : unit;
+            this.price = price;
+            this.addedAt = addedAt;
+        }
+
+        JSONObject toJson() throws JSONException {
+            JSONObject json = new JSONObject();
+            json.put("id", id);
+            json.put("name", name);
+            json.put("quantity", quantity);
+            json.put("unit", unit);
+            json.put("price", price);
+            json.put("addedAt", addedAt);
+            json.put("consumedAt", consumedAt);
+            return json;
+        }
+
+        static StockEntry fromJson(JSONObject json) {
+            StockEntry entry = new StockEntry(
+                    json.optString("name", "Item"),
+                    json.optDouble("quantity", 1),
+                    json.optString("unit", "un"),
+                    json.optDouble("price", 0),
+                    json.optLong("addedAt", System.currentTimeMillis())
+            );
+            entry.id = json.optString("id", UUID.randomUUID().toString());
+            entry.consumedAt = json.optLong("consumedAt", 0);
+            return entry;
         }
     }
 }

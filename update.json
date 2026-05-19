@@ -1,7 +1,7 @@
 {
-  "versionCode": 16,
-  "versionName": "2.5",
+  "versionCode": 17,
+  "versionName": "2.6",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Corrige quantidades fracionadas em estoque/gastos, preserva casas decimais e adiciona ordenacao dos itens."
+  "notes": "Novo icone do app com visual mais trabalhado."
 }

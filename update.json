@@ -1,7 +1,7 @@
 {
-  "versionCode": 14,
-  "versionName": "2.3",
+  "versionCode": 15,
+  "versionName": "2.4",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "App inicia limpo e pode importar lista compartilhada pela area de transferencia apos instalacao."
+  "notes": "Listas compartilhadas usam o mesmo id para atualizar listas existentes em vez de duplicar."
 }

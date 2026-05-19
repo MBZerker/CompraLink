@@ -1209,28 +1209,66 @@ public class MainActivity extends Activity {
         try {
             String json = decodeCompressed(payload);
             ShoppingList imported = ShoppingList.fromJson(new JSONObject(json));
-            imported.id = UUID.randomUUID().toString();
-            imported.name = imported.name + " compartilhada";
-            lists.add(0, imported);
-            selectedIndex = 0;
-            save();
-            Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
-            return true;
+            return saveImportedList(imported);
         } catch (Exception compressedFailed) {
             try {
                 byte[] decoded = Base64.decode(payload, Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
                 ShoppingList imported = ShoppingList.fromJson(new JSONObject(new String(decoded, StandardCharsets.UTF_8)));
-                imported.id = UUID.randomUUID().toString();
-                imported.name = imported.name + " compartilhada";
-                lists.add(0, imported);
-                selectedIndex = 0;
-                save();
-                return true;
+                return saveImportedList(imported);
             } catch (Exception e) {
                 Toast.makeText(this, "Link de lista inválido.", Toast.LENGTH_SHORT).show();
                 return false;
             }
         }
+    }
+
+    private boolean saveImportedList(ShoppingList imported) {
+        if (imported.id == null || imported.id.trim().isEmpty()) {
+            imported.id = UUID.randomUUID().toString();
+        }
+        int existingIndex = findListIndexById(imported.id);
+        if (existingIndex >= 0) {
+            ShoppingList existing = lists.get(existingIndex);
+            preserveLocalStockLinks(existing, imported);
+            lists.set(existingIndex, imported);
+            selectedIndex = existingIndex;
+            save();
+            Toast.makeText(this, "Lista compartilhada atualizada.", Toast.LENGTH_SHORT).show();
+            return true;
+        }
+        clearImportedStockLinks(imported);
+        lists.add(0, imported);
+        selectedIndex = 0;
+        save();
+        Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
+        return true;
+    }
+
+    private int findListIndexById(String id) {
+        if (id == null || id.isEmpty()) return -1;
+        for (int i = 0; i < lists.size(); i++) {
+            if (id.equals(lists.get(i).id)) return i;
+        }
+        return -1;
+    }
+
+    private void preserveLocalStockLinks(ShoppingList existing, ShoppingList imported) {
+        for (ShoppingItem item : imported.items) {
+            ShoppingItem old = findItemById(existing, item.id);
+            item.stockId = old == null ? "" : old.stockId;
+        }
+    }
+
+    private ShoppingItem findItemById(ShoppingList list, String id) {
+        if (list == null || id == null || id.isEmpty()) return null;
+        for (ShoppingItem item : list.items) {
+            if (id.equals(item.id)) return item;
+        }
+        return null;
+    }
+
+    private void clearImportedStockLinks(ShoppingList list) {
+        for (ShoppingItem item : list.items) item.stockId = "";
     }
 
     private String cleanPayload(String rawPayload) {

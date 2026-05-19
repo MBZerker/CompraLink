@@ -1,7 +1,7 @@
 {
-  "versionCode": 22,
-  "versionName": "3.1",
+  "versionCode": 23,
+  "versionName": "3.2",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Corrige checkbox em dialogs no modo escuro e adiciona alertas inteligentes em Gastos."
+  "notes": "Adiciona preview de relatorio de gastos com resumo, categorias e ranking de produtos."
 }

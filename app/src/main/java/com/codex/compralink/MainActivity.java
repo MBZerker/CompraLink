@@ -464,6 +464,93 @@ public class MainActivity extends Activity {
         return view;
     }
 
+    private void showSpendingReportPreview() {
+        applySystemBars();
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setPadding(dp(14), dp(14), dp(14), dp(18));
+        screen.setBackgroundColor(screenBg());
+
+        Button close = iconButton("X", softButtonBg(), primaryText());
+        close.setTextSize(18);
+        close.setOnClickListener(v -> showStockWindow(true));
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        closeParams.gravity = Gravity.START;
+        screen.addView(close, closeParams);
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(28), dp(32), dp(28), dp(32));
+        page.setBackgroundColor(Color.WHITE);
+        int pageWidth = Math.min(getResources().getDisplayMetrics().widthPixels - dp(28), dp(420));
+        int pageHeight = (int) (pageWidth * 1.414f);
+        LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(pageWidth, pageHeight);
+        pageParams.gravity = Gravity.CENTER_HORIZONTAL;
+        pageParams.setMargins(0, dp(12), 0, dp(20));
+
+        TextView title = printText("Relatório de gastos", 22, true);
+        title.setGravity(Gravity.CENTER);
+        page.addView(title, matchWrap());
+        page.addView(printText("Período: " + spendingRangeLabel(), 14, false), matchWrapWithTop(dp(12)));
+        page.addView(printText("Gerado em: " + formatDateTime(System.currentTimeMillis()), 14, false), matchWrapWithTop(dp(2)));
+
+        Map<String, Double> categories = new LinkedHashMap<>();
+        Map<String, SpendingProduct> products = new LinkedHashMap<>();
+        double total = 0;
+        for (StockEntry entry : stock) {
+            if (entry.price <= 0 || !entryInSelectedRange(entry)) continue;
+            double value = entry.price * entry.quantity;
+            total += value;
+            String category = categoryOf(entry);
+            categories.put(category, categories.containsKey(category) ? categories.get(category) + value : value);
+            String key = normalize(entry.name);
+            SpendingProduct product = products.get(key);
+            if (product == null) {
+                product = new SpendingProduct(entry.name);
+                products.put(key, product);
+            }
+            product.total += value;
+            product.quantity += entry.quantity;
+            product.times += 1;
+        }
+
+        page.addView(printText("\nResumo", 18, true), matchWrap());
+        page.addView(printText("Total: " + money.format(total), 15, true), matchWrapWithTop(dp(6)));
+        if (monthlyGoal > 0) {
+            page.addView(printText("Meta mensal: " + money.format(monthlyGoal), 14, false), matchWrapWithTop(dp(2)));
+            page.addView(printText("Saldo da meta: " + money.format(monthlyGoal - total), 14, false), matchWrapWithTop(dp(2)));
+        }
+
+        page.addView(printText("\nCategorias", 18, true), matchWrap());
+        List<Map.Entry<String, Double>> categoryRows = new ArrayList<>(categories.entrySet());
+        Collections.sort(categoryRows, (a, b) -> Double.compare(b.getValue(), a.getValue()));
+        if (categoryRows.isEmpty()) {
+            page.addView(printText("Sem dados no período.", 14, false), matchWrapWithTop(dp(4)));
+        } else {
+            for (Map.Entry<String, Double> row : categoryRows) {
+                page.addView(printText("• " + row.getKey() + ": " + money.format(row.getValue()), 14, false), matchWrapWithTop(dp(4)));
+            }
+        }
+
+        page.addView(printText("\nProdutos", 18, true), matchWrap());
+        List<SpendingProduct> productRows = new ArrayList<>(products.values());
+        Collections.sort(productRows, (a, b) -> Double.compare(b.total, a.total));
+        int limit = Math.min(10, productRows.size());
+        if (limit == 0) {
+            page.addView(printText("Sem dados no período.", 14, false), matchWrapWithTop(dp(4)));
+        }
+        for (int i = 0; i < limit; i++) {
+            SpendingProduct product = productRows.get(i);
+            page.addView(printText((i + 1) + ". " + product.name + " - " + money.format(product.total)
+                    + " - " + formatQty(product.quantity) + " un", 14, false), matchWrapWithTop(dp(4)));
+        }
+
+        scroll.addView(page, pageParams);
+        screen.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(screen);
+    }
+
     private void addStockScreen() {
         if (stock.isEmpty()) {
             root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
@@ -580,6 +667,9 @@ public class MainActivity extends Activity {
         addSpendingFilterButton(row, "12m", 12);
         addSpendingFilterButton(row, "Tudo", 0);
         addGoalButton();
+        Button report = button("Relatório", Color.rgb(51, 65, 85), Color.WHITE);
+        report.setOnClickListener(v -> showSpendingReportPreview());
+        root.addView(report, matchWrapWithTop(dp(8)));
     }
 
     private void addGoalButton() {
@@ -881,6 +971,24 @@ public class MainActivity extends Activity {
     private boolean sameMonth(Calendar a, Calendar b) {
         return a.get(Calendar.YEAR) == b.get(Calendar.YEAR)
                 && a.get(Calendar.MONTH) == b.get(Calendar.MONTH);
+    }
+
+    private boolean entryInSelectedRange(StockEntry entry) {
+        if (spendingRangeMonths <= 0) return true;
+        Calendar start = Calendar.getInstance();
+        start.set(Calendar.DAY_OF_MONTH, 1);
+        start.set(Calendar.HOUR_OF_DAY, 0);
+        start.set(Calendar.MINUTE, 0);
+        start.set(Calendar.SECOND, 0);
+        start.set(Calendar.MILLISECOND, 0);
+        start.add(Calendar.MONTH, -(spendingRangeMonths - 1));
+        return entry.addedAt >= start.getTimeInMillis();
+    }
+
+    private String spendingRangeLabel() {
+        if (spendingRangeMonths <= 0) return "Todos os registros";
+        if (spendingRangeMonths == 1) return "Mês atual";
+        return "Últimos " + spendingRangeMonths + " meses";
     }
 
     private double forecastMonthTotal(double currentTotal) {

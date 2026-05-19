@@ -1,7 +1,7 @@
 {
-  "versionCode": 24,
-  "versionName": "3.3",
+  "versionCode": 25,
+  "versionName": "3.4",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Permite criar categorias personalizadas para itens do estoque."
+  "notes": "Ajusta os previews de impressao e adiciona botao para imprimir lista e relatorio."
 }

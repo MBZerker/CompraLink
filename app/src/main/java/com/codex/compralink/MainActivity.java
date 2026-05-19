@@ -16,6 +16,9 @@ import android.os.Bundle;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.content.res.Configuration;
 import android.text.InputType;
 import android.text.SpannableString;
@@ -29,6 +32,8 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -412,15 +417,10 @@ public class MainActivity extends Activity {
 
         LinearLayout screen = new LinearLayout(this);
         screen.setOrientation(LinearLayout.VERTICAL);
-        screen.setPadding(dp(14), dp(14), dp(14), dp(18));
+        screen.setPadding(dp(14), previewTopPadding(), dp(14), dp(18));
         screen.setBackgroundColor(screenBg());
 
-        Button close = iconButton("X", softButtonBg(), primaryText());
-        close.setTextSize(18);
-        close.setOnClickListener(v -> showListScreen());
-        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        closeParams.gravity = Gravity.START;
-        screen.addView(close, closeParams);
+        addPrintPreviewToolbar(screen, () -> showListScreen(), () -> printHtml("Lista - " + list.name, buildListPrintHtml(list)));
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(false);
@@ -455,6 +455,78 @@ public class MainActivity extends Activity {
         setContentView(screen);
     }
 
+    private void addPrintPreviewToolbar(LinearLayout screen, Runnable closeAction, Runnable printAction) {
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+
+        Button close = iconButton("X", softButtonBg(), primaryText());
+        close.setTextSize(18);
+        close.setOnClickListener(v -> closeAction.run());
+        toolbar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        View spacer = new View(this);
+        toolbar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1));
+
+        ImageButton print = imageIconButton(R.drawable.ic_print, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+        print.setOnClickListener(v -> printAction.run());
+        toolbar.addView(print, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        screen.addView(toolbar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+    }
+
+    private int previewTopPadding() {
+        return dp(14) + statusBarHeight();
+    }
+
+    private int statusBarHeight() {
+        int id = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (id > 0) return getResources().getDimensionPixelSize(id);
+        return dp(24);
+    }
+
+    private void printHtml(String jobName, String html) {
+        PrintManager manager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
+        if (manager == null) {
+            Toast.makeText(this, "Impressao indisponivel neste aparelho.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        WebView webView = new WebView(this);
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                PrintDocumentAdapter adapter = view.createPrintDocumentAdapter(jobName);
+                PrintAttributes attributes = new PrintAttributes.Builder()
+                        .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                        .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+                        .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
+                        .build();
+                manager.print(jobName, adapter, attributes);
+            }
+        });
+        webView.loadDataWithBaseURL(null, html, "text/HTML", "UTF-8", null);
+    }
+
+    private String buildListPrintHtml(ShoppingList list) {
+        StringBuilder html = printHtmlStart(list.name);
+        html.append("<h1>").append(escapeHtml(list.name)).append("</h1><div class=\"gap\"></div>");
+        for (ShoppingItem item : list.items) {
+            double qty = quantityOf(item);
+            String unitPrice = item.price > 0 ? money.format(item.price) : "R$ --";
+            String total = item.price > 0 ? money.format(item.price * qty) : "R$ --";
+            html.append("<p class=\"item\">&bull; ")
+                    .append(escapeHtml(item.name))
+                    .append("<br><span>")
+                    .append(escapeHtml(formatQty(qty)))
+                    .append(" x ")
+                    .append(escapeHtml(unitPrice))
+                    .append(" (")
+                    .append(escapeHtml(total))
+                    .append(")</span></p>");
+        }
+        return html.append("</body></html>").toString();
+    }
+
     private TextView printText(String text, int size, boolean bold) {
         TextView view = new TextView(this);
         view.setText(text);
@@ -469,15 +541,10 @@ public class MainActivity extends Activity {
         applySystemBars();
         LinearLayout screen = new LinearLayout(this);
         screen.setOrientation(LinearLayout.VERTICAL);
-        screen.setPadding(dp(14), dp(14), dp(14), dp(18));
+        screen.setPadding(dp(14), previewTopPadding(), dp(14), dp(18));
         screen.setBackgroundColor(screenBg());
 
-        Button close = iconButton("X", softButtonBg(), primaryText());
-        close.setTextSize(18);
-        close.setOnClickListener(v -> showStockWindow(true));
-        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        closeParams.gravity = Gravity.START;
-        screen.addView(close, closeParams);
+        addPrintPreviewToolbar(screen, () -> showStockWindow(true), () -> printHtml("Relatorio de gastos", buildSpendingReportHtml()));
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout page = new LinearLayout(this);
@@ -550,6 +617,96 @@ public class MainActivity extends Activity {
         scroll.addView(page, pageParams);
         screen.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(screen);
+    }
+
+    private String buildSpendingReportHtml() {
+        Map<String, Double> categories = new LinkedHashMap<>();
+        Map<String, SpendingProduct> products = new LinkedHashMap<>();
+        double total = 0;
+        for (StockEntry entry : stock) {
+            if (entry.price <= 0 || !entryInSelectedRange(entry)) continue;
+            double value = entry.price * entry.quantity;
+            total += value;
+            String category = categoryOf(entry);
+            categories.put(category, categories.containsKey(category) ? categories.get(category) + value : value);
+            String key = normalize(entry.name);
+            SpendingProduct product = products.get(key);
+            if (product == null) {
+                product = new SpendingProduct(entry.name);
+                products.put(key, product);
+            }
+            product.total += value;
+            product.quantity += entry.quantity;
+            product.times += 1;
+        }
+
+        StringBuilder html = printHtmlStart("Relatório de gastos");
+        html.append("<h1>Relatório de gastos</h1>");
+        html.append("<p>Período: ").append(escapeHtml(spendingRangeLabel())).append("</p>");
+        html.append("<p>Gerado em: ").append(escapeHtml(formatDateTime(System.currentTimeMillis()))).append("</p>");
+        html.append("<h2>Resumo</h2>");
+        html.append("<p><strong>Total: ").append(escapeHtml(money.format(total))).append("</strong></p>");
+        if (monthlyGoal > 0) {
+            html.append("<p>Meta mensal: ").append(escapeHtml(money.format(monthlyGoal))).append("</p>");
+            html.append("<p>Saldo da meta: ").append(escapeHtml(money.format(monthlyGoal - total))).append("</p>");
+        }
+
+        html.append("<h2>Categorias</h2>");
+        List<Map.Entry<String, Double>> categoryRows = new ArrayList<>(categories.entrySet());
+        Collections.sort(categoryRows, (a, b) -> Double.compare(b.getValue(), a.getValue()));
+        if (categoryRows.isEmpty()) {
+            html.append("<p>Sem dados no período.</p>");
+        } else {
+            for (Map.Entry<String, Double> row : categoryRows) {
+                html.append("<p class=\"item\">&bull; ")
+                        .append(escapeHtml(row.getKey()))
+                        .append(": ")
+                        .append(escapeHtml(money.format(row.getValue())))
+                        .append("</p>");
+            }
+        }
+
+        html.append("<h2>Produtos</h2>");
+        List<SpendingProduct> productRows = new ArrayList<>(products.values());
+        Collections.sort(productRows, (a, b) -> Double.compare(b.total, a.total));
+        int limit = Math.min(10, productRows.size());
+        if (limit == 0) {
+            html.append("<p>Sem dados no período.</p>");
+        }
+        for (int i = 0; i < limit; i++) {
+            SpendingProduct product = productRows.get(i);
+            html.append("<p>")
+                    .append(i + 1)
+                    .append(". ")
+                    .append(escapeHtml(product.name))
+                    .append(" - ")
+                    .append(escapeHtml(money.format(product.total)))
+                    .append(" - ")
+                    .append(escapeHtml(formatQty(product.quantity)))
+                    .append(" un</p>");
+        }
+        return html.append("</body></html>").toString();
+    }
+
+    private StringBuilder printHtmlStart(String title) {
+        StringBuilder html = new StringBuilder();
+        html.append("<!doctype html><html><head><meta charset=\"utf-8\"><title>")
+                .append(escapeHtml(title))
+                .append("</title><style>")
+                .append("@page{size:A4;margin:18mm;}body{font-family:Arial,sans-serif;color:#000;background:#fff;font-size:14pt;line-height:1.35;}")
+                .append("h1{text-align:center;font-size:22pt;margin:0 0 18pt;}h2{font-size:17pt;margin:20pt 0 8pt;}")
+                .append("p{margin:4pt 0;}.gap{height:18pt;}.item{margin:0 0 10pt;}span{font-size:13pt;}")
+                .append("</style></head><body>");
+        return html;
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) return "";
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     private void addStockScreen() {

@@ -39,8 +39,10 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -207,6 +209,7 @@ public class MainActivity extends Activity {
         updateAutoLockedLists();
         buildRoot();
         addTopHeader("Historico", "Listas protegidas ficam guardadas aqui.", false);
+        addHistorySummary();
 
         for (int i = 0; i < lists.size(); i++) {
             if (!lists.get(i).archived) continue;
@@ -216,6 +219,21 @@ public class MainActivity extends Activity {
             root.addView(infoCard("Historico vazio", "Listas completas aparecem aqui depois de protegidas automaticamente."), matchWrapWithTop(dp(10)));
         }
         setContentView(rootScroll());
+    }
+
+    private void addHistorySummary() {
+        int count = 0;
+        int items = 0;
+        double total = 0;
+        for (ShoppingList list : lists) {
+            if (!list.archived) continue;
+            count++;
+            items += list.items.size();
+            for (ShoppingItem item : list.items) {
+                if (item.price > 0) total += item.price * quantityOf(item);
+            }
+        }
+        root.addView(infoCard("Resumo do historico", count + " listas, " + items + " itens, total " + money.format(total)), matchWrapWithTop(dp(10)));
     }
 
     private void showStockWindow(boolean spending) {
@@ -914,6 +932,10 @@ public class MainActivity extends Activity {
     }
 
     private void addSpendingFilters() {
+        if (System.currentTimeMillis() >= 0) {
+            addCompactSpendingFilters();
+            return;
+        }
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row, matchWrapWithTop(dp(10)));
@@ -944,6 +966,66 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = weighted();
         if (row.getChildCount() > 0) params.setMargins(dp(5), 0, 0, 0);
         row.addView(button, params);
+    }
+
+    private void addCompactSpendingFilters() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+        root.addView(card, matchWrapWithTop(dp(10)));
+
+        Spinner range = new Spinner(this);
+        String[] labels = new String[]{"Mes atual", "Ultimos 3 meses", "Ultimos 6 meses", "Ultimos 12 meses", "Tudo"};
+        int[] values = new int[]{1, 3, 6, 12, 0};
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        range.setAdapter(adapter);
+        range.setSelection(spendingRangeIndex(values));
+        range.setBackground(round(inputBg(), dp(12), stroke(), 1));
+        range.setPadding(dp(8), 0, dp(8), 0);
+        range.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            boolean ready;
+
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+                if (view instanceof TextView) {
+                    ((TextView) view).setTextColor(primaryText());
+                    ((TextView) view).setTextSize(14);
+                }
+                if (!ready) {
+                    ready = true;
+                    return;
+                }
+                spendingRangeMonths = values[position];
+                showStockWindow(true);
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {
+            }
+        });
+        card.addView(range, new LinearLayout.LayoutParams(0, dp(48), 1));
+
+        ImageButton goal = imageIconButton(R.drawable.ic_target, monthlyGoal > 0 ? Color.rgb(22, 163, 74) : softButtonBg(), monthlyGoal > 0 ? Color.WHITE : primaryText());
+        goal.setOnClickListener(v -> promptMonthlyGoal());
+        LinearLayout.LayoutParams goalParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        goalParams.setMargins(dp(8), 0, 0, 0);
+        card.addView(goal, goalParams);
+
+        ImageButton report = imageIconButton(R.drawable.ic_report, Color.rgb(51, 65, 85), Color.WHITE);
+        report.setOnClickListener(v -> showSpendingReportPreview());
+        LinearLayout.LayoutParams reportParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        reportParams.setMargins(dp(8), 0, 0, 0);
+        card.addView(report, reportParams);
+    }
+
+    private int spendingRangeIndex(int[] values) {
+        for (int i = 0; i < values.length; i++) {
+            if (values[i] == spendingRangeMonths) return i;
+        }
+        return 2;
     }
 
     private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, double forecast, StockEntry biggestEntry, Map<String, SpendingProduct> products) {

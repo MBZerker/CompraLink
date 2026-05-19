@@ -1,7 +1,7 @@
 {
-  "versionCode": 26,
-  "versionName": "3.5",
+  "versionCode": 27,
+  "versionName": "3.6",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Adiciona cadeado nas listas, protecao contra edicao e historico automatico para listas completas."
+  "notes": "Organiza os controles de gastos com periodo em menu suspenso, icones para meta e relatorio, e resumo do historico."
 }

@@ -300,13 +300,13 @@ public class MainActivity extends Activity {
                 back.setOnClickListener(v -> showHomeScreen());
                 actions.addView(back, weighted());
             } else {
-                Button newList = button("+ Lista", Color.rgb(15, 118, 110), Color.WHITE);
-            newList.setOnClickListener(v -> promptNewList());
-            actions.addView(newList, weighted());
+                ImageButton newList = imageIconButton(R.drawable.ic_cart, Color.rgb(15, 118, 110), Color.WHITE);
+                newList.setOnClickListener(v -> promptNewList());
+                actions.addView(newList, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-                Button stockButton = button("Estoque", isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                ImageButton stockButton = imageIconButton(R.drawable.ic_box, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
-                LinearLayout.LayoutParams stockParams = weighted();
+                LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(stockButton, stockParams);
             }
@@ -655,10 +655,13 @@ public class MainActivity extends Activity {
         name.setTypeface(Typeface.DEFAULT_BOLD);
         boolean hasHistory = hasComparablePrices(item);
         name.setTextColor(item.checked ? disabledText() :
-                (hasHistory ? Color.rgb(37, 99, 235) : primaryText()));
+                (hasHistory ? Color.rgb(147, 51, 234) : primaryText()));
         name.setPaintFlags(item.checked
                 ? name.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                 : name.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
+        if (hasHistory && !item.checked) {
+            name.setPaintFlags(name.getPaintFlags() | Paint.UNDERLINE_TEXT_FLAG);
+        }
         name.setOnClickListener(v -> showPriceComparison(item));
         name.setOnLongClickListener(v -> {
             promptEditItem(item);
@@ -770,6 +773,7 @@ public class MainActivity extends Activity {
                     item.price = parsePrice(price.getText().toString());
                     item.unit = unit.getText().toString().trim();
                     if (item.unit.isEmpty()) item.unit = "1";
+                    item.updatedAt = System.currentTimeMillis();
                     save();
                     showListScreen();
                 })
@@ -796,6 +800,7 @@ public class MainActivity extends Activity {
                 .setView(input)
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     item.price = parsePrice(input.getText().toString());
+                    item.updatedAt = System.currentTimeMillis();
                     save();
                     showListScreen();
                 })
@@ -809,30 +814,26 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Sem historico para este produto.", Toast.LENGTH_SHORT).show();
             return;
         }
+        PriceHit hit = hits.get(0);
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(18), dp(10), dp(18), dp(10));
+        content.setPadding(dp(18), dp(16), dp(18), dp(12));
+        content.setBackground(round(Color.WHITE, dp(16), Color.rgb(226, 232, 240), 1));
 
-        for (PriceHit hit : hits) {
-            double saved = item.price > 0 ? item.price - hit.price : 0;
-            String text = money.format(hit.price) + " - " + hit.listName;
-            if (saved > 0) text += "  economiza " + money.format(saved);
-            SpannableString span = new SpannableString(text);
-            int priceEnd = money.format(hit.price).length();
-            span.setSpan(new StyleSpan(Typeface.BOLD), 0, priceEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            span.setSpan(new ForegroundColorSpan(Color.rgb(15, 118, 110)), 0, priceEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            if (saved > 0) {
-                int start = text.indexOf("economiza");
-                span.setSpan(new StyleSpan(Typeface.BOLD), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                span.setSpan(new ForegroundColorSpan(Color.rgb(22, 163, 74)), start, text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            TextView line = new TextView(this);
-            line.setText(span);
-            line.setTextSize(16);
-            line.setTextColor(primaryText());
-            line.setPadding(0, dp(8), 0, dp(8));
-            content.addView(line, matchWrap());
+        TextView title = label("Comparacao de precos", 20, true, Color.rgb(15, 23, 42));
+        title.setGravity(Gravity.CENTER);
+        content.addView(title, matchWrap());
+
+        addComparisonLine(content, hit.listName, 15, true);
+        addComparisonLine(content, hit.itemName + ": " + money.format(hit.price), 16, false);
+        addComparisonLine(content, "Data: " + formatDateLabel(hit.updatedAt), 14, false);
+
+        double saved = item.price > 0 ? item.price - hit.price : 0;
+        if (saved > 0) {
+            TextView economy = label("Economia: " + money.format(saved), 16, true, Color.rgb(22, 163, 74));
+            economy.setPadding(0, dp(10), 0, 0);
+            content.addView(economy, matchWrap());
         }
 
         ScrollView scroll = new ScrollView(this);
@@ -840,10 +841,16 @@ public class MainActivity extends Activity {
         scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
 
         new AlertDialog.Builder(this)
-                .setTitle("Precos mais baratos: " + item.name)
                 .setView(scroll)
                 .setPositiveButton("Fechar", null)
                 .show();
+    }
+
+    private void addComparisonLine(LinearLayout content, String text, int size, boolean bold) {
+        TextView line = label(text, size, bold, Color.rgb(15, 23, 42));
+        line.setGravity(Gravity.START);
+        line.setPadding(0, dp(10), 0, 0);
+        content.addView(line, matchWrap());
     }
 
     private boolean hasComparablePrices(ShoppingItem item) {
@@ -858,7 +865,7 @@ public class MainActivity extends Activity {
                 if (other == item || other.price <= 0) continue;
                 if (!normalize(other.name).equals(target)) continue;
                 if (item.price > 0 && other.price >= item.price) continue;
-                hits.add(new PriceHit(list.name, other.price));
+                hits.add(new PriceHit(list.name, other.name, other.price, other.updatedAt));
             }
         }
         Collections.sort(hits, Comparator.comparingDouble(hit -> hit.price));
@@ -924,14 +931,42 @@ public class MainActivity extends Activity {
         final int[] colors = new int[]{
                 0,
                 Color.rgb(15, 118, 110),
+                Color.rgb(13, 148, 136),
+                Color.rgb(6, 182, 212),
                 Color.rgb(37, 99, 235),
+                Color.rgb(59, 130, 246),
                 Color.rgb(124, 58, 237),
+                Color.rgb(147, 51, 234),
+                Color.rgb(219, 39, 119),
                 Color.rgb(225, 29, 72),
                 Color.rgb(234, 88, 12),
-                Color.rgb(22, 163, 74)
+                Color.rgb(245, 158, 11),
+                Color.rgb(202, 138, 4),
+                Color.rgb(22, 163, 74),
+                Color.rgb(132, 204, 22),
+                Color.rgb(71, 85, 105),
+                Color.rgb(120, 113, 108)
         };
         LinearLayout grid = dialogForm();
         final AlertDialog[] dialogRef = new AlertDialog[1];
+        Button lighter = button("Clarear cor atual", Color.rgb(226, 232, 240), Color.rgb(15, 23, 42));
+        lighter.setOnClickListener(v -> {
+            lists.get(index).color = lighten(lists.get(index).displayColor() == 0 ? accentColor : lists.get(index).displayColor());
+            save();
+            if (dialogRef[0] != null) dialogRef[0].dismiss();
+            showHomeScreen();
+        });
+        grid.addView(lighter, matchHeight(dp(42)));
+
+        Button darker = button("Escurecer cor atual", Color.rgb(51, 65, 85), Color.WHITE);
+        darker.setOnClickListener(v -> {
+            lists.get(index).color = darken(lists.get(index).displayColor() == 0 ? accentColor : lists.get(index).displayColor());
+            save();
+            if (dialogRef[0] != null) dialogRef[0].dismiss();
+            showHomeScreen();
+        });
+        grid.addView(darker, matchWrapWithTop(dp(8)));
+
         for (int color : colors) {
             Button swatch = button(color == 0 ? "Padrao" : " ", color == 0 ? softButtonBg() : color, color == 0 ? primaryText() : Color.WHITE);
             swatch.setOnClickListener(v -> {
@@ -1199,6 +1234,19 @@ public class MainActivity extends Activity {
         return Math.max(0, (end - entry.addedAt) / 86400000L);
     }
 
+    private String formatDateLabel(long when) {
+        Calendar today = Calendar.getInstance();
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        boolean sameDay = today.get(Calendar.YEAR) == date.get(Calendar.YEAR)
+                && today.get(Calendar.DAY_OF_YEAR) == date.get(Calendar.DAY_OF_YEAR);
+        if (sameDay) return "Hoje";
+        return String.format(Locale.ROOT, "%02d/%02d/%04d",
+                date.get(Calendar.DAY_OF_MONTH),
+                date.get(Calendar.MONTH) + 1,
+                date.get(Calendar.YEAR));
+    }
+
     private String monthKey(Calendar cal) {
         return String.format(Locale.ROOT, "%02d/%04d", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
     }
@@ -1396,11 +1444,15 @@ public class MainActivity extends Activity {
 
     private static class PriceHit {
         final String listName;
+        final String itemName;
         final double price;
+        final long updatedAt;
 
-        PriceHit(String listName, double price) {
+        PriceHit(String listName, String itemName, double price, long updatedAt) {
             this.listName = listName;
+            this.itemName = itemName;
             this.price = price;
+            this.updatedAt = updatedAt;
         }
     }
 
@@ -1448,11 +1500,13 @@ public class MainActivity extends Activity {
         boolean checked;
         double price;
         String unit;
+        long updatedAt;
 
         ShoppingItem(String name, double price, String unit) {
             this.name = name;
             this.price = price;
             this.unit = unit == null || unit.isEmpty() ? "1" : unit;
+            this.updatedAt = System.currentTimeMillis();
         }
 
         JSONObject toJson() throws JSONException {
@@ -1461,6 +1515,7 @@ public class MainActivity extends Activity {
             json.put("checked", checked);
             json.put("price", price);
             json.put("unit", unit);
+            json.put("updatedAt", updatedAt);
             return json;
         }
 
@@ -1471,6 +1526,7 @@ public class MainActivity extends Activity {
                     json.optString("unit", "1")
             );
             item.checked = json.optBoolean("checked", false);
+            item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             return item;
         }
     }

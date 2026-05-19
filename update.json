@@ -1,7 +1,7 @@
 {
-  "versionCode": 10,
-  "versionName": "1.9",
+  "versionCode": 11,
+  "versionName": "2.0",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Botao de atualizar por icone, preview de impressao A4 e botao de impressora na lista."
+  "notes": "Mais cores por lista, comparacao reorganizada, links destacados e novos icones de carrinho/estoque."
 }

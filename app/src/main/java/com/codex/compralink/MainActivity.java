@@ -81,6 +81,7 @@ public class MainActivity extends Activity {
     private static final int SORT_CHECKED_BOTTOM = 0;
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
+    private static final String CUSTOM_CATEGORY = "Personalizada...";
 
     private final List<ShoppingList> lists = new ArrayList<>();
     private final List<StockEntry> stock = new ArrayList<>();
@@ -1646,12 +1647,42 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Categoria")
                 .setItems(categories, (dialog, which) -> {
-                    entry.category = categories[which];
-                    entry.updatedAt = System.currentTimeMillis();
-                    saveStock();
-                    showStockWindow(false);
+                    String selected = categories[which];
+                    if (CUSTOM_CATEGORY.equals(selected)) {
+                        promptCustomStockCategory(entry);
+                    } else {
+                        setStockCategory(entry, selected);
+                    }
                 })
                 .show();
+    }
+
+    private void promptCustomStockCategory(StockEntry entry) {
+        EditText input = dialogInput("Nome da categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        String current = categoryOf(entry);
+        if (!isDefaultCategory(current)) {
+            input.setText(current);
+            input.setSelection(input.getText().length());
+        }
+        LinearLayout form = dialogForm();
+        form.addView(input, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+        new AlertDialog.Builder(this)
+                .setTitle("Categoria personalizada")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> setStockCategory(entry, input.getText().toString()))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void setStockCategory(StockEntry entry, String category) {
+        String clean = category == null ? "" : category.trim();
+        entry.category = clean.isEmpty() ? "Outros" : clean;
+        entry.updatedAt = System.currentTimeMillis();
+        saveStock();
+        showStockWindow(false);
     }
 
     private void shareSelectedList() {
@@ -2113,7 +2144,16 @@ public class MainActivity extends Activity {
     }
 
     private String[] categoryOptions() {
-        return new String[]{"Mercado", "Hortifruti", "Carnes", "Limpeza", "Higiene", "Farmácia", "Bebidas", "Pet", "Outros"};
+        return new String[]{"Mercado", "Hortifruti", "Carnes", "Limpeza", "Higiene", "Farmácia", "Bebidas", "Pet", "Outros", CUSTOM_CATEGORY};
+    }
+
+    private boolean isDefaultCategory(String category) {
+        if (category == null) return true;
+        String clean = category.trim();
+        for (String option : categoryOptions()) {
+            if (!CUSTOM_CATEGORY.equals(option) && option.equalsIgnoreCase(clean)) return true;
+        }
+        return false;
     }
 
     private int categoryColor(String category) {

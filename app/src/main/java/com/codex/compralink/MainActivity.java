@@ -69,6 +69,7 @@ public class MainActivity extends Activity {
     private static final String KEY_THEME = "theme_mode";
     private static final String KEY_ACCENT = "accent_color";
     private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
+    private static final String KEY_MONTHLY_GOAL = "monthly_goal";
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
@@ -91,6 +92,7 @@ public class MainActivity extends Activity {
     private int selectedIndex = -1;
     private int homeTab = 0;
     private int spendingRangeMonths = 6;
+    private double monthlyGoal;
     private boolean shellReady;
     private boolean pendingIntentHandled;
     private int themeMode = THEME_SYSTEM;
@@ -101,6 +103,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         themeMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_THEME, THEME_SYSTEM);
         accentColor = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_ACCENT, Color.rgb(15, 118, 110));
+        monthlyGoal = Double.longBitsToDouble(getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(0)));
         load();
         loadStock();
         showSplash();
@@ -485,6 +488,9 @@ public class MainActivity extends Activity {
             TextView duration = label(formatStockAge(entry), 14, false, accent());
             duration.setPadding(0, dp(5), 0, 0);
             card.addView(duration);
+            TextView category = label("Categoria: " + categoryOf(entry), 13, false, mutedText());
+            category.setPadding(0, dp(4), 0, 0);
+            card.addView(category);
             TextView edited = label("Editado: " + formatDateTime(entry.updatedAt), 13, false, mutedText());
             edited.setPadding(0, dp(4), 0, 0);
             card.addView(edited);
@@ -495,6 +501,7 @@ public class MainActivity extends Activity {
     private void addSpendingScreen() {
         Map<String, Double> totals = new LinkedHashMap<>();
         Map<String, SpendingProduct> products = new LinkedHashMap<>();
+        Map<String, Double> categories = new LinkedHashMap<>();
         long now = System.currentTimeMillis();
         Calendar cal = Calendar.getInstance();
         Calendar currentMonth = Calendar.getInstance();
@@ -522,6 +529,8 @@ public class MainActivity extends Activity {
             if (sameMonth(cal, previousMonth)) previousTotal += total;
             if (biggestEntry == null || total > biggestEntry.price * biggestEntry.quantity) biggestEntry = entry;
             if (!inSelectedRange) continue;
+            String category = categoryOf(entry);
+            categories.put(category, categories.containsKey(category) ? categories.get(category) + total : total);
 
             String productKey = normalize(entry.name);
             SpendingProduct product = products.get(productKey);
@@ -553,7 +562,9 @@ public class MainActivity extends Activity {
         addSpendingFilters();
         root.addView(infoCard("Resumo", "Total do período selecionado: " + money.format(sum)), matchWrapWithTop(dp(10)));
         addMetricGrid(currentTotal, previousTotal, difference, average, forecast, biggestEntry, products);
+        addGoalCard(currentTotal, forecast);
         addMonthlyBars(totals, max);
+        addCategoryBreakdown(categories);
         addProductRanking(products);
         addPriceInsights(products);
     }
@@ -567,6 +578,13 @@ public class MainActivity extends Activity {
         addSpendingFilterButton(row, "6m", 6);
         addSpendingFilterButton(row, "12m", 12);
         addSpendingFilterButton(row, "Tudo", 0);
+        addGoalButton();
+    }
+
+    private void addGoalButton() {
+        Button goal = button("Meta", monthlyGoal > 0 ? Color.rgb(22, 163, 74) : softButtonBg(), monthlyGoal > 0 ? Color.WHITE : primaryText());
+        goal.setOnClickListener(v -> promptMonthlyGoal());
+        root.addView(goal, matchWrapWithTop(dp(8)));
     }
 
     private void addSpendingFilterButton(LinearLayout row, String label, int months) {
@@ -633,6 +651,66 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    private void addGoalCard(double currentTotal, double forecast) {
+        if (monthlyGoal <= 0) {
+            root.addView(infoCard("Meta mensal", "Toque em Meta para definir um limite mensal de gastos."), matchWrapWithTop(dp(10)));
+            return;
+        }
+        double remaining = monthlyGoal - currentTotal;
+        double percent = monthlyGoal <= 0 ? 0 : currentTotal / monthlyGoal;
+        int statusColor = remaining >= 0 ? Color.rgb(22, 163, 74) : Color.rgb(225, 29, 72);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+        card.addView(label("Meta mensal", 18, true, primaryText()));
+        TextView text = label("Usado: " + money.format(currentTotal)
+                + " de " + money.format(monthlyGoal)
+                + " - " + (remaining >= 0 ? "restam " : "passou ")
+                + money.format(Math.abs(remaining)), 14, true, statusColor);
+        text.setPadding(0, dp(6), 0, 0);
+        card.addView(text, matchWrap());
+        TextView forecastText = label("Previsão: " + money.format(forecast), 13, false, mutedText());
+        forecastText.setPadding(0, dp(4), 0, 0);
+        card.addView(forecastText, matchWrap());
+        LinearLayout barBg = new LinearLayout(this);
+        barBg.setBackground(round(inputBg(), dp(8), Color.TRANSPARENT, 0));
+        LinearLayout bar = new LinearLayout(this);
+        bar.setBackground(round(statusColor, dp(8), Color.TRANSPARENT, 0));
+        int maxWidth = (int) (getResources().getDisplayMetrics().widthPixels * 0.72);
+        int width = Math.max(dp(8), (int) (maxWidth * Math.min(1.0, percent)));
+        barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(14)));
+        card.addView(barBg, matchWrapWithTop(dp(8)));
+        root.addView(card, matchWrapWithTop(dp(10)));
+    }
+
+    private void promptMonthlyGoal() {
+        EditText input = dialogInput("Meta mensal", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if (monthlyGoal > 0) {
+            input.setText(formatPriceInput(monthlyGoal));
+            input.setSelection(input.getText().length());
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Meta mensal")
+                .setView(input)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    monthlyGoal = parsePrice(input.getText().toString());
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(monthlyGoal))
+                            .apply();
+                    showStockWindow(true);
+                })
+                .setNeutralButton("Remover meta", (dialog, which) -> {
+                    monthlyGoal = 0;
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                            .putLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(0))
+                            .apply();
+                    showStockWindow(true);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
     private void addMonthlyBars(Map<String, Double> totals, double max) {
         root.addView(label("Gastos por mês", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         for (String key : totals.keySet()) {
@@ -649,6 +727,32 @@ public class MainActivity extends Activity {
             bar.setBackground(round(accent(), dp(8), Color.TRANSPARENT, 0));
             int width = Math.max(dp(8), (int) (getResources().getDisplayMetrics().widthPixels * 0.72 * (value / max)));
             barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(14)));
+            card.addView(barBg, matchWrapWithTop(dp(8)));
+            root.addView(card, matchWrapWithTop(dp(8)));
+        }
+    }
+
+    private void addCategoryBreakdown(Map<String, Double> categories) {
+        List<Map.Entry<String, Double>> ranking = new ArrayList<>(categories.entrySet());
+        Collections.sort(ranking, (a, b) -> Double.compare(b.getValue(), a.getValue()));
+        root.addView(label("Gastos por categoria", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        if (ranking.isEmpty()) {
+            root.addView(infoCard("Sem categorias", "Edite a categoria dos itens no estoque para analisar seus gastos por grupo."), matchWrapWithTop(dp(8)));
+            return;
+        }
+        double max = Math.max(1, ranking.get(0).getValue());
+        for (Map.Entry<String, Double> entry : ranking) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+            card.addView(label(entry.getKey() + " - " + money.format(entry.getValue()), 15, true, primaryText()));
+            LinearLayout barBg = new LinearLayout(this);
+            barBg.setBackground(round(inputBg(), dp(8), Color.TRANSPARENT, 0));
+            LinearLayout bar = new LinearLayout(this);
+            bar.setBackground(round(categoryColor(entry.getKey()), dp(8), Color.TRANSPARENT, 0));
+            int width = Math.max(dp(8), (int) (getResources().getDisplayMetrics().widthPixels * 0.72 * (entry.getValue() / max)));
+            barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(12)));
             card.addView(barBg, matchWrapWithTop(dp(8)));
             root.addView(card, matchWrapWithTop(dp(8)));
         }
@@ -1355,12 +1459,14 @@ public class MainActivity extends Activity {
     }
 
     private void showStockOptions(StockEntry entry) {
-        String[] options = new String[]{"Editar quantidade", "Remover"};
+        String[] options = new String[]{"Editar quantidade", "Editar categoria", "Remover"};
         new AlertDialog.Builder(this)
                 .setTitle(entry.name)
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
                         promptEditStockQuantity(entry);
+                    } else if (which == 1) {
+                        promptEditStockCategory(entry);
                     } else {
                         confirmDeleteStock(entry);
                     }
@@ -1383,6 +1489,19 @@ public class MainActivity extends Activity {
                     showStockWindow(false);
                 })
                 .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptEditStockCategory(StockEntry entry) {
+        String[] categories = categoryOptions();
+        new AlertDialog.Builder(this)
+                .setTitle("Categoria")
+                .setItems(categories, (dialog, which) -> {
+                    entry.category = categories[which];
+                    entry.updatedAt = System.currentTimeMillis();
+                    saveStock();
+                    showStockWindow(false);
+                })
                 .show();
     }
 
@@ -1839,6 +1958,30 @@ public class MainActivity extends Activity {
         return isDarkTheme() ? Color.rgb(100, 116, 139) : Color.rgb(148, 163, 184);
     }
 
+    private String categoryOf(StockEntry entry) {
+        return entry.category == null || entry.category.trim().isEmpty() ? "Outros" : entry.category;
+    }
+
+    private String[] categoryOptions() {
+        return new String[]{"Mercado", "Hortifruti", "Carnes", "Limpeza", "Higiene", "Farmácia", "Bebidas", "Pet", "Outros"};
+    }
+
+    private int categoryColor(String category) {
+        int[] colors = new int[]{
+                Color.rgb(15, 118, 110),
+                Color.rgb(22, 163, 74),
+                Color.rgb(225, 29, 72),
+                Color.rgb(37, 99, 235),
+                Color.rgb(147, 51, 234),
+                Color.rgb(234, 88, 12),
+                Color.rgb(6, 182, 212),
+                Color.rgb(202, 138, 4),
+                Color.rgb(71, 85, 105)
+        };
+        int index = Math.abs(normalize(category).hashCode()) % colors.length;
+        return colors[index];
+    }
+
     private int accent() {
         return isDarkTheme() ? lighten(accentColor) : accentColor;
     }
@@ -2076,6 +2219,7 @@ public class MainActivity extends Activity {
         long updatedAt;
         long consumedAt;
         String sourceItemId = "";
+        String category = "Outros";
 
         StockEntry(String name, double quantity, String unit, double price, long addedAt) {
             this.name = name;
@@ -2097,6 +2241,7 @@ public class MainActivity extends Activity {
             json.put("updatedAt", updatedAt);
             json.put("consumedAt", consumedAt);
             json.put("sourceItemId", sourceItemId);
+            json.put("category", category);
             return json;
         }
 
@@ -2112,6 +2257,7 @@ public class MainActivity extends Activity {
             entry.updatedAt = json.optLong("updatedAt", entry.addedAt);
             entry.consumedAt = json.optLong("consumedAt", 0);
             entry.sourceItemId = json.optString("sourceItemId", "");
+            entry.category = json.optString("category", "Outros");
             return entry;
         }
     }

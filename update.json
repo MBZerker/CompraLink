@@ -1,7 +1,7 @@
 {
-  "versionCode": 20,
-  "versionName": "2.9",
+  "versionCode": 21,
+  "versionName": "3.0",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Gastos agora mostra historico de precos por produto com minimo, medio, maximo, ultimo preco e economia potencial."
+  "notes": "Adiciona meta mensal e categorias no estoque, com resumo de gastos por categoria."
 }

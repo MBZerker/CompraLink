@@ -45,6 +45,7 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.Normalizer;
@@ -76,6 +77,9 @@ public class MainActivity extends Activity {
     private static final String PAGES_PATH = "/CompraLink/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
+    private static final int SORT_CHECKED_BOTTOM = 0;
+    private static final int SORT_CHECKED_TOP = 1;
+    private static final int SORT_KEEP_POSITION = 2;
 
     private final List<ShoppingList> lists = new ArrayList<>();
     private final List<StockEntry> stock = new ArrayList<>();
@@ -204,8 +208,7 @@ public class MainActivity extends Activity {
         addTopHeader(list.name, listSubtitle(list), true);
         addInputCard();
 
-        addItems(false);
-        addItems(true);
+        addItems();
         setContentView(rootScroll());
     }
 
@@ -284,6 +287,17 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             printParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(print, printParams);
+
+            ShoppingList current = lists.get(selectedIndex);
+            ImageButton sort = imageIconButton(sortIcon(current.sortMode), softButtonBg(), primaryText());
+            sort.setOnClickListener(v -> {
+                current.sortMode = (current.sortMode + 1) % 3;
+                save();
+                showListScreen();
+            });
+            LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            sortParams.setMargins(dp(8), 0, 0, 0);
+            actions.addView(sort, sortParams);
 
             Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
             theme.setOnClickListener(v -> toggleTheme());
@@ -463,7 +477,7 @@ public class MainActivity extends Activity {
             TextView name = label(entry.name, 18, true, primaryText());
             card.addView(name);
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
-            String total = entry.price > 0 ? money.format(entry.price * Math.max(1, entry.quantity)) : "sem preco";
+            String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
             TextView meta = label(formatQty(entry.quantity) + " x " + price + " (" + total + ")", 14, true, mutedText());
             meta.setPadding(0, dp(4), 0, 0);
             card.addView(meta);
@@ -491,7 +505,7 @@ public class MainActivity extends Activity {
             cal.setTimeInMillis(entry.addedAt);
             String key = monthKey(cal);
             if (totals.containsKey(key)) {
-                totals.put(key, totals.get(key) + entry.price * Math.max(1, entry.quantity));
+                totals.put(key, totals.get(key) + entry.price * entry.quantity);
             }
         }
         double max = 1;
@@ -605,12 +619,28 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void addItems(boolean checked) {
+    private void addItems() {
+        ShoppingList current = lists.get(selectedIndex);
+        if (current.sortMode == SORT_CHECKED_TOP) {
+            addItemsByCheckedState(true);
+            addItemsByCheckedState(false);
+        } else if (current.sortMode == SORT_KEEP_POSITION) {
+            for (int i = 0; i < current.items.size(); i++) {
+                root.addView(itemRow(current.items.get(i), i), matchWrapWithTop(dp(8)));
+            }
+        } else {
+            addItemsByCheckedState(false);
+            addItemsByCheckedState(true);
+        }
+    }
+
+    private void addItemsByCheckedState(boolean checked) {
         ShoppingList current = lists.get(selectedIndex);
         for (int i = 0; i < current.items.size(); i++) {
             ShoppingItem item = current.items.get(i);
-            if (item.checked != checked) continue;
-            root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
+            if (item.checked == checked) {
+                root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
+            }
         }
     }
 
@@ -815,7 +845,7 @@ public class MainActivity extends Activity {
         EditText name = dialogInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
         EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        if (item.price > 0) price.setText(String.format(Locale.US, "%.2f", item.price));
+        if (item.price > 0) price.setText(formatPriceInput(item.price));
         EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         unit.setText(item.unit == null || item.unit.isEmpty() ? "1" : item.unit);
         form.addView(name, matchHeight(dp(54)));
@@ -852,7 +882,7 @@ public class MainActivity extends Activity {
         input.setPadding(dp(12), 0, dp(12), 0);
         input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         if (item.price > 0) {
-            input.setText(String.format(Locale.US, "%.2f", item.price));
+            input.setText(formatPriceInput(item.price));
             input.setSelection(input.getText().length());
         }
         new AlertDialog.Builder(this)
@@ -1109,8 +1139,7 @@ public class MainActivity extends Activity {
                 .setMessage(entry.name)
                 .setView(qty)
                 .setPositiveButton("Salvar", (dialog, which) -> {
-                    double amount = parsePrice(qty.getText().toString());
-                    entry.quantity = amount <= 0 ? 1 : amount;
+                    entry.quantity = parseQuantity(qty.getText().toString());
                     entry.updatedAt = System.currentTimeMillis();
                     saveStock();
                     showStockWindow(false);
@@ -1369,6 +1398,10 @@ public class MainActivity extends Activity {
         }
     }
 
+    private String formatPriceInput(double value) {
+        return String.format(new Locale("pt", "BR"), "%.2f", value);
+    }
+
     private String normalize(String value) {
         String noAccent = Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFD)
                 .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
@@ -1409,13 +1442,20 @@ public class MainActivity extends Activity {
     }
 
     private String formatQty(double value) {
-        if (Math.abs(value - Math.round(value)) < 0.001) return String.valueOf((long) Math.round(value));
-        return String.format(Locale.US, "%.2f", value);
+        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
     }
 
     private double quantityOf(ShoppingItem item) {
-        double qty = parsePrice(item.unit);
-        return qty <= 0 ? 1 : qty;
+        if (item.unit == null || item.unit.trim().isEmpty()) return 1;
+        return parseQuantity(item.unit);
+    }
+
+    private double parseQuantity(String raw) {
+        if (raw == null) return 1;
+        String cleaned = raw.trim();
+        if (cleaned.isEmpty()) return 1;
+        double value = parsePrice(cleaned);
+        return value < 0 ? 0 : value;
     }
 
     private long stockDays(StockEntry entry) {
@@ -1628,6 +1668,12 @@ public class MainActivity extends Activity {
         return button;
     }
 
+    private int sortIcon(int sortMode) {
+        if (sortMode == SORT_CHECKED_TOP) return R.drawable.ic_sort_checked_top;
+        if (sortMode == SORT_KEEP_POSITION) return R.drawable.ic_sort_keep_position;
+        return R.drawable.ic_sort_checked_bottom;
+    }
+
     private GradientDrawable round(int color, int radius, int strokeColor, int strokeWidth) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
@@ -1682,6 +1728,7 @@ public class MainActivity extends Activity {
         int color;
         long createdAt = System.currentTimeMillis();
         boolean saveCheckedToStock = true;
+        int sortMode = SORT_CHECKED_BOTTOM;
         final List<ShoppingItem> items = new ArrayList<>();
 
         ShoppingList(String name) {
@@ -1695,6 +1742,7 @@ public class MainActivity extends Activity {
             json.put("color", color);
             json.put("createdAt", createdAt);
             json.put("saveCheckedToStock", saveCheckedToStock);
+            json.put("sortMode", sortMode);
             JSONArray array = new JSONArray();
             for (ShoppingItem item : items) array.put(item.toJson());
             json.put("items", array);
@@ -1707,6 +1755,7 @@ public class MainActivity extends Activity {
             list.color = json.optInt("color", 0);
             list.createdAt = json.optLong("createdAt", System.currentTimeMillis());
             list.saveCheckedToStock = json.optBoolean("saveCheckedToStock", true);
+            list.sortMode = json.optInt("sortMode", SORT_CHECKED_BOTTOM);
             JSONArray array = json.optJSONArray("items");
             if (array != null) {
                 for (int i = 0; i < array.length(); i++) {

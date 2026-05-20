@@ -1,7 +1,7 @@
 {
-  "versionCode": 38,
-  "versionName": "4.7",
+  "versionCode": 39,
+  "versionName": "4.8",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora a janela de atualizacao, destacando o download do APK e removendo o botao GitHub."
+  "notes": "Adiciona cor global do app com seletor visual e barra de status acompanhando a cor escolhida."
 }

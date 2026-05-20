@@ -433,6 +433,12 @@ public class MainActivity extends Activity {
                 backupParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(backup, backupParams);
 
+                ImageButton palette = imageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                palette.setOnClickListener(v -> promptAccentColor());
+                LinearLayout.LayoutParams paletteParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                paletteParams.setMargins(dp(8), 0, 0, 0);
+                actions.addView(palette, paletteParams);
+
                 Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
                 theme.setOnClickListener(v -> toggleTheme());
                 LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
@@ -2292,6 +2298,77 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void promptAccentColor() {
+        LinearLayout form = dialogForm();
+        final int defaultAccent = Color.rgb(15, 118, 110);
+        final int[] selected = new int[]{accentColor};
+        ColorSpectrumView spectrum = new ColorSpectrumView(this);
+        spectrum.setSelectedColor(selected[0]);
+        form.addView(spectrum, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(220)));
+
+        View preview = new View(this);
+        preview.setBackground(round(selected[0], dp(14), stroke(), 1));
+        LinearLayout.LayoutParams previewParams = matchWrapWithTop(dp(10));
+        previewParams.height = dp(46);
+        form.addView(preview, previewParams);
+
+        TextView values = label(colorLabel(selected[0]), 13, true, primaryText());
+        values.setGravity(Gravity.CENTER);
+        form.addView(values, matchWrapWithTop(dp(8)));
+
+        TextView brightLabel = label("Brilho", 13, true, mutedText());
+        form.addView(brightLabel, matchWrapWithTop(dp(10)));
+        SeekBar brightness = new SeekBar(this);
+        brightness.setMax(100);
+        brightness.setProgress(100);
+        form.addView(brightness, matchWrapWithTop(dp(4)));
+
+        Button reset = button("Usar cor padrao", softButtonBg(), primaryText());
+        form.addView(reset, matchHeight(dp(44)));
+
+        Runnable refresh = () -> {
+            preview.setBackground(round(selected[0], dp(14), stroke(), 1));
+            values.setText(colorLabel(selected[0]));
+        };
+        spectrum.setOnColorChanged(color -> {
+            selected[0] = applyBrightness(color, brightness.getProgress());
+            refresh.run();
+        });
+        brightness.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                selected[0] = applyBrightness(spectrum.baseColor(), progress);
+                refresh.run();
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        reset.setOnClickListener(v -> {
+            selected[0] = defaultAccent;
+            spectrum.setSelectedColor(defaultAccent);
+            brightness.setProgress(100);
+            refresh.run();
+        });
+
+        dialog()
+                .setTitle("Cor do app")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    accentColor = selected[0];
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_ACCENT, accentColor).apply();
+                    applySystemBars();
+                    showHomeScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
     private void confirmDeleteList(int index) {
         dialog()
                 .setTitle("Remover lista?")
@@ -2853,14 +2930,14 @@ public class MainActivity extends Activity {
 
     private void applySystemBars() {
         Window window = getWindow();
-        window.setStatusBarColor(screenBg());
+        window.setStatusBarColor(accentColor);
         window.setNavigationBarColor(screenBg());
         if (Build.VERSION.SDK_INT >= 23) {
             int flags = window.getDecorView().getSystemUiVisibility();
-            if (isDarkTheme()) {
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-            } else {
+            if (isLightColor(accentColor)) {
                 flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            } else {
+                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             }
             if (Build.VERSION.SDK_INT >= 26) {
                 if (isDarkTheme()) {
@@ -3012,6 +3089,11 @@ public class MainActivity extends Activity {
         int g = (int) (Color.green(color) * alpha + Color.green(base) * (1 - alpha));
         int b = (int) (Color.blue(color) * alpha + Color.blue(base) * (1 - alpha));
         return Color.rgb(r, g, b);
+    }
+
+    private boolean isLightColor(int color) {
+        double luminance = (0.299 * Color.red(color)) + (0.587 * Color.green(color)) + (0.114 * Color.blue(color));
+        return luminance > 186;
     }
 
     private Button button(String text, int bg, int fg) {

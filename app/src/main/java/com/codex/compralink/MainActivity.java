@@ -26,6 +26,7 @@ import android.content.res.Configuration;
 import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.method.DigitsKeyListener;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.util.Base64;
@@ -35,6 +36,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -163,6 +165,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (homeTab == 5 && selectedIndex >= 0) {
+            showListScreen();
+            return;
+        }
         if (homeTab == 4) {
             showHomeScreen();
             return;
@@ -279,6 +285,7 @@ public class MainActivity extends Activity {
         if (selectedIndex >= 0 && selectedIndex < lists.size()) {
             updateAutoLockedList(lists.get(selectedIndex));
         }
+        homeTab = 0;
         buildRoot();
         ShoppingList list = lists.get(selectedIndex);
         addTopHeader(list.name, listSubtitle(list), true);
@@ -318,13 +325,22 @@ public class MainActivity extends Activity {
         elevate(header, 3);
         root.addView(header, matchWrap());
 
+        LinearLayout topLine = new LinearLayout(this);
+        topLine.setOrientation(LinearLayout.HORIZONTAL);
+        topLine.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(topLine, matchWrap());
+
         TextView appName = new TextView(this);
         appName.setText("CompraLink");
         appName.setTextColor(accent());
         appName.setTextSize(14);
         appName.setTypeface(Typeface.DEFAULT_BOLD);
         appName.setOnClickListener(v -> registerSecretLogoTap());
-        header.addView(appName);
+        topLine.addView(appName, weighted());
+
+        Button themeTop = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
+        themeTop.setOnClickListener(v -> toggleTheme());
+        topLine.addView(themeTop, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         TextView title = new TextView(this);
         title.setText(heading);
@@ -353,7 +369,7 @@ public class MainActivity extends Activity {
             });
             actions.addView(back, weighted());
 
-            ImageButton share = imageIconButton(R.drawable.ic_share_nodes, Color.rgb(20, 184, 166), Color.WHITE);
+            ImageButton share = imageIconButton(R.drawable.ic_share_nodes, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
             boolean canShare = selectedIndex >= 0 && !lists.get(selectedIndex).items.isEmpty();
             share.setEnabled(canShare);
             share.setAlpha(canShare ? 1.0f : 0.38f);
@@ -364,7 +380,7 @@ public class MainActivity extends Activity {
             shareParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(share, shareParams);
 
-            ImageButton print = imageIconButton(R.drawable.ic_print, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+            ImageButton print = imageIconButton(R.drawable.ic_print, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
             print.setOnClickListener(v -> showPrintPreview());
             LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(dp(48), dp(48));
             printParams.setMargins(dp(8), 0, 0, 0);
@@ -384,23 +400,17 @@ public class MainActivity extends Activity {
             sortParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(sort, sortParams);
 
-            Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
-            theme.setOnClickListener(v -> toggleTheme());
-            LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-            themeParams.setMargins(dp(8), 0, 0, 0);
-            actions.addView(theme, themeParams);
-
         } else {
             if (homeTab != 0) {
                 Button back = button("Voltar", softButtonBg(), primaryText());
                 back.setOnClickListener(v -> showHomeScreen());
                 actions.addView(back, weighted());
             } else {
-                ImageButton newList = imageIconButton(R.drawable.ic_cart, Color.rgb(15, 118, 110), Color.WHITE);
+                ImageButton newList = imageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 newList.setOnClickListener(v -> promptNewList());
                 actions.addView(newList, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-                ImageButton stockButton = imageIconButton(R.drawable.ic_box, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                ImageButton stockButton = imageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
                 stockButton.setOnLongClickListener(v -> {
                     if (secretLogoTaps >= 3) {
@@ -413,7 +423,7 @@ public class MainActivity extends Activity {
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(stockButton, stockParams);
 
-                ImageButton history = imageIconButton(R.drawable.ic_history, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                ImageButton history = imageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 history.setOnClickListener(v -> showHistoryScreen());
                 LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 historyParams.setMargins(dp(8), 0, 0, 0);
@@ -421,29 +431,33 @@ public class MainActivity extends Activity {
             }
 
             if (homeTab == 0) {
-                ImageButton update = imageIconButton(R.drawable.ic_update, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                LinearLayout extraActions = new LinearLayout(this);
+                extraActions.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams extraParams = matchWrapWithTop(dp(8));
+                header.addView(extraActions, extraParams);
+
+                ImageButton update = imageIconButton(R.drawable.ic_update, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
                 LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-                updateParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(update, updateParams);
+                extraActions.addView(update, updateParams);
 
-                ImageButton backup = imageIconButton(R.drawable.ic_backup, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                ImageButton backup = imageIconButton(R.drawable.ic_backup, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 backup.setOnClickListener(v -> exportBackup());
                 LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 backupParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(backup, backupParams);
+                extraActions.addView(backup, backupParams);
 
                 ImageButton palette = imageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 palette.setOnClickListener(v -> promptAccentColor());
                 LinearLayout.LayoutParams paletteParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 paletteParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(palette, paletteParams);
+                extraActions.addView(palette, paletteParams);
 
-                Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
-                theme.setOnClickListener(v -> toggleTheme());
-                LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-                themeParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(theme, themeParams);
+                ImageButton credits = imageIconButton(R.drawable.ic_credits, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                credits.setOnClickListener(v -> showCredits());
+                LinearLayout.LayoutParams creditsParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                creditsParams.setMargins(dp(8), 0, 0, 0);
+                extraActions.addView(credits, creditsParams);
             }
 
         }
@@ -977,7 +991,7 @@ public class MainActivity extends Activity {
             card.addView(name);
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
             String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
-            TextView meta = label(formatQty(entry.quantity) + " x " + price + " (" + total + ")", 14, true, mutedText());
+            TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
             meta.setPadding(0, dp(4), 0, 0);
             card.addView(meta);
             TextView duration = label(formatStockAge(entry), 14, false, accent());
@@ -1618,7 +1632,7 @@ public class MainActivity extends Activity {
         priceInput.setHintTextColor(mutedText());
         priceInput.setLinkTextColor(accent());
         priceInput.setTextSize(15);
-        priceInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(priceInput);
         priceInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
         priceInput.setPadding(dp(12), 0, dp(12), 0);
 
@@ -1630,12 +1644,12 @@ public class MainActivity extends Activity {
         unitInput.setTextColor(primaryText());
         unitInput.setHintTextColor(mutedText());
         unitInput.setTextSize(15);
-        unitInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(unitInput);
         unitInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
         unitInput.setPadding(dp(12), 0, dp(12), 0);
         setupProductSuggestions();
 
-        Button add = button("+", Color.rgb(250, 204, 21), Color.rgb(24, 24, 27));
+        Button add = button("+", accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
         add.setTextSize(22);
         add.setOnClickListener(v -> addItem());
 
@@ -1744,7 +1758,7 @@ public class MainActivity extends Activity {
 
     private View itemRow(ShoppingItem item, int index) {
         ShoppingList current = lists.get(selectedIndex);
-        String qtyText = formatQty(quantityOf(item));
+        String qtyText = formatQtyWithAutoUnit(item);
         String priceText = item.price > 0
                 ? qtyText + " x " + money.format(item.price) + " (" + money.format(item.price * quantityOf(item)) + ")"
                 : qtyText + " x R$ --";
@@ -1770,7 +1784,7 @@ public class MainActivity extends Activity {
             if (isChecked) {
                 item.checked = true;
                 if (lists.get(selectedIndex).saveCheckedToStock) {
-                    addToStock(item, quantityOf(item), "un");
+                    addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
                 }
                 save();
                 animateItemCheckMove(row, current, isChecked, () -> showListScreen());
@@ -1877,6 +1891,7 @@ public class MainActivity extends Activity {
     private void promptStockQuantity(ShoppingItem item, Runnable onSaved, Runnable onCancel) {
         LinearLayout form = dialogForm();
         EditText qty = dialogInput("Quantidade", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(qty);
         qty.setText("1");
         EditText unit = dialogInput("Unidade", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         unit.setText(item.unit == null || item.unit.isEmpty() ? "un" : item.unit);
@@ -1960,7 +1975,7 @@ public class MainActivity extends Activity {
         long addedAt = list.lockedAt > 0 ? list.lockedAt : list.createdAt;
         for (ShoppingItem item : list.items) {
             if (!item.checked || item.price <= 0 || hasSpendingRecordForItem(item.id)) continue;
-            SpendingRecord record = new SpendingRecord(item.name, quantityOf(item), item.unit, item.price, addedAt);
+            SpendingRecord record = new SpendingRecord(item.name, quantityOf(item), autoUnitForQuantity(quantityOf(item)), item.price, addedAt);
             record.sourceItemId = item.id;
             record.sourceListId = list.id;
             record.category = latestCategoryForProduct(item.name);
@@ -2042,8 +2057,10 @@ public class MainActivity extends Activity {
         EditText name = dialogInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
         EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(price);
         if (item.price > 0) price.setText(formatPriceInput(item.price));
         EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(unit);
         unit.setText(item.unit == null || item.unit.isEmpty() ? "1" : item.unit);
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
@@ -2059,7 +2076,7 @@ public class MainActivity extends Activity {
                     if (item.unit.isEmpty()) item.unit = "1";
                     item.updatedAt = System.currentTimeMillis();
                     if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
-                        addToStock(item, quantityOf(item), "un");
+                        addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
                     }
                     save();
                     showListScreen();
@@ -2077,7 +2094,7 @@ public class MainActivity extends Activity {
         input.setLinkTextColor(accent());
         input.setBackground(round(inputBg(), dp(12), stroke(), 1));
         input.setPadding(dp(12), 0, dp(12), 0);
-        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(input);
         if (item.price > 0) {
             input.setText(formatPriceInput(item.price));
             input.setSelection(input.getText().length());
@@ -2097,51 +2114,75 @@ public class MainActivity extends Activity {
 
     private void showPriceComparison(ShoppingItem item) {
         List<PriceHit> hits = findComparablePrices(item);
-        if (hits.isEmpty()) {
+        if (hits.size() <= 1) {
             Toast.makeText(this, "Sem historico para este produto.", Toast.LENGTH_SHORT).show();
             return;
         }
-        PriceHit hit = hits.get(0);
+        homeTab = 5;
+        buildRoot();
 
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(18), dp(16), dp(18), dp(12));
-        content.setBackground(round(Color.WHITE, dp(16), Color.rgb(226, 232, 240), 1));
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        Button close = iconButton("X", accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+        close.setTextSize(18);
+        close.setOnClickListener(v -> showListScreen());
+        toolbar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        root.addView(toolbar, matchWrap());
 
-        TextView title = label("Comparacao de precos", 20, true, Color.rgb(15, 23, 42));
+        TextView title = label("Comparacao de precos", 22, true, primaryText());
         title.setGravity(Gravity.CENTER);
-        content.addView(title, matchWrap());
+        root.addView(title, matchWrapWithTop(dp(14)));
 
-        addComparisonLine(content, hit.listName, 15, true);
-        addComparisonLine(content, hit.itemName + ": " + money.format(hit.price), 16, false);
-        addComparisonLine(content, "Data: " + formatDateLabel(hit.updatedAt), 14, false);
+        TextView subtitle = label("Ordenado do maior para o menor preco unitario.", 14, false, mutedText());
+        subtitle.setGravity(Gravity.CENTER);
+        root.addView(subtitle, matchWrapWithTop(dp(4)));
 
-        double saved = item.price > 0 ? item.price - hit.price : 0;
-        if (saved > 0) {
-            TextView economy = label("Economia: " + money.format(saved), 16, true, Color.rgb(22, 163, 74));
-            economy.setPadding(0, dp(10), 0, 0);
-            content.addView(economy, matchWrap());
+        for (PriceHit hit : hits) {
+            root.addView(comparisonCard(hit, item.price), matchWrapWithTop(dp(10)));
         }
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(content);
-        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
-
-        dialog()
-                .setView(scroll)
-                .setPositiveButton("Fechar", null)
-                .show();
+        setContentView(rootScroll());
     }
 
-    private void addComparisonLine(LinearLayout content, String text, int size, boolean bold) {
-        TextView line = label(text, size, bold, Color.rgb(15, 23, 42));
-        line.setGravity(Gravity.START);
-        line.setPadding(0, dp(10), 0, 0);
-        content.addView(line, matchWrap());
+    private View comparisonCard(PriceHit hit, double sourcePrice) {
+        int trendColor;
+        int trendIcon;
+        if (sourcePrice > 0 && hit.price > sourcePrice + 0.000001) {
+            trendColor = Color.rgb(220, 38, 38);
+            trendIcon = R.drawable.ic_arrow_up;
+        } else if (sourcePrice > 0 && hit.price < sourcePrice - 0.000001) {
+            trendColor = Color.rgb(22, 163, 74);
+            trendIcon = R.drawable.ic_arrow_down;
+        } else {
+            trendColor = Color.rgb(234, 88, 12);
+            trendIcon = R.drawable.ic_minus;
+        }
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackground(round(cardBg(), dp(16), blend(trendColor, stroke(), 0.45f), 1));
+        elevate(card, 3);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(trendIcon);
+        icon.setColorFilter(trendColor);
+        card.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+
+        TextView text = label(hit.listName + ": " + hit.itemName + ",", 15, true, primaryText());
+        text.setPadding(dp(12), 0, 0, 0);
+        card.addView(text, weighted());
+
+        TextView price = label(money.format(hit.price), 15, true, trendColor);
+        price.setGravity(Gravity.END);
+        card.addView(price, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
+        return card;
     }
 
     private boolean hasComparablePrices(ShoppingItem item) {
-        return !findComparablePrices(item).isEmpty();
+        return findComparablePrices(item).size() > 1;
     }
 
     private List<PriceHit> findComparablePrices(ShoppingItem item) {
@@ -2149,13 +2190,12 @@ public class MainActivity extends Activity {
         List<PriceHit> hits = new ArrayList<>();
         for (ShoppingList list : lists) {
             for (ShoppingItem other : list.items) {
-                if (other == item || other.price <= 0) continue;
+                if (other.price <= 0) continue;
                 if (!normalize(other.name).equals(target)) continue;
-                if (item.price > 0 && other.price >= item.price) continue;
                 hits.add(new PriceHit(list.name, other.name, other.price, other.updatedAt));
             }
         }
-        Collections.sort(hits, Comparator.comparingDouble(hit -> hit.price));
+        Collections.sort(hits, (a, b) -> Double.compare(b.price, a.price));
         return hits;
     }
 
@@ -2366,6 +2406,33 @@ public class MainActivity extends Activity {
                     showHomeScreen();
                 })
                 .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void showCredits() {
+        LinearLayout form = dialogForm();
+        TextView title = label("Creditos", 22, true, primaryText());
+        title.setGravity(Gravity.CENTER);
+        form.addView(title, matchWrap());
+
+        TextView author = label("Armando Neto", 17, true, accent());
+        author.setGravity(Gravity.CENTER);
+        author.setPadding(0, dp(12), 0, 0);
+        form.addView(author, matchWrap());
+
+        TextView codex = label("Voce e sua versao", 15, false, primaryText());
+        codex.setGravity(Gravity.CENTER);
+        codex.setPadding(0, dp(6), 0, 0);
+        form.addView(codex, matchWrap());
+
+        TextView testers = label("Agradecimento aos testers:\nArmando Junior e Gabriel Lima", 15, false, mutedText());
+        testers.setGravity(Gravity.CENTER);
+        testers.setPadding(0, dp(14), 0, 0);
+        form.addView(testers, matchWrap());
+
+        dialog()
+                .setView(form)
+                .setPositiveButton("Fechar", null)
                 .show();
     }
 
@@ -2800,6 +2867,11 @@ public class MainActivity extends Activity {
         return input;
     }
 
+    private void setDecimalInput(EditText input) {
+        input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        input.setKeyListener(DigitsKeyListener.getInstance("0123456789,."));
+    }
+
     private StyledDialogBuilder dialog() {
         return new StyledDialogBuilder(this);
     }
@@ -2860,6 +2932,26 @@ public class MainActivity extends Activity {
 
     private String formatQty(double value) {
         return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+    }
+
+    private String formatQtyWithAutoUnit(ShoppingItem item) {
+        double quantity = quantityOf(item);
+        return formatQty(quantity) + " " + autoUnitForQuantity(quantity);
+    }
+
+    private String formatStockQuantity(StockEntry entry) {
+        String unit = entry.unit == null || entry.unit.trim().isEmpty()
+                ? autoUnitForQuantity(entry.quantity)
+                : entry.unit.trim();
+        return formatQty(entry.quantity) + " " + unit;
+    }
+
+    private String autoUnitForQuantity(double quantity) {
+        return isFractional(quantity) ? "kg" : "un";
+    }
+
+    private boolean isFractional(double value) {
+        return Math.abs(value - Math.rint(value)) > 0.000001;
     }
 
     private double quantityOf(ShoppingItem item) {
@@ -2930,10 +3022,26 @@ public class MainActivity extends Activity {
 
     private void applySystemBars() {
         Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= 21) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS
+                    | WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(true);
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.setStatusBarContrastEnforced(false);
+            window.setNavigationBarContrastEnforced(false);
+        }
         window.setStatusBarColor(accentColor);
         window.setNavigationBarColor(screenBg());
+        window.getDecorView().setBackgroundColor(accentColor);
         if (Build.VERSION.SDK_INT >= 23) {
             int flags = window.getDecorView().getSystemUiVisibility();
+            flags &= ~View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+            flags &= ~View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+            flags &= ~View.SYSTEM_UI_FLAG_FULLSCREEN;
             if (isLightColor(accentColor)) {
                 flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             } else {

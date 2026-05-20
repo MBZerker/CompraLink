@@ -1,7 +1,7 @@
 {
-  "versionCode": 39,
-  "versionName": "4.8",
+  "versionCode": 40,
+  "versionName": "4.9",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Adiciona cor global do app com seletor visual e barra de status acompanhando a cor escolhida."
+  "notes": "Corrige barra de status, aplica melhor a cor do app, melhora unidades kg/un e transforma a comparacao de precos em tela propria."
 }

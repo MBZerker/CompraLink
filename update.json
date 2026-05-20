@@ -1,7 +1,7 @@
 {
-  "versionCode": 37,
-  "versionName": "4.6",
+  "versionCode": 38,
+  "versionName": "4.7",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Adiciona limpeza segura de gastos, exportacao de backup e animacao ao marcar itens da lista."
+  "notes": "Melhora a janela de atualizacao, destacando o download do APK e removendo o botao GitHub."
 }

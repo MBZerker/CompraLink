@@ -32,12 +32,12 @@ public final class UpdateManager {
 
                 if (versionCode <= BuildConfig.VERSION_CODE) {
                     if (manual) {
-                        activity.runOnUiThread(() -> showCurrentDialog(activity, releaseUrl, apkUrl));
+                        activity.runOnUiThread(() -> showCurrentDialog(activity, apkUrl));
                     }
                     return;
                 }
 
-                activity.runOnUiThread(() -> showUpdateDialog(activity, versionName, notes, apkUrl, releaseUrl));
+                activity.runOnUiThread(() -> showUpdateDialog(activity, versionName, notes, apkUrl));
             } catch (Exception e) {
                 if (manual) {
                     activity.runOnUiThread(() ->
@@ -47,27 +47,25 @@ public final class UpdateManager {
         }).start();
     }
 
-    private static void showUpdateDialog(Activity activity, String versionName, String notes, String apkUrl, String releaseUrl) {
+    private static void showUpdateDialog(Activity activity, String versionName, String notes, String apkUrl) {
         String message = "Existe uma nova versao";
         if (!versionName.isEmpty()) message += " (" + versionName + ")";
         if (!notes.isEmpty()) message += ".\n\n" + notes;
-        message += "\n\nO Android vai abrir o link do APK para voce confirmar o download e instalar.";
+        message += "\n\nToque em BAIXAR ATUALIZACAO para abrir o APK. Depois confirme o download e a instalacao no Android.";
 
         new AlertDialog.Builder(activity)
                 .setTitle("Atualizacao disponivel")
                 .setMessage(message)
-                .setPositiveButton("Baixar APK", (dialog, which) -> openUrl(activity, apkUrl))
-                .setNeutralButton("GitHub", (dialog, which) -> openUrl(activity, releaseUrl))
+                .setPositiveButton("Baixar atualizacao", (dialog, which) -> openUrl(activity, apkUrl))
                 .setNegativeButton("Depois", null)
                 .show();
     }
 
-    private static void showCurrentDialog(Activity activity, String releaseUrl, String apkUrl) {
+    private static void showCurrentDialog(Activity activity, String apkUrl) {
         new AlertDialog.Builder(activity)
                 .setTitle("App atualizado")
-                .setMessage("Esta versao ja esta atualizada. Se quiser reinstalar ou baixar o APK publicado, use uma das opcoes abaixo.")
+                .setMessage("Esta versao ja esta atualizada. Se quiser reinstalar o APK publicado, toque em baixar.")
                 .setPositiveButton("Baixar APK", (dialog, which) -> openUrl(activity, apkUrl))
-                .setNeutralButton("GitHub", (dialog, which) -> openUrl(activity, releaseUrl))
                 .setNegativeButton("Fechar", null)
                 .show();
     }

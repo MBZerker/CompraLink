@@ -101,6 +101,7 @@ public class MainActivity extends Activity {
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
     private static final String SHARE_BASE = "https://mbzerker.github.io/CompraLink/l/?payload=";
+    private static final String BACKUP_BASE = "https://mbzerker.github.io/CompraLink/l/?backup=";
     private static final String PAGES_HOST = "mbzerker.github.io";
     private static final String PAGES_PATH = "/CompraLink/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
@@ -580,12 +581,10 @@ public class MainActivity extends Activity {
         root.addView(actions, matchWrapWithTop(dp(10)));
         Button reset = button("Reiniciar", softButtonBg(), primaryText());
         Button scores = button("Recordes", softButtonBg(), primaryText());
-        Button exit = button("Sair", softButtonBg(), primaryText());
         actions.addView(reset, weighted());
         LinearLayout.LayoutParams scoreParams = weighted();
-        scoreParams.setMargins(dp(8), 0, dp(8), 0);
+        scoreParams.setMargins(dp(8), 0, 0, 0);
         actions.addView(scores, scoreParams);
-        actions.addView(exit, weighted());
 
         root.addView(game, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -634,7 +633,6 @@ public class MainActivity extends Activity {
             status.setText(game.status());
         });
         scores.setOnClickListener(v -> game.showBestScores());
-        exit.setOnClickListener(v -> showHomeScreen());
         setContentView(rootScroll());
     }
 
@@ -1376,12 +1374,17 @@ public class MainActivity extends Activity {
 
     private void exportBackup() {
         try {
-            String backup = "CompraLinkBackup:" + encodeCompressed(buildBackupJson().toString());
+            String backup = BACKUP_BASE + encodeCompressed(buildBackupJson().toString());
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
             send.putExtra(Intent.EXTRA_SUBJECT, "Backup CompraLink");
             send.putExtra(Intent.EXTRA_TEXT, backup);
             startActivity(Intent.createChooser(send, "Exportar backup"));
+
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("Backup CompraLink", backup));
+            }
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel gerar o backup.", Toast.LENGTH_SHORT).show();
         }
@@ -2953,9 +2956,25 @@ public class MainActivity extends Activity {
         if (intent == null) return;
         Uri data = intent.getData();
         if (data != null) {
+            String backup = extractBackup(data);
+            if (backup != null) {
+                promptImportBackup(backup, false);
+                return;
+            }
             String payload = extractPayload(data);
             if (payload != null) importPayload(payload);
         }
+    }
+
+    private String extractBackup(Uri data) {
+        if (data == null) return null;
+        if (("http".equals(data.getScheme()) || "https".equals(data.getScheme()))
+                && PAGES_HOST.equals(data.getHost())
+                && data.getPath() != null
+                && data.getPath().startsWith(PAGES_PATH)) {
+            return data.getQueryParameter("backup");
+        }
+        return null;
     }
 
     private String extractPayload(Uri data) {
@@ -2993,12 +3012,37 @@ public class MainActivity extends Activity {
         return null;
     }
 
+    private String extractBackup(String text) {
+        if (text == null) return null;
+        String value = text.trim();
+        int start = value.indexOf("http");
+        if (start > 0) value = value.substring(start);
+        try {
+            String backup = extractBackup(Uri.parse(value));
+            if (backup != null && !backup.trim().isEmpty()) return backup;
+        } catch (Exception ignored) {
+        }
+        int marker = value.indexOf("backup=");
+        if (marker >= 0) return value.substring(marker + "backup=".length());
+        if (value.startsWith("CompraLinkBackup:")) return value.substring("CompraLinkBackup:".length());
+        return null;
+    }
+
     private void importClipboardListIfPresent() {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard == null || !clipboard.hasPrimaryClip() || clipboard.getPrimaryClip() == null) return;
         ClipData clip = clipboard.getPrimaryClip();
         if (clip.getItemCount() == 0) return;
         CharSequence text = clip.getItemAt(0).coerceToText(this);
+        String backup = extractBackup(text == null ? null : text.toString());
+        if (backup != null && !backup.trim().isEmpty()) {
+            String cleanBackup = cleanPayload(backup);
+            String last = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_LAST_CLIPBOARD_PAYLOAD, "");
+            if (!cleanBackup.equals(last)) {
+                promptImportBackup(cleanBackup, true);
+            }
+            return;
+        }
         String payload = extractPayload(text == null ? null : text.toString());
         if (payload == null || payload.trim().isEmpty()) return;
         String clean = cleanPayload(payload);
@@ -3204,6 +3248,84 @@ public class MainActivity extends Activity {
             }
         } catch (JSONException e) {
             stock.clear();
+        }
+    }
+
+    private void promptImportBackup(String rawBackup, boolean fromClipboard) {
+        String clean = cleanPayload(rawBackup);
+        String message = fromClipboard
+                ? "Ha um backup do CompraLink copiado na area de transferencia. Deseja importar agora?"
+                : "Este link contem um backup do CompraLink. Deseja importar agora?";
+        dialog()
+                .setTitle("Importar backup?")
+                .setMessage(message + "\n\nOs dados do backup serao adicionados/atualizados no app.")
+                .setPositiveButton("Importar", (dialog, which) -> {
+                    if (importBackupPayload(clean)) {
+                        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LAST_CLIPBOARD_PAYLOAD, clean).apply();
+                        Toast.makeText(this, "Backup importado.", Toast.LENGTH_SHORT).show();
+                        showHomeScreen();
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private boolean importBackupPayload(String rawBackup) {
+        try {
+            JSONObject backup = new JSONObject(decodeCompressed(cleanPayload(rawBackup)));
+            importBackupJson(backup);
+            return true;
+        } catch (Exception e) {
+            Toast.makeText(this, "Backup invalido.", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+    }
+
+    private void importBackupJson(JSONObject backup) throws JSONException {
+        JSONArray listArray = backup.optJSONArray("lists");
+        if (listArray != null) {
+            for (int i = 0; i < listArray.length(); i++) {
+                ShoppingList imported = ShoppingList.fromJson(listArray.getJSONObject(i));
+                int existing = findListIndexById(imported.id);
+                if (existing >= 0) lists.set(existing, imported);
+                else lists.add(0, imported);
+            }
+            save();
+        }
+
+        JSONArray stockArray = backup.optJSONArray("stock");
+        if (stockArray != null) {
+            stock.clear();
+            for (int i = 0; i < stockArray.length(); i++) stock.add(StockEntry.fromJson(stockArray.getJSONObject(i)));
+            saveStock();
+        }
+
+        JSONArray stockHistoryArray = backup.optJSONArray("stockHistory");
+        if (stockHistoryArray != null) {
+            stockHistory.clear();
+            for (int i = 0; i < stockHistoryArray.length(); i++) stockHistory.add(StockEntry.fromJson(stockHistoryArray.getJSONObject(i)));
+            saveStockHistory();
+        }
+
+        JSONArray spendingArray = backup.optJSONArray("spendingHistory");
+        if (spendingArray != null) {
+            spendingHistory.clear();
+            for (int i = 0; i < spendingArray.length(); i++) spendingHistory.add(SpendingRecord.fromJson(spendingArray.getJSONObject(i)));
+            saveSpendingHistory();
+        }
+
+        JSONObject settings = backup.optJSONObject("settings");
+        if (settings != null) {
+            themeMode = settings.optInt("themeMode", themeMode);
+            accentColor = settings.optInt("accentColor", accentColor);
+            spendingRangeMonths = settings.optInt("spendingRangeMonths", spendingRangeMonths);
+            monthlyGoal = settings.optDouble("monthlyGoal", monthlyGoal);
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putInt(KEY_THEME, themeMode)
+                    .putInt(KEY_ACCENT, accentColor)
+                    .putInt(KEY_SPENDING_RANGE, spendingRangeMonths)
+                    .putLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(monthlyGoal))
+                    .apply();
         }
     }
 

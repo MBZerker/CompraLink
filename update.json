@@ -1,7 +1,7 @@
 {
-  "versionCode": 46,
-  "versionName": "4.15",
+  "versionCode": 47,
+  "versionName": "4.16",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Remove o botao Sair do Compra Invaders e corrige a derrota para considerar apenas inimigos vivos chegando ao carrinho."
+  "notes": "Exporta backup por link HTTPS reconhecido pelo app, importa backup pela area de transferencia e remove o botao Sair do Mercado Geek."
 }

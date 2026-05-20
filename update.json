@@ -1,7 +1,7 @@
 {
-  "versionCode": 28,
-  "versionName": "3.7",
+  "versionCode": 29,
+  "versionName": "3.8",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Adiciona seletor visual de cores para listas e melhora o acabamento de botoes e cards."
+  "notes": "Padroniza os popups com visual customizado, arredondado e compatível com modo claro e escuro."
 }

@@ -44,6 +44,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -1166,7 +1167,7 @@ public class MainActivity extends Activity {
             input.setText(formatPriceInput(monthlyGoal));
             input.setSelection(input.getText().length());
         }
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Meta mensal")
                 .setView(input)
                 .setPositiveButton("Salvar", (dialog, which) -> {
@@ -1602,7 +1603,7 @@ public class MainActivity extends Activity {
         unit.setText(item.unit == null || item.unit.isEmpty() ? "un" : item.unit);
         form.addView(qty, matchHeight(dp(54)));
         form.addView(unit, matchWrapWithTop(dp(8)));
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Adicionar ao estoque")
                 .setMessage(item.name)
                 .setView(form)
@@ -1699,7 +1700,7 @@ public class MainActivity extends Activity {
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Editar item")
                 .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> {
@@ -1733,7 +1734,7 @@ public class MainActivity extends Activity {
             input.setText(formatPriceInput(item.price));
             input.setSelection(input.getText().length());
         }
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Preco de " + item.name)
                 .setView(input)
                 .setPositiveButton("Salvar", (dialog, which) -> {
@@ -1778,7 +1779,7 @@ public class MainActivity extends Activity {
         scroll.addView(content);
         scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
 
-        new AlertDialog.Builder(this)
+        dialog()
                 .setView(scroll)
                 .setPositiveButton("Fechar", null)
                 .show();
@@ -1821,7 +1822,7 @@ public class MainActivity extends Activity {
         saveToStock.setChecked(true);
         tintCheckBox(saveToStock);
         form.addView(saveToStock, matchWrapWithTop(dp(8)));
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Nova lista")
                 .setView(form)
                 .setPositiveButton("Criar", (dialog, which) -> {
@@ -1842,7 +1843,7 @@ public class MainActivity extends Activity {
         String[] options = list.locked
                 ? new String[]{"Remover"}
                 : new String[]{"Editar nome", "Mudar cor", "Remover"};
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle(list.name)
                 .setItems(options, (dialog, which) -> {
                     if (list.locked || which == 2) {
@@ -1867,7 +1868,7 @@ public class MainActivity extends Activity {
         EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setText(list.name);
         input.setSelection(input.getText().length());
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Editar lista")
                 .setView(input)
                 .setPositiveButton("Salvar", (dialog, which) -> {
@@ -1937,7 +1938,7 @@ public class MainActivity extends Activity {
             values.setText("Padrao do app");
         });
 
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Cor da lista")
                 .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> {
@@ -1950,7 +1951,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDeleteList(int index) {
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Remover lista?")
                 .setMessage(lists.get(index).name)
                 .setPositiveButton("Remover", (dialog, which) -> {
@@ -1981,7 +1982,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDeleteStock(StockEntry entry) {
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Remover do estoque?")
                 .setMessage(entry.name)
                 .setPositiveButton("Remover", (dialog, which) -> {
@@ -1995,7 +1996,7 @@ public class MainActivity extends Activity {
 
     private void showStockOptions(StockEntry entry) {
         String[] options = new String[]{"Editar quantidade", "Editar categoria", "Remover"};
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle(entry.name)
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
@@ -2013,7 +2014,7 @@ public class MainActivity extends Activity {
         EditText qty = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         qty.setText(formatQty(entry.quantity));
         qty.setSelection(qty.getText().length());
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Editar quantidade")
                 .setMessage(entry.name)
                 .setView(qty)
@@ -2029,7 +2030,7 @@ public class MainActivity extends Activity {
 
     private void promptEditStockCategory(StockEntry entry) {
         String[] categories = categoryOptions();
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Categoria")
                 .setItems(categories, (dialog, which) -> {
                     String selected = categories[which];
@@ -2054,7 +2055,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48)
         ));
-        new AlertDialog.Builder(this)
+        dialog()
                 .setTitle("Categoria personalizada")
                 .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> setStockCategory(entry, input.getText().toString()))
@@ -2353,6 +2354,55 @@ public class MainActivity extends Activity {
         input.setPadding(dp(12), 0, dp(12), 0);
         input.setInputType(inputType);
         return input;
+    }
+
+    private StyledDialogBuilder dialog() {
+        return new StyledDialogBuilder(this);
+    }
+
+    private void styleDialog(AlertDialog dialog) {
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(round(cardBg(), dp(22), stroke(), 1));
+            window.setDimAmount(isDarkTheme() ? 0.72f : 0.42f);
+        }
+        View decor = window == null ? null : window.getDecorView();
+        if (decor != null) {
+            decor.setPadding(dp(2), dp(2), dp(2), dp(2));
+            elevate(decor, 8);
+            styleDialogTree(decor);
+        }
+        ListView list = dialog.getListView();
+        if (list != null) {
+            list.setBackgroundColor(cardBg());
+            list.setDivider(null);
+            list.setPadding(dp(4), dp(4), dp(4), dp(4));
+        }
+        styleDialogButton(dialog, AlertDialog.BUTTON_POSITIVE, accent());
+        styleDialogButton(dialog, AlertDialog.BUTTON_NEGATIVE, mutedText());
+        styleDialogButton(dialog, AlertDialog.BUTTON_NEUTRAL, Color.rgb(225, 29, 72));
+    }
+
+    private void styleDialogTree(View view) {
+        if (view instanceof TextView && !(view instanceof Button)) {
+            TextView text = (TextView) view;
+            text.setTextColor(primaryText());
+            text.setLinkTextColor(accent());
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                styleDialogTree(group.getChildAt(i));
+            }
+        }
+    }
+
+    private void styleDialogButton(AlertDialog dialog, int which, int color) {
+        Button button = dialog.getButton(which);
+        if (button == null) return;
+        button.setTextColor(color);
+        button.setAllCaps(false);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
     }
 
     private TextView label(String text, int size, boolean bold, int color) {
@@ -2851,6 +2901,19 @@ public class MainActivity extends Activity {
 
     private interface OnColorChanged {
         void onChanged(int color);
+    }
+
+    private class StyledDialogBuilder extends AlertDialog.Builder {
+        StyledDialogBuilder(Context context) {
+            super(context);
+        }
+
+        @Override
+        public AlertDialog show() {
+            AlertDialog dialog = super.show();
+            styleDialog(dialog);
+            return dialog;
+        }
     }
 
     private static class ShoppingItem {

@@ -1,7 +1,7 @@
 {
-  "versionCode": 40,
-  "versionName": "4.9",
+  "versionCode": 41,
+  "versionName": "4.10",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Corrige barra de status, aplica melhor a cor do app, melhora unidades kg/un e transforma a comparacao de precos em tela propria."
+  "notes": "Ajusta o cabecalho da tela principal, reposiciona tema e cor do app, centraliza botoes e corrige os creditos."
 }

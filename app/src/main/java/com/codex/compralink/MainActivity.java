@@ -303,7 +303,7 @@ public class MainActivity extends Activity {
         applySystemBars();
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(18), dp(18), dp(22));
+        root.setPadding(dp(18), statusBarHeight() + dp(20), dp(18), dp(22));
     }
 
     private ScrollView rootScroll() {
@@ -338,9 +338,24 @@ public class MainActivity extends Activity {
         appName.setOnClickListener(v -> registerSecretLogoTap());
         topLine.addView(appName, weighted());
 
+        LinearLayout sideControls = new LinearLayout(this);
+        sideControls.setOrientation(LinearLayout.VERTICAL);
+        sideControls.setGravity(Gravity.CENTER_HORIZONTAL);
+        sideControls.setPadding(0, dp(6), 0, 0);
+
         Button themeTop = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
         themeTop.setOnClickListener(v -> toggleTheme());
-        topLine.addView(themeTop, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        sideControls.addView(themeTop, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        if (!listOpen && homeTab == 0) {
+            ImageButton paletteTop = imageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
+            paletteTop.setOnClickListener(v -> promptAccentColor());
+            LinearLayout.LayoutParams paletteTopParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            paletteTopParams.setMargins(0, dp(8), 0, 0);
+            sideControls.addView(paletteTop, paletteTopParams);
+        }
+
+        topLine.addView(sideControls, new LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView title = new TextView(this);
         title.setText(heading);
@@ -406,6 +421,7 @@ public class MainActivity extends Activity {
                 back.setOnClickListener(v -> showHomeScreen());
                 actions.addView(back, weighted());
             } else {
+                actions.setGravity(Gravity.CENTER_HORIZONTAL);
                 ImageButton newList = imageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 newList.setOnClickListener(v -> promptNewList());
                 actions.addView(newList, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -433,6 +449,7 @@ public class MainActivity extends Activity {
             if (homeTab == 0) {
                 LinearLayout extraActions = new LinearLayout(this);
                 extraActions.setOrientation(LinearLayout.HORIZONTAL);
+                extraActions.setGravity(Gravity.CENTER_HORIZONTAL);
                 LinearLayout.LayoutParams extraParams = matchWrapWithTop(dp(8));
                 header.addView(extraActions, extraParams);
 
@@ -446,12 +463,6 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 backupParams.setMargins(dp(8), 0, 0, 0);
                 extraActions.addView(backup, backupParams);
-
-                ImageButton palette = imageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                palette.setOnClickListener(v -> promptAccentColor());
-                LinearLayout.LayoutParams paletteParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-                paletteParams.setMargins(dp(8), 0, 0, 0);
-                extraActions.addView(palette, paletteParams);
 
                 ImageButton credits = imageIconButton(R.drawable.ic_credits, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 credits.setOnClickListener(v -> showCredits());
@@ -2420,7 +2431,7 @@ public class MainActivity extends Activity {
         author.setPadding(0, dp(12), 0, 0);
         form.addView(author, matchWrap());
 
-        TextView codex = label("Voce e sua versao", 15, false, primaryText());
+        TextView codex = label("ChatGPT (Codex) e sua versao", 15, false, primaryText());
         codex.setGravity(Gravity.CENTER);
         codex.setPadding(0, dp(6), 0, 0);
         form.addView(codex, matchWrap());

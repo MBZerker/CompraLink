@@ -427,6 +427,12 @@ public class MainActivity extends Activity {
                 updateParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(update, updateParams);
 
+                ImageButton backup = imageIconButton(R.drawable.ic_backup, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
+                backup.setOnClickListener(v -> exportBackup());
+                LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                backupParams.setMargins(dp(8), 0, 0, 0);
+                actions.addView(backup, backupParams);
+
                 Button theme = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
                 theme.setOnClickListener(v -> toggleTheme());
                 LinearLayout.LayoutParams themeParams = new LinearLayout.LayoutParams(dp(48), dp(48));
@@ -1143,6 +1149,12 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams reportParams = new LinearLayout.LayoutParams(dp(48), dp(48));
         reportParams.setMargins(dp(8), 0, 0, 0);
         card.addView(report, reportParams);
+
+        ImageButton clear = imageIconButton(R.drawable.ic_trash, Color.rgb(225, 29, 72), Color.WHITE);
+        clear.setOnClickListener(v -> confirmClearSpendingHistory());
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        clearParams.setMargins(dp(8), 0, 0, 0);
+        card.addView(clear, clearParams);
     }
 
     private int spendingRangeIndex(int[] values) {
@@ -1156,6 +1168,70 @@ public class MainActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putInt(KEY_SPENDING_RANGE, spendingRangeMonths)
                 .apply();
+    }
+
+    private void confirmClearSpendingHistory() {
+        dialog()
+                .setTitle("Limpar gastos?")
+                .setMessage("Deseja mesmo limpar todo o historico de gastos usado nos calculos e relatorios?")
+                .setPositiveButton("Continuar", (dialog, which) -> confirmClearSpendingHistoryForever())
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void confirmClearSpendingHistoryForever() {
+        dialog()
+                .setTitle("Acao permanente")
+                .setMessage("Isso apagará o historico de gastos e nao podera ser restaurado pelo app. Listas e estoque nao serao apagados. Continuar?")
+                .setPositiveButton("Limpar", (dialog, which) -> {
+                    spendingHistory.clear();
+                    saveSpendingHistory();
+                    Toast.makeText(this, "Historico de gastos limpo.", Toast.LENGTH_SHORT).show();
+                    showStockWindow(true);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void exportBackup() {
+        try {
+            String backup = buildBackupJson().toString(2);
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("application/json");
+            send.putExtra(Intent.EXTRA_SUBJECT, "Backup CompraLink");
+            send.putExtra(Intent.EXTRA_TEXT, backup);
+            startActivity(Intent.createChooser(send, "Exportar backup"));
+        } catch (Exception e) {
+            Toast.makeText(this, "Nao foi possivel gerar o backup.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private JSONObject buildBackupJson() throws JSONException {
+        JSONObject json = new JSONObject();
+        json.put("app", "CompraLink");
+        json.put("backupVersion", 1);
+        json.put("createdAt", System.currentTimeMillis());
+
+        JSONArray listArray = new JSONArray();
+        for (ShoppingList list : lists) listArray.put(list.toJson());
+        json.put("lists", listArray);
+
+        JSONArray stockArray = new JSONArray();
+        for (StockEntry entry : stock) stockArray.put(entry.toJson());
+        json.put("stock", stockArray);
+
+        JSONArray spendingArray = new JSONArray();
+        for (SpendingRecord entry : spendingHistory) spendingArray.put(entry.toJson());
+        json.put("spendingHistory", spendingArray);
+
+        JSONObject settings = new JSONObject();
+        settings.put("themeMode", themeMode);
+        settings.put("accentColor", accentColor);
+        settings.put("spendingRangeMonths", spendingRangeMonths);
+        settings.put("monthlyGoal", monthlyGoal);
+        settings.put("gameBest", getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BEST, ""));
+        json.put("settings", settings);
+        return json;
     }
 
     private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, double forecast, SpendingRecord biggestEntry, Map<String, SpendingProduct> products) {
@@ -1691,12 +1767,12 @@ public class MainActivity extends Activity {
                     addToStock(item, quantityOf(item), "un");
                 }
                 save();
-                showListScreen();
+                animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             } else {
                 item.checked = false;
                 removeStockForItem(item);
                 save();
-                showListScreen();
+                animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             }
         });
         row.addView(box, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -1771,6 +1847,25 @@ public class MainActivity extends Activity {
         save();
         hideKeyboard();
         showListScreen();
+    }
+
+    private void animateItemCheckMove(View row, ShoppingList list, boolean checked, Runnable after) {
+        if (list.sortMode == SORT_KEEP_POSITION) {
+            after.run();
+            return;
+        }
+        float distance = dp(36);
+        if (list.sortMode == SORT_CHECKED_TOP) {
+            distance = checked ? -distance : distance;
+        } else {
+            distance = checked ? distance : -distance;
+        }
+        row.animate()
+                .translationY(distance)
+                .alpha(0.35f)
+                .setDuration(150)
+                .withEndAction(after)
+                .start();
     }
 
     private void promptStockQuantity(ShoppingItem item, Runnable onSaved, Runnable onCancel) {

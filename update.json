@@ -1,7 +1,7 @@
 {
-  "versionCode": 36,
-  "versionName": "4.5",
+  "versionCode": 37,
+  "versionName": "4.6",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Separa gastos do estoque: listas fechadas geram historico imutavel e categorias passam a ser reaproveitadas."
+  "notes": "Adiciona limpeza segura de gastos, exportacao de backup e animacao ao marcar itens da lista."
 }

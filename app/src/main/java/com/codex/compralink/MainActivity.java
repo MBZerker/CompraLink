@@ -96,6 +96,7 @@ public class MainActivity extends Activity {
     private static final String KEY_GAME_PLAYER_X = "market_game_player_x";
     private static final String KEY_GAME_PLAYER_Y = "market_game_player_y";
     private static final String KEY_GAME_BEST = "market_game_best";
+    private static final String KEY_INVADERS_BEST = "invaders_best";
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
@@ -644,6 +645,16 @@ public class MainActivity extends Activity {
         buildRoot();
         addTopHeader("Compra Invaders", "Defenda a lista dos precos invasores.", false);
 
+        LinearLayout topActions = new LinearLayout(this);
+        topActions.setGravity(Gravity.CENTER);
+        Button ranking = button("Ranking", accent(), Color.WHITE);
+        Button exitTop = button("Sair", softButtonBg(), primaryText());
+        topActions.addView(ranking, new LinearLayout.LayoutParams(dp(110), dp(50)));
+        LinearLayout.LayoutParams exitTopParams = new LinearLayout.LayoutParams(dp(90), dp(50));
+        exitTopParams.setMargins(dp(8), 0, 0, 0);
+        topActions.addView(exitTop, exitTopParams);
+        root.addView(topActions, matchWrapWithTop(dp(8)));
+
         TextView status = label("Toque em atirar e proteja o carrinho.", 14, false, mutedText());
         status.setGravity(Gravity.CENTER);
         root.addView(status, matchWrapWithTop(dp(8)));
@@ -658,26 +669,32 @@ public class MainActivity extends Activity {
         Button left = iconButton("<", accent(), Color.WHITE);
         Button fire = button("Atirar", accent(), Color.WHITE);
         Button right = iconButton(">", accent(), Color.WHITE);
-        Button exit = button("Sair", softButtonBg(), primaryText());
         controls.addView(left, new LinearLayout.LayoutParams(dp(64), dp(54)));
         LinearLayout.LayoutParams fireParams = new LinearLayout.LayoutParams(dp(92), dp(54));
         fireParams.setMargins(dp(8), 0, dp(8), 0);
         controls.addView(fire, fireParams);
         controls.addView(right, new LinearLayout.LayoutParams(dp(64), dp(54)));
-        LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(dp(76), dp(54));
-        exitParams.setMargins(dp(8), 0, 0, 0);
-        controls.addView(exit, exitParams);
 
         left.setOnClickListener(v -> invadersView.movePlayer(-1));
         right.setOnClickListener(v -> invadersView.movePlayer(1));
         fire.setOnClickListener(v -> invadersView.fire());
-        exit.setOnClickListener(v -> {
+        ranking.setOnClickListener(v -> showInvadersRanking());
+        exitTop.setOnClickListener(v -> {
             invadersView.stop();
             invadersView = null;
             showHomeScreen();
         });
         setContentView(rootScroll());
         invadersView.start();
+    }
+
+    private void showInvadersRanking() {
+        int best = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_INVADERS_BEST, 0);
+        dialog()
+                .setTitle("Ranking")
+                .setMessage("Hi-score: " + best + " pontos")
+                .setPositiveButton("Fechar", null)
+                .show();
     }
 
     private void showStockHistoryWindow() {
@@ -780,9 +797,17 @@ public class MainActivity extends Activity {
             list.locked = true;
             list.lockedAt = System.currentTimeMillis();
             addSpendingRecordsForList(list);
-            askArchiveLockedList(list);
+            if (isListFinished(list)) askArchiveLockedList(list);
         }
         save();
+    }
+
+    private boolean isListFinished(ShoppingList list) {
+        if (list.items.isEmpty()) return false;
+        for (ShoppingItem item : list.items) {
+            if (!item.checked) return false;
+        }
+        return true;
     }
 
     private void askArchiveLockedList(ShoppingList list) {
@@ -3601,7 +3626,7 @@ public class MainActivity extends Activity {
     }
 
     private String[] categoryOptions() {
-        return new String[]{"Mercado", "Hortifruti", "Carnes", "Limpeza", "Higiene", "Farmácia", "Bebidas", "Pet", "Outros", CUSTOM_CATEGORY};
+        return new String[]{"Mercado", "Hortifruti", "Proteínas", "Limpeza", "Higiene", "Farmácia", "Bebidas", "Pet", "Outros", CUSTOM_CATEGORY};
     }
 
     private boolean isDefaultCategory(String category) {
@@ -3961,6 +3986,7 @@ public class MainActivity extends Activity {
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final TextView status;
         private final boolean[][] alive = new boolean[4][7];
+        private final int[][] health = new int[4][7];
         private final Runnable tick = new Runnable() {
             @Override
             public void run() {
@@ -3979,10 +4005,12 @@ public class MainActivity extends Activity {
         private float direction = 1;
         private int score;
         private int wave = 1;
+        private int bestScore;
 
         CompraInvadersView(Context context, TextView status) {
             super(context);
             this.status = status;
+            bestScore = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_INVADERS_BEST, 0);
             setBackground(round(cardBg(), dp(18), stroke(), 1));
             resetWave();
         }
@@ -4024,7 +4052,10 @@ public class MainActivity extends Activity {
 
         private void resetWave() {
             for (int r = 0; r < alive.length; r++) {
-                for (int c = 0; c < alive[r].length; c++) alive[r][c] = true;
+                for (int c = 0; c < alive[r].length; c++) {
+                    alive[r][c] = true;
+                    health[r][c] = 1 + Math.max(0, wave - 1) / 2 + (r == 0 && wave >= 3 ? 1 : 0);
+                }
             }
             invaderX = dp(18);
             invaderY = dp(34);
@@ -4035,7 +4066,7 @@ public class MainActivity extends Activity {
 
         private void updateGame() {
             if (gameOver || getWidth() <= 0) return;
-            invaderX += direction * (1.3f + wave * 0.35f);
+            invaderX += direction * (1.5f + wave * 0.55f);
             float formationWidth = 7 * cell();
             if (invaderX < dp(8) || invaderX + formationWidth > getWidth() - dp(8)) {
                 direction *= -1;
@@ -4048,6 +4079,7 @@ public class MainActivity extends Activity {
             }
             if (invaderY + 4 * cell() > getHeight() - dp(86)) {
                 gameOver = true;
+                saveBestIfNeeded();
                 status.setText("Fim de jogo - toque em Atirar para reiniciar. Pontos: " + score);
             }
         }
@@ -4060,12 +4092,19 @@ public class MainActivity extends Activity {
                     float left = invaderX + c * cell();
                     float top = invaderY + r * cell();
                     if (x >= left && x <= left + cell() && bulletY >= top && bulletY <= top + cell()) {
-                        alive[r][c] = false;
                         bulletCol = -1;
+                        health[r][c]--;
+                        if (health[r][c] > 0) {
+                            score += 3 * wave;
+                            updateStatus();
+                            return;
+                        }
+                        alive[r][c] = false;
                         score += 10 * wave;
-                        if (cleared()) {
-                            wave++;
-                            resetWave();
+            if (cleared()) {
+                saveBestIfNeeded();
+                wave++;
+                resetWave();
                         } else {
                             updateStatus();
                         }
@@ -4083,7 +4122,13 @@ public class MainActivity extends Activity {
         }
 
         private void updateStatus() {
-            status.setText("Onda " + wave + " - Pontos " + score);
+            status.setText("Onda " + wave + " - Pontos " + score + " - Recorde " + bestScore);
+        }
+
+        private void saveBestIfNeeded() {
+            if (score <= bestScore) return;
+            bestScore = score;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_INVADERS_BEST, bestScore).apply();
         }
 
         @Override
@@ -4116,6 +4161,10 @@ public class MainActivity extends Activity {
                     float top = invaderY + r * size;
                     paint.setColor(productColor(r, c));
                     canvas.drawRoundRect(left + dp(6), top + dp(8), left + size - dp(6), top + size - dp(8), dp(8), dp(8), paint);
+                    if (health[r][c] > 1) {
+                        paint.setColor(Color.rgb(250, 204, 21));
+                        canvas.drawCircle(left + size * 0.5f, top + size * 0.22f, dp(4), paint);
+                    }
                     paint.setColor(Color.WHITE);
                     canvas.drawCircle(left + size * 0.35f, top + size * 0.42f, dp(3), paint);
                     canvas.drawCircle(left + size * 0.65f, top + size * 0.42f, dp(3), paint);

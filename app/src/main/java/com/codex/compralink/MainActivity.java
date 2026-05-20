@@ -83,6 +83,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
     private static final String KEY_LISTS = "lists";
     private static final String KEY_STOCK = "stock";
+    private static final String KEY_STOCK_HISTORY = "stock_history";
     private static final String KEY_SPENDING_HISTORY = "spending_history";
     private static final String KEY_THEME = "theme_mode";
     private static final String KEY_ACCENT = "accent_color";
@@ -111,6 +112,7 @@ public class MainActivity extends Activity {
 
     private final List<ShoppingList> lists = new ArrayList<>();
     private final List<StockEntry> stock = new ArrayList<>();
+    private final List<StockEntry> stockHistory = new ArrayList<>();
     private final List<SpendingRecord> spendingHistory = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
@@ -123,6 +125,9 @@ public class MainActivity extends Activity {
     private double monthlyGoal;
     private boolean shellReady;
     private boolean pendingIntentHandled;
+    private boolean selectedFromHistory;
+    private String stockUndoStockJson;
+    private String stockUndoHistoryJson;
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
@@ -137,6 +142,7 @@ public class MainActivity extends Activity {
         spendingRangeMonths = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SPENDING_RANGE, 6);
         load();
         loadStock();
+        loadStockHistory();
         loadSpendingHistory();
         ensureSpendingRecordsForClosedLists();
         showSplash();
@@ -176,8 +182,13 @@ public class MainActivity extends Activity {
         }
         if (selectedIndex >= 0 || homeTab != 0) {
             selectedIndex = -1;
-            homeTab = 0;
-            showHomeScreen();
+            if (selectedFromHistory) {
+                selectedFromHistory = false;
+                showHistoryScreen();
+            } else {
+                homeTab = 0;
+                showHomeScreen();
+            }
             return;
         }
         super.onBackPressed();
@@ -220,13 +231,14 @@ public class MainActivity extends Activity {
 
     private void showHomeScreen() {
         selectedIndex = -1;
-        homeTab = 0;
+        selectedFromHistory = false;
+        homeTab = selectedFromHistory ? 3 : 0;
         updateAutoLockedLists();
         buildRoot();
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
 
         for (int i = 0; i < lists.size(); i++) {
-            if (lists.get(i).archived) continue;
+            if (lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
         }
         if (!hasVisibleLists(false)) {
@@ -237,6 +249,7 @@ public class MainActivity extends Activity {
 
     private void showHistoryScreen() {
         selectedIndex = -1;
+        selectedFromHistory = false;
         homeTab = 3;
         updateAutoLockedLists();
         buildRoot();
@@ -244,7 +257,7 @@ public class MainActivity extends Activity {
         addHistorySummary();
 
         for (int i = 0; i < lists.size(); i++) {
-            if (!lists.get(i).archived) continue;
+            if (!lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
         }
         if (!hasVisibleLists(true)) {
@@ -258,7 +271,7 @@ public class MainActivity extends Activity {
         int items = 0;
         double total = 0;
         for (ShoppingList list : lists) {
-            if (!list.archived) continue;
+            if (!list.archived || list.deletedFromHistory) continue;
             count++;
             items += list.items.size();
             for (ShoppingItem item : list.items) {
@@ -270,6 +283,7 @@ public class MainActivity extends Activity {
 
     private void showStockWindow(boolean spending) {
         selectedIndex = -1;
+        selectedFromHistory = false;
         homeTab = spending ? 2 : 1;
         buildRoot();
         addTopHeader("Estoque", spending ? "Gastos ficam dentro do estoque." : "Itens comprados e duracao estimada.", false);
@@ -291,7 +305,10 @@ public class MainActivity extends Activity {
         ShoppingList list = lists.get(selectedIndex);
         addTopHeader(list.name, listSubtitle(list), true);
         if (list.locked) {
-            root.addView(infoCard("Lista protegida", "Desbloqueie pelo cadeado para editar esta lista."), matchWrapWithTop(dp(10)));
+            String message = list.archived
+                    ? "Esta lista esta no historico. Voce pode copiar ou remover, mas ela permanece protegida."
+                    : "Desbloqueie pelo cadeado para editar esta lista.";
+            root.addView(infoCard("Lista protegida", message), matchWrapWithTop(dp(10)));
         } else {
             addInputCard();
         }
@@ -394,7 +411,12 @@ public class MainActivity extends Activity {
             Button back = button("Voltar", softButtonBg(), primaryText());
             back.setOnClickListener(v -> {
                 selectedIndex = -1;
-                showHomeScreen();
+                if (selectedFromHistory) {
+                    selectedFromHistory = false;
+                    showHistoryScreen();
+                } else {
+                    showHomeScreen();
+                }
             });
             actions.addView(back, weighted());
 
@@ -495,6 +517,21 @@ public class MainActivity extends Activity {
         root.addView(tabs, matchWrap());
         addStockTabButton(tabs, "Estoque", false);
         addStockTabButton(tabs, "Gastos", true);
+
+        Button history = button("Historico", homeTab == 6 ? accent() : softButtonBg(), homeTab == 6 ? Color.WHITE : primaryText());
+        history.setTextSize(13);
+        history.setOnClickListener(v -> showStockHistoryWindow());
+        LinearLayout.LayoutParams historyParams = weighted();
+        historyParams.setMargins(dp(6), 0, 0, 0);
+        tabs.addView(history, historyParams);
+
+        ImageButton undo = imageIconButton(R.drawable.ic_undo, stockUndoStockJson == null ? softButtonBg() : accent(), stockUndoStockJson == null ? primaryText() : Color.WHITE);
+        undo.setEnabled(stockUndoStockJson != null);
+        undo.setAlpha(stockUndoStockJson == null ? 0.45f : 1.0f);
+        undo.setOnClickListener(v -> undoStockAction());
+        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        undoParams.setMargins(dp(6), 0, 0, 0);
+        tabs.addView(undo, undoParams);
     }
 
     private void addStockTabButton(LinearLayout tabs, String label, boolean spending) {
@@ -592,6 +629,17 @@ public class MainActivity extends Activity {
         setContentView(rootScroll());
     }
 
+    private void showStockHistoryWindow() {
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 6;
+        buildRoot();
+        addTopHeader("Estoque", "Baixas guardadas para consulta.", false);
+        addStockTabs();
+        addStockHistoryScreen();
+        setContentView(rootScroll());
+    }
+
     private View listCard(int index) {
         ShoppingList list = lists.get(index);
         LinearLayout card = new LinearLayout(this);
@@ -602,6 +650,7 @@ public class MainActivity extends Activity {
         elevate(card, 3);
         card.setOnClickListener(v -> {
             selectedIndex = index;
+            selectedFromHistory = list.archived;
             showListScreen();
         });
         card.setOnLongClickListener(v -> {
@@ -628,6 +677,8 @@ public class MainActivity extends Activity {
             toggleListLock(list);
             if (!list.locked) showHomeTab();
         });
+        lock.setEnabled(!(list.archived && list.locked));
+        lock.setAlpha(list.archived && list.locked ? 0.45f : 1.0f);
         titleRow.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
         TextView meta = new TextView(this);
@@ -660,13 +711,17 @@ public class MainActivity extends Activity {
 
     private boolean hasVisibleLists(boolean archived) {
         for (ShoppingList list : lists) {
-            if (list.archived == archived) return true;
+            if (!list.deletedFromHistory && list.archived == archived) return true;
         }
         return false;
     }
 
     private void toggleListLock(ShoppingList list) {
         if (list.locked) {
+            if (list.archived) {
+                Toast.makeText(this, "Listas no historico permanecem protegidas.", Toast.LENGTH_SHORT).show();
+                return;
+            }
             list.locked = false;
             list.archived = false;
             list.lockedAt = 0;
@@ -1254,15 +1309,79 @@ public class MainActivity extends Activity {
 
     private void exportBackup() {
         try {
-            String backup = buildBackupJson().toString(2);
+            String backup = "CompraLinkBackup:" + encodeCompressed(buildBackupJson().toString());
             Intent send = new Intent(Intent.ACTION_SEND);
-            send.setType("application/json");
+            send.setType("text/plain");
             send.putExtra(Intent.EXTRA_SUBJECT, "Backup CompraLink");
             send.putExtra(Intent.EXTRA_TEXT, backup);
             startActivity(Intent.createChooser(send, "Exportar backup"));
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel gerar o backup.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void addStockHistoryScreen() {
+        LinearLayout actions = new LinearLayout(this);
+        actions.setGravity(Gravity.CENTER_HORIZONTAL);
+        ImageButton clear = imageIconButton(R.drawable.ic_trash, Color.rgb(225, 29, 72), Color.WHITE);
+        clear.setEnabled(!stockHistory.isEmpty());
+        clear.setAlpha(stockHistory.isEmpty() ? 0.45f : 1.0f);
+        clear.setOnClickListener(v -> confirmClearStockHistory());
+        actions.addView(clear, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        root.addView(actions, matchWrapWithTop(dp(10)));
+
+        if (stockHistory.isEmpty()) {
+            root.addView(infoCard("Historico vazio", "Itens baixados do estoque aparecem aqui."), matchWrapWithTop(dp(10)));
+            return;
+        }
+        for (StockEntry entry : stockHistory) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(16), dp(14), dp(16), dp(14));
+            card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+            card.setOnLongClickListener(v -> {
+                confirmDeleteStockHistoryEntry(entry);
+                return true;
+            });
+            card.addView(label(entry.name, 18, true, primaryText()));
+            String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
+            String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
+            TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
+            meta.setPadding(0, dp(4), 0, 0);
+            card.addView(meta);
+            TextView dates = label("Entrada: " + formatDateTime(entry.addedAt) + "\nBaixa: " + formatDateTime(entry.consumedAt), 13, false, mutedText());
+            dates.setPadding(0, dp(5), 0, 0);
+            card.addView(dates);
+            root.addView(card, matchWrapWithTop(dp(10)));
+        }
+    }
+
+    private void confirmDeleteStockHistoryEntry(StockEntry entry) {
+        dialog()
+                .setTitle("Remover permanentemente?")
+                .setMessage(entry.name)
+                .setPositiveButton("Remover", (dialog, which) -> {
+                    rememberStockUndo();
+                    stockHistory.remove(entry);
+                    saveStockHistory();
+                    showStockHistoryWindow();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void confirmClearStockHistory() {
+        dialog()
+                .setTitle("Limpar historico do estoque?")
+                .setMessage("Isso removera permanentemente todas as baixas do historico de estoque. Continuar?")
+                .setPositiveButton("Limpar", (dialog, which) -> {
+                    rememberStockUndo();
+                    stockHistory.clear();
+                    saveStockHistory();
+                    showStockHistoryWindow();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private JSONObject buildBackupJson() throws JSONException {
@@ -1278,6 +1397,10 @@ public class MainActivity extends Activity {
         JSONArray stockArray = new JSONArray();
         for (StockEntry entry : stock) stockArray.put(entry.toJson());
         json.put("stock", stockArray);
+
+        JSONArray stockHistoryArray = new JSONArray();
+        for (StockEntry entry : stockHistory) stockHistoryArray.put(entry.toJson());
+        json.put("stockHistory", stockHistoryArray);
 
         JSONArray spendingArray = new JSONArray();
         for (SpendingRecord entry : spendingHistory) spendingArray.put(entry.toJson());
@@ -2308,12 +2431,14 @@ public class MainActivity extends Activity {
     private void showListOptions(int index) {
         ShoppingList list = lists.get(index);
         String[] options = list.locked
-                ? new String[]{"Remover"}
+                ? new String[]{"Copiar", "Remover"}
                 : new String[]{"Editar nome", "Mudar cor", "Remover"};
         dialog()
                 .setTitle(list.name)
                 .setItems(options, (dialog, which) -> {
-                    if (list.locked || which == 2) {
+                    if (list.locked && which == 0) {
+                        copyListFromHistory(index);
+                    } else if (list.locked || which == 2) {
                         confirmDeleteList(index);
                     } else if (which == 0) {
                         promptEditList(index);
@@ -2409,6 +2534,30 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Cancelar", null)
                 .show();
+    }
+
+    private void copyListFromHistory(int index) {
+        try {
+            ShoppingList copy = ShoppingList.fromJson(lists.get(index).toJson());
+            copy.id = UUID.randomUUID().toString();
+            copy.name = copy.name + " (copia)";
+            copy.locked = false;
+            copy.archived = false;
+            copy.lockedAt = 0;
+            copy.createdAt = System.currentTimeMillis();
+            for (ShoppingItem item : copy.items) {
+                item.id = UUID.randomUUID().toString();
+                item.checked = false;
+                item.stockId = "";
+            }
+            lists.add(0, copy);
+            selectedIndex = 0;
+            selectedFromHistory = false;
+            save();
+            showListScreen();
+        } catch (JSONException e) {
+            Toast.makeText(this, "Nao foi possivel copiar esta lista.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void promptAccentColor() {
@@ -2509,7 +2658,13 @@ public class MainActivity extends Activity {
                 .setTitle("Remover lista?")
                 .setMessage(lists.get(index).name)
                 .setPositiveButton("Remover", (dialog, which) -> {
-                    lists.remove(index);
+                    ShoppingList list = lists.get(index);
+                    if (list.archived || list.locked) {
+                        list.deletedFromHistory = true;
+                        addSpendingRecordsForList(list);
+                    } else {
+                        lists.remove(index);
+                    }
                     selectedIndex = -1;
                     save();
                     showHomeTab();
@@ -2540,6 +2695,7 @@ public class MainActivity extends Activity {
                 .setTitle("Remover do estoque?")
                 .setMessage(entry.name)
                 .setPositiveButton("Remover", (dialog, which) -> {
+                    rememberStockUndo();
                     stock.remove(entry);
                     saveStock();
                     showStockWindow(false);
@@ -2549,7 +2705,7 @@ public class MainActivity extends Activity {
     }
 
     private void showStockOptions(StockEntry entry) {
-        String[] options = new String[]{"Editar quantidade", "Editar categoria", "Remover"};
+        String[] options = new String[]{"Editar quantidade", "Editar categoria", "Dar baixa"};
         dialog()
                 .setTitle(entry.name)
                 .setItems(options, (dialog, which) -> {
@@ -2558,10 +2714,30 @@ public class MainActivity extends Activity {
                     } else if (which == 1) {
                         promptEditStockCategory(entry);
                     } else {
-                        confirmDeleteStock(entry);
+                        confirmCheckoutStock(entry);
                     }
                 })
                 .show();
+    }
+
+    private void confirmCheckoutStock(StockEntry entry) {
+        dialog()
+                .setTitle("Dar baixa no estoque?")
+                .setMessage(entry.name + "\nO item saira do estoque atual e ficara no historico.")
+                .setPositiveButton("Dar baixa", (dialog, which) -> checkoutStock(entry))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void checkoutStock(StockEntry entry) {
+        rememberStockUndo();
+        stock.remove(entry);
+        entry.consumedAt = System.currentTimeMillis();
+        entry.updatedAt = entry.consumedAt;
+        stockHistory.add(0, entry);
+        saveStock();
+        saveStockHistory();
+        showStockWindow(false);
     }
 
     private void promptEditStockQuantity(StockEntry entry) {
@@ -2573,6 +2749,7 @@ public class MainActivity extends Activity {
                 .setMessage(entry.name)
                 .setView(qty)
                 .setPositiveButton("Salvar", (dialog, which) -> {
+                    rememberStockUndo();
                     entry.quantity = parseQuantity(qty.getText().toString());
                     entry.updatedAt = System.currentTimeMillis();
                     saveStock();
@@ -2618,12 +2795,49 @@ public class MainActivity extends Activity {
     }
 
     private void setStockCategory(StockEntry entry, String category) {
+        rememberStockUndo();
         String clean = category == null ? "" : category.trim();
         entry.category = clean.isEmpty() ? "Outros" : clean;
         entry.updatedAt = System.currentTimeMillis();
         saveStock();
         updateSpendingCategoryForStock(entry);
         showStockWindow(false);
+    }
+
+    private void rememberStockUndo() {
+        stockUndoStockJson = stockJson(stock);
+        stockUndoHistoryJson = stockJson(stockHistory);
+    }
+
+    private String stockJson(List<StockEntry> entries) {
+        JSONArray array = new JSONArray();
+        for (StockEntry entry : entries) {
+            try {
+                array.put(entry.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        return array.toString();
+    }
+
+    private void undoStockAction() {
+        if (stockUndoStockJson == null || stockUndoHistoryJson == null) return;
+        stock.clear();
+        stockHistory.clear();
+        try {
+            JSONArray stockArray = new JSONArray(stockUndoStockJson);
+            for (int i = 0; i < stockArray.length(); i++) stock.add(StockEntry.fromJson(stockArray.getJSONObject(i)));
+            JSONArray historyArray = new JSONArray(stockUndoHistoryJson);
+            for (int i = 0; i < historyArray.length(); i++) stockHistory.add(StockEntry.fromJson(historyArray.getJSONObject(i)));
+            saveStock();
+            saveStockHistory();
+            stockUndoStockJson = null;
+            stockUndoHistoryJson = null;
+            Toast.makeText(this, "Acao desfeita.", Toast.LENGTH_SHORT).show();
+            if (homeTab == 6) showStockHistoryWindow(); else showStockWindow(false);
+        } catch (JSONException e) {
+            Toast.makeText(this, "Nao foi possivel desfazer.", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void shareSelectedList() {
@@ -2907,6 +3121,19 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void loadStockHistory() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_STOCK_HISTORY, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            stockHistory.clear();
+            for (int i = 0; i < array.length(); i++) {
+                stockHistory.add(StockEntry.fromJson(array.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            stockHistory.clear();
+        }
+    }
+
     private void loadSpendingHistory() {
         String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_SPENDING_HISTORY, "[]");
         try {
@@ -2940,6 +3167,17 @@ public class MainActivity extends Activity {
             }
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_STOCK, array.toString()).apply();
+    }
+
+    private void saveStockHistory() {
+        JSONArray array = new JSONArray();
+        for (StockEntry entry : stockHistory) {
+            try {
+                array.put(entry.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_STOCK_HISTORY, array.toString()).apply();
     }
 
     private void saveSpendingHistory() {
@@ -3220,6 +3458,8 @@ public class MainActivity extends Activity {
             showHistoryScreen();
         } else if (homeTab == 4) {
             showMarketGame();
+        } else if (homeTab == 6) {
+            showStockHistoryWindow();
         } else {
             showHomeScreen();
         }
@@ -3510,6 +3750,7 @@ public class MainActivity extends Activity {
         boolean saveCheckedToStock = true;
         boolean locked;
         boolean archived;
+        boolean deletedFromHistory;
         int sortMode = SORT_CHECKED_BOTTOM;
         final List<ShoppingItem> items = new ArrayList<>();
 
@@ -3527,6 +3768,7 @@ public class MainActivity extends Activity {
             json.put("saveCheckedToStock", saveCheckedToStock);
             json.put("locked", locked);
             json.put("archived", archived);
+            json.put("deletedFromHistory", deletedFromHistory);
             json.put("sortMode", sortMode);
             JSONArray array = new JSONArray();
             for (ShoppingItem item : items) array.put(item.toJson());
@@ -3543,6 +3785,7 @@ public class MainActivity extends Activity {
             list.saveCheckedToStock = json.optBoolean("saveCheckedToStock", true);
             list.locked = json.optBoolean("locked", false);
             list.archived = json.optBoolean("archived", false);
+            list.deletedFromHistory = json.optBoolean("deletedFromHistory", false);
             list.sortMode = json.optInt("sortMode", SORT_CHECKED_BOTTOM);
             JSONArray array = json.optJSONArray("items");
             if (array != null) {

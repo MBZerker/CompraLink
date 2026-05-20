@@ -1,7 +1,7 @@
 {
-  "versionCode": 45,
-  "versionName": "4.14",
+  "versionCode": 46,
+  "versionName": "4.15",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora Compra Invaders com ranking, controles mais seguros e dificuldade progressiva; ajusta categorias e envio ao historico."
+  "notes": "Remove o botao Sair do Compra Invaders e corrige a derrota para considerar apenas inimigos vivos chegando ao carrinho."
 }

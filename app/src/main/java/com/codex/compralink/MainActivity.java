@@ -648,11 +648,7 @@ public class MainActivity extends Activity {
         LinearLayout topActions = new LinearLayout(this);
         topActions.setGravity(Gravity.CENTER);
         Button ranking = button("Ranking", accent(), Color.WHITE);
-        Button exitTop = button("Sair", softButtonBg(), primaryText());
         topActions.addView(ranking, new LinearLayout.LayoutParams(dp(110), dp(50)));
-        LinearLayout.LayoutParams exitTopParams = new LinearLayout.LayoutParams(dp(90), dp(50));
-        exitTopParams.setMargins(dp(8), 0, 0, 0);
-        topActions.addView(exitTop, exitTopParams);
         root.addView(topActions, matchWrapWithTop(dp(8)));
 
         TextView status = label("Toque em atirar e proteja o carrinho.", 14, false, mutedText());
@@ -679,11 +675,6 @@ public class MainActivity extends Activity {
         right.setOnClickListener(v -> invadersView.movePlayer(1));
         fire.setOnClickListener(v -> invadersView.fire());
         ranking.setOnClickListener(v -> showInvadersRanking());
-        exitTop.setOnClickListener(v -> {
-            invadersView.stop();
-            invadersView = null;
-            showHomeScreen();
-        });
         setContentView(rootScroll());
         invadersView.start();
     }
@@ -4077,11 +4068,21 @@ public class MainActivity extends Activity {
                 if (bulletY < 0) bulletCol = -1;
                 else hitTest();
             }
-            if (invaderY + 4 * cell() > getHeight() - dp(86)) {
+            if (liveInvaderBottom() > getHeight() - dp(86)) {
                 gameOver = true;
                 saveBestIfNeeded();
                 status.setText("Fim de jogo - toque em Atirar para reiniciar. Pontos: " + score);
             }
+        }
+
+        private float liveInvaderBottom() {
+            float bottom = 0;
+            for (int r = 0; r < alive.length; r++) {
+                for (int c = 0; c < alive[r].length; c++) {
+                    if (alive[r][c]) bottom = Math.max(bottom, invaderY + (r + 1) * cell());
+                }
+            }
+            return bottom;
         }
 
         private void hitTest() {

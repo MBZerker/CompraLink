@@ -84,6 +84,13 @@ public class MainActivity extends Activity {
     private static final String KEY_ACCENT = "accent_color";
     private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
     private static final String KEY_MONTHLY_GOAL = "monthly_goal";
+    private static final String KEY_SPENDING_RANGE = "spending_range_months";
+    private static final String KEY_GAME_LEVEL = "market_game_level";
+    private static final String KEY_GAME_MOVES = "market_game_moves";
+    private static final String KEY_GAME_BOARD = "market_game_board";
+    private static final String KEY_GAME_PLAYER_X = "market_game_player_x";
+    private static final String KEY_GAME_PLAYER_Y = "market_game_player_y";
+    private static final String KEY_GAME_BEST = "market_game_best";
     private static final int THEME_SYSTEM = 0;
     private static final int THEME_LIGHT = 1;
     private static final int THEME_DARK = 2;
@@ -122,6 +129,7 @@ public class MainActivity extends Activity {
         themeMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_THEME, THEME_SYSTEM);
         accentColor = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_ACCENT, Color.rgb(15, 118, 110));
         monthlyGoal = Double.longBitsToDouble(getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(0)));
+        spendingRangeMonths = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SPENDING_RANGE, 6);
         load();
         loadStock();
         showSplash();
@@ -465,6 +473,19 @@ public class MainActivity extends Activity {
         TextView status = label(game.status(), 14, true, mutedText());
         status.setGravity(Gravity.CENTER);
         root.addView(status, matchWrapWithTop(dp(10)));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(actions, matchWrapWithTop(dp(10)));
+        Button reset = button("Reiniciar", softButtonBg(), primaryText());
+        Button scores = button("Recordes", softButtonBg(), primaryText());
+        Button exit = button("Sair", softButtonBg(), primaryText());
+        actions.addView(reset, weighted());
+        LinearLayout.LayoutParams scoreParams = weighted();
+        scoreParams.setMargins(dp(8), 0, dp(8), 0);
+        actions.addView(scores, scoreParams);
+        actions.addView(exit, weighted());
+
         root.addView(game, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(360)
@@ -490,16 +511,6 @@ public class MainActivity extends Activity {
         row.addView(down, mid);
         row.addView(right, new LinearLayout.LayoutParams(dp(64), dp(52)));
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(actions, matchWrapWithTop(dp(10)));
-        Button reset = button("Reiniciar", softButtonBg(), primaryText());
-        Button exit = button("Sair", softButtonBg(), primaryText());
-        actions.addView(reset, weighted());
-        LinearLayout.LayoutParams exitParams = weighted();
-        exitParams.setMargins(dp(8), 0, 0, 0);
-        actions.addView(exit, exitParams);
-
         View.OnClickListener refresh = v -> status.setText(game.status());
         up.setOnClickListener(v -> {
             game.move(0, -1);
@@ -521,6 +532,7 @@ public class MainActivity extends Activity {
             game.resetLevel();
             status.setText(game.status());
         });
+        scores.setOnClickListener(v -> game.showBestScores());
         exit.setOnClickListener(v -> showHomeScreen());
         setContentView(rootScroll());
     }
@@ -1065,6 +1077,7 @@ public class MainActivity extends Activity {
         button.setTextSize(12);
         button.setOnClickListener(v -> {
             spendingRangeMonths = months;
+            saveSpendingRange();
             showStockWindow(true);
         });
         LinearLayout.LayoutParams params = weighted();
@@ -1103,6 +1116,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 spendingRangeMonths = values[position];
+                saveSpendingRange();
                 showStockWindow(true);
             }
 
@@ -1130,6 +1144,12 @@ public class MainActivity extends Activity {
             if (values[i] == spendingRangeMonths) return i;
         }
         return 2;
+    }
+
+    private void saveSpendingRange() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putInt(KEY_SPENDING_RANGE, spendingRangeMonths)
+                .apply();
     }
 
     private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, double forecast, StockEntry biggestEntry, Map<String, SpendingProduct> products) {
@@ -3083,14 +3103,41 @@ public class MainActivity extends Activity {
         private int level;
         private int moves;
         private boolean won;
+        private boolean animating;
+        private float animProgress = 1f;
+        private int animPlayerFromX;
+        private int animPlayerFromY;
+        private int animPlayerToX;
+        private int animPlayerToY;
+        private boolean animPushing;
+        private boolean animCartFull;
+        private int animCartFromX;
+        private int animCartFromY;
+        private int animCartToX;
+        private int animCartToY;
+        private final Runnable animationStep = new Runnable() {
+            @Override
+            public void run() {
+                animProgress += 0.18f;
+                if (animProgress >= 1f) {
+                    animProgress = 1f;
+                    animating = false;
+                    saveGameState();
+                } else {
+                    postDelayed(this, 16);
+                }
+                invalidate();
+            }
+        };
 
         MarketGeekView(Context context) {
             super(context);
-            resetLevel();
+            if (!loadSavedGame()) loadLevel(level);
         }
 
         void resetLevel() {
             loadLevel(level);
+            saveGameState();
         }
 
         String status() {
@@ -3098,21 +3145,29 @@ public class MainActivity extends Activity {
         }
 
         void move(int dx, int dy) {
-            if (won) return;
+            if (won || animating) return;
             int nx = playerX + dx;
             int ny = playerY + dy;
             if (!inside(nx, ny) || board[ny][nx] == '#') return;
+            boolean pushing = false;
+            int oldPlayerX = playerX;
+            int oldPlayerY = playerY;
+            int oldCartX = nx;
+            int oldCartY = ny;
+            int newCartX = nx + dx;
+            int newCartY = ny + dy;
             if (board[ny][nx] == '$' || board[ny][nx] == '*') {
-                int bx = nx + dx;
-                int by = ny + dy;
-                if (!inside(bx, by) || board[by][bx] == '#' || board[by][bx] == '$' || board[by][bx] == '*') return;
-                board[by][bx] = board[by][bx] == '.' ? '*' : '$';
+                if (!inside(newCartX, newCartY) || board[newCartY][newCartX] == '#' || board[newCartY][newCartX] == '$' || board[newCartY][newCartX] == '*') return;
+                pushing = true;
+                board[newCartY][newCartX] = board[newCartY][newCartX] == '.' ? '*' : '$';
                 board[ny][nx] = board[ny][nx] == '*' ? '.' : ' ';
             }
             playerX = nx;
             playerY = ny;
             moves++;
+            startMoveAnimation(oldPlayerX, oldPlayerY, playerX, playerY, pushing, oldCartX, oldCartY, newCartX, newCartY);
             if (complete()) {
+                saveBestScore(level, moves);
                 if (level < levels.length - 1) {
                     level++;
                     Toast.makeText(MainActivity.this, "Fase organizada!", Toast.LENGTH_SHORT).show();
@@ -3122,6 +3177,7 @@ public class MainActivity extends Activity {
                     Toast.makeText(MainActivity.this, "Mercado perfeito! Voce venceu.", Toast.LENGTH_LONG).show();
                 }
             }
+            saveGameState();
             invalidate();
         }
 
@@ -3140,10 +3196,25 @@ public class MainActivity extends Activity {
                 for (int x = 0; x < cols; x++) {
                     float left = startX + x * tile;
                     float top = startY + y * tile;
-                    drawTile(canvas, board[y][x], left, top, tile);
+                    char tileChar = board[y][x];
+                    if (animating && animPushing && x == animCartToX && y == animCartToY) {
+                        tileChar = tileChar == '*' ? '.' : ' ';
+                    }
+                    drawTile(canvas, tileChar, left, top, tile);
                 }
             }
-            drawCart(canvas, startX + playerX * tile, startY + playerY * tile, tile);
+            if (animating) {
+                float px = lerp(animPlayerFromX, animPlayerToX, animProgress);
+                float py = lerp(animPlayerFromY, animPlayerToY, animProgress);
+                if (animPushing) {
+                    float cx = lerp(animCartFromX, animCartToX, animProgress);
+                    float cy = lerp(animCartFromY, animCartToY, animProgress);
+                    drawCart(canvas, startX + cx * tile, startY + cy * tile, tile, animCartFull);
+                }
+                drawPerson(canvas, startX + px * tile, startY + py * tile, tile, animPushing, true, animProgress);
+            } else {
+                drawPerson(canvas, startX + playerX * tile, startY + playerY * tile, tile, false, false, 0);
+            }
         }
 
         private void drawTile(Canvas canvas, char tileChar, float left, float top, float size) {
@@ -3154,6 +3225,11 @@ public class MainActivity extends Activity {
             if (tileChar == '#') {
                 paint.setColor(isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(148, 163, 184));
                 canvas.drawRoundRect(left + 2, top + 2, left + size - 2, top + size - 2, dp(8), dp(8), paint);
+                paint.setColor(isDarkTheme() ? Color.rgb(100, 116, 139) : Color.rgb(226, 232, 240));
+                for (int i = 0; i < 3; i++) {
+                    canvas.drawCircle(left + size * (0.28f + i * 0.22f), top + size * 0.35f, size * 0.08f, paint);
+                    canvas.drawRect(left + size * (0.22f + i * 0.22f), top + size * 0.55f, left + size * (0.34f + i * 0.22f), top + size * 0.72f, paint);
+                }
                 return;
             }
             if (tileChar == '.' || tileChar == '*') {
@@ -3165,26 +3241,132 @@ public class MainActivity extends Activity {
                 canvas.drawText("P", left + size / 2f, top + size * 0.58f, paint);
             }
             if (tileChar == '$' || tileChar == '*') {
-                paint.setColor(Color.rgb(245, 158, 11));
-                canvas.drawRoundRect(left + size * 0.22f, top + size * 0.22f, left + size * 0.78f, top + size * 0.78f, dp(6), dp(6), paint);
-                paint.setColor(Color.rgb(120, 53, 15));
-                paint.setStrokeWidth(3);
-                paint.setStyle(Paint.Style.STROKE);
-                canvas.drawLine(left + size * 0.3f, top + size * 0.45f, left + size * 0.7f, top + size * 0.45f, paint);
-                paint.setStyle(Paint.Style.FILL);
+                drawCart(canvas, left, top, size, tileChar == '*');
             }
         }
 
-        private void drawCart(Canvas canvas, float left, float top, float size) {
+        private float lerp(float a, float b, float t) {
+            return a + (b - a) * Math.min(1f, Math.max(0f, t));
+        }
+
+        private void drawCart(Canvas canvas, float left, float top, float size, boolean full) {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeWidth(Math.max(3, size * 0.07f));
-            paint.setColor(accent());
+            paint.setColor(full ? Color.rgb(22, 163, 74) : accent());
             canvas.drawLine(left + size * 0.22f, top + size * 0.28f, left + size * 0.78f, top + size * 0.28f, paint);
             canvas.drawLine(left + size * 0.3f, top + size * 0.28f, left + size * 0.42f, top + size * 0.68f, paint);
             canvas.drawLine(left + size * 0.42f, top + size * 0.68f, left + size * 0.78f, top + size * 0.68f, paint);
+            if (full) {
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Color.rgb(250, 204, 21));
+                canvas.drawCircle(left + size * 0.52f, top + size * 0.45f, size * 0.09f, paint);
+                paint.setColor(Color.rgb(239, 68, 68));
+                canvas.drawCircle(left + size * 0.66f, top + size * 0.5f, size * 0.08f, paint);
+            }
             paint.setStyle(Paint.Style.FILL);
+            paint.setColor(full ? Color.rgb(22, 163, 74) : accent());
             canvas.drawCircle(left + size * 0.42f, top + size * 0.8f, size * 0.08f, paint);
             canvas.drawCircle(left + size * 0.72f, top + size * 0.8f, size * 0.08f, paint);
+        }
+
+        private void drawPerson(Canvas canvas, float left, float top, float size, boolean pushing, boolean walking, float phase) {
+            float cx = left + size * 0.5f;
+            float cy = top + size * 0.5f;
+            float sway = walking ? (phase < 0.5f ? -1f : 1f) * size * 0.08f : 0;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(37, 99, 235));
+            canvas.drawOval(cx - size * 0.16f, cy - size * 0.18f, cx + size * 0.16f, cy + size * 0.18f, paint);
+            paint.setColor(Color.rgb(245, 158, 11));
+            canvas.drawCircle(cx, top + size * 0.24f, size * 0.13f, paint);
+            paint.setStrokeWidth(Math.max(3, size * 0.07f));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setColor(Color.rgb(15, 23, 42));
+            if (pushing) {
+                canvas.drawLine(cx - size * 0.12f, cy - size * 0.05f, cx - size * 0.28f, cy - size * 0.28f, paint);
+                canvas.drawLine(cx + size * 0.12f, cy - size * 0.05f, cx + size * 0.28f, cy - size * 0.28f, paint);
+            } else {
+                canvas.drawLine(cx - size * 0.12f, cy, cx - size * 0.25f, cy + sway, paint);
+                canvas.drawLine(cx + size * 0.12f, cy, cx + size * 0.25f, cy - sway, paint);
+            }
+            canvas.drawLine(cx - size * 0.08f, cy + size * 0.17f, cx - size * 0.18f, cy + size * 0.36f + sway, paint);
+            canvas.drawLine(cx + size * 0.08f, cy + size * 0.17f, cx + size * 0.18f, cy + size * 0.36f - sway, paint);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+        }
+
+        private void startMoveAnimation(int fromX, int fromY, int toX, int toY, boolean pushing, int cartFromX, int cartFromY, int cartToX, int cartToY) {
+            animPlayerFromX = fromX;
+            animPlayerFromY = fromY;
+            animPlayerToX = toX;
+            animPlayerToY = toY;
+            animPushing = pushing;
+            animCartFromX = cartFromX;
+            animCartFromY = cartFromY;
+            animCartToX = cartToX;
+            animCartToY = cartToY;
+            animCartFull = pushing && inside(cartToX, cartToY) && board[cartToY][cartToX] == '*';
+            animProgress = 0f;
+            animating = true;
+            removeCallbacks(animationStep);
+            post(animationStep);
+        }
+
+        void showBestScores() {
+            String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BEST, "");
+            if (raw.isEmpty()) {
+                dialog()
+                        .setTitle("Melhores pontuacoes")
+                        .setMessage("Ainda nao ha fases concluidas.")
+                        .setPositiveButton("Fechar", null)
+                        .show();
+                return;
+            }
+            StringBuilder text = new StringBuilder();
+            String[] rows = raw.split(";");
+            int shown = 0;
+            for (String row : rows) {
+                if (row.trim().isEmpty()) continue;
+                String[] parts = row.split(":");
+                if (parts.length != 2) continue;
+                text.append("Fase ").append(Integer.parseInt(parts[0]) + 1)
+                        .append(": ").append(parts[1]).append(" movimentos\n");
+                shown++;
+                if (shown >= 20) break;
+            }
+            dialog()
+                    .setTitle("Melhores pontuacoes")
+                    .setMessage(text.toString().trim())
+                    .setPositiveButton("Fechar", null)
+                    .show();
+        }
+
+        private void saveBestScore(int levelIndex, int moveCount) {
+            Map<Integer, Integer> scores = bestScoreMap();
+            Integer current = scores.get(levelIndex);
+            if (current == null || moveCount < current) {
+                scores.put(levelIndex, moveCount);
+                StringBuilder raw = new StringBuilder();
+                List<Integer> keys = new ArrayList<>(scores.keySet());
+                Collections.sort(keys);
+                for (Integer key : keys) {
+                    raw.append(key).append(":").append(scores.get(key)).append(";");
+                }
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_GAME_BEST, raw.toString()).apply();
+            }
+        }
+
+        private Map<Integer, Integer> bestScoreMap() {
+            Map<Integer, Integer> scores = new HashMap<>();
+            String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BEST, "");
+            for (String row : raw.split(";")) {
+                if (row.trim().isEmpty()) continue;
+                String[] parts = row.split(":");
+                if (parts.length != 2) continue;
+                try {
+                    scores.put(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+            return scores;
         }
 
         private void loadLevel(int which) {
@@ -3203,7 +3385,43 @@ public class MainActivity extends Activity {
             }
             moves = 0;
             won = false;
+            saveGameState();
             invalidate();
+        }
+
+        private boolean loadSavedGame() {
+            String rawBoard = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BOARD, "");
+            if (rawBoard.isEmpty()) return false;
+            String[] rows = rawBoard.split("\n");
+            if (rows.length == 0) return false;
+            level = Math.max(0, Math.min(levels.length - 1, getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_GAME_LEVEL, 0)));
+            moves = Math.max(0, getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_GAME_MOVES, 0));
+            playerX = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_GAME_PLAYER_X, 1);
+            playerY = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_GAME_PLAYER_Y, 1);
+            board = new char[rows.length][rows[0].length()];
+            for (int y = 0; y < rows.length; y++) {
+                if (rows[y].length() != rows[0].length()) return false;
+                for (int x = 0; x < rows[y].length(); x++) board[y][x] = rows[y].charAt(x);
+            }
+            won = false;
+            invalidate();
+            return inside(playerX, playerY);
+        }
+
+        private void saveGameState() {
+            if (board == null) return;
+            StringBuilder raw = new StringBuilder();
+            for (int y = 0; y < board.length; y++) {
+                if (y > 0) raw.append('\n');
+                raw.append(new String(board[y]));
+            }
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                    .putInt(KEY_GAME_LEVEL, level)
+                    .putInt(KEY_GAME_MOVES, moves)
+                    .putInt(KEY_GAME_PLAYER_X, playerX)
+                    .putInt(KEY_GAME_PLAYER_Y, playerY)
+                    .putString(KEY_GAME_BOARD, raw.toString())
+                    .apply();
         }
 
         private boolean inside(int x, int y) {

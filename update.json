@@ -1,7 +1,7 @@
 {
-  "versionCode": 32,
-  "versionName": "4.1",
+  "versionCode": 33,
+  "versionName": "4.2",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Expande o easter egg Mercado Geek para 50 fases geradas e resolviveis."
+  "notes": "Substitui as fases simples do Mercado Geek por 50 fases mais inteligentes desenhadas a mao e espelhadas."
 }

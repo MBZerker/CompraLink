@@ -3145,58 +3145,47 @@ public class MainActivity extends Activity {
         }
 
         private String[][] buildMarketLevels() {
-            String[][] generated = new String[50][];
-            for (int i = 0; i < generated.length; i++) {
-                generated[i] = buildMarketLevel(i);
+            String[][] base = new String[][]{
+                    {"########", "# .    #", "# $##  #", "#  @   #", "#      #", "########"},
+                    {"########", "#  .   #", "# ##$  #", "# @    #", "#      #", "########"},
+                    {"########", "# . .  #", "# $$#  #", "#  @   #", "#      #", "########"},
+                    {"########", "#   .  #", "# #$#  #", "# @ $ .#", "#      #", "########"},
+                    {"#########", "# .   . #", "# $$#   #", "#  @    #", "#   #   #", "#########"},
+                    {"#########", "#   .   #", "# # $ # #", "# . $ @ #", "#       #", "#########"},
+                    {"#########", "# . # . #", "# $ $   #", "#   #@  #", "#       #", "#########"},
+                    {"#########", "#  ..   #", "#  $$#  #", "# # @   #", "#       #", "#########"},
+                    {"#########", "# .   . #", "# $ # $ #", "#   @   #", "#   #   #", "#########"},
+                    {"##########", "# .    . #", "# $$ ##  #", "#  @     #", "#    #   #", "##########"},
+                    {"##########", "#  . .   #", "# #$ $   #", "#   # @  #", "#        #", "##########"},
+                    {"##########", "# .   #  #", "# $ $ .  #", "#   ##@  #", "#        #", "##########"},
+                    {"##########", "# . . .  #", "# $$$ #  #", "#  @     #", "#    #   #", "##########"},
+                    {"##########", "#   . .  #", "# # $$#  #", "# @  $ . #", "#        #", "##########"},
+                    {"##########", "# . # .  #", "# $ # $  #", "#   @    #", "#        #", "##########"},
+                    {"###########", "# .     . #", "# $$# #   #", "#  @  $ . #", "#    #    #", "###########"},
+                    {"###########", "# . . #   #", "# $ $ # . #", "#   @ $   #", "#         #", "###########"},
+                    {"###########", "#   . .   #", "# #$$$#   #", "# @       #", "#   . #   #", "###########"},
+                    {"###########", "# . # . . #", "# $ # $ $ #", "#   @     #", "#     #   #", "###########"},
+                    {"###########", "# .   .   #", "# $ # $ # #", "#   # @ $ #", "#       . #", "###########"},
+                    {"############", "# .    .   #", "# $$#  #   #", "#  @  $  . #", "#   ##     #", "############"},
+                    {"############", "# . .   .  #", "# $ $ # $  #", "#   # @    #", "#     #    #", "############"},
+                    {"############", "#   . . .  #", "# # $$$ #  #", "# @        #", "#    #     #", "############"},
+                    {"############", "# . # .  . #", "# $ # $$   #", "#   @   #  #", "#        # #", "############"},
+                    {"############", "# .   . .  #", "# $ # $ $  #", "#   # @    #", "#     #    #", "############"}
+            };
+            String[][] levels = new String[50][];
+            for (int i = 0; i < base.length; i++) {
+                levels[i] = base[i];
+                levels[i + base.length] = mirrorLevel(base[i]);
             }
-            return generated;
+            return levels;
         }
 
-        private String[] buildMarketLevel(int index) {
-            int width = 8 + Math.min(4, index / 12);
-            int height = 6 + Math.min(2, index / 18);
-            char[][] map = new char[height][width];
-            for (int y = 0; y < height; y++) {
-                for (int x = 0; x < width; x++) {
-                    map[y][x] = (x == 0 || y == 0 || x == width - 1 || y == height - 1) ? '#' : ' ';
-                }
+        private String[] mirrorLevel(String[] source) {
+            String[] mirrored = new String[source.length];
+            for (int y = 0; y < source.length; y++) {
+                mirrored[y] = new StringBuilder(source[y]).reverse().toString();
             }
-
-            int lanes = Math.min(3, 1 + index / 12);
-            int boxColumn = 3 + (index % Math.max(1, width - 6));
-            int targetColumn = Math.min(width - 2, boxColumn + 2 + (index % 2));
-            int[] rows = new int[]{2, Math.min(height - 2, 3), Math.min(height - 2, 4)};
-            for (int i = 0; i < lanes; i++) {
-                int row = rows[i];
-                map[row][boxColumn] = '$';
-                map[row][targetColumn] = '.';
-            }
-
-            int playerRow = rows[0];
-            map[playerRow][Math.max(1, boxColumn - 2)] = '@';
-
-            int obstacleCount = Math.min(8, index / 4);
-            for (int i = 0; i < obstacleCount; i++) {
-                int x = 1 + Math.abs((index * 3 + i * 2) % (width - 2));
-                int y = 1 + Math.abs((index * 5 + i) % (height - 2));
-                if (map[y][x] != ' ') continue;
-                if (isMarketPushCorridor(y, x, rows, lanes, boxColumn, targetColumn)) continue;
-                map[y][x] = '#';
-            }
-
-            String[] level = new String[height];
-            for (int y = 0; y < height; y++) {
-                level[y] = new String(map[y]);
-            }
-            return level;
-        }
-
-        private boolean isMarketPushCorridor(int y, int x, int[] rows, int lanes, int boxColumn, int targetColumn) {
-            for (int i = 0; i < lanes; i++) {
-                if (y == rows[i] && x >= boxColumn - 2 && x <= targetColumn) return true;
-            }
-            if (x == boxColumn - 2 || x == boxColumn - 1) return true;
-            return false;
+            return mirrored;
         }
     }
 

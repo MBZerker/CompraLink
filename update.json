@@ -1,7 +1,7 @@
 {
-  "versionCode": 43,
-  "versionName": "4.12",
+  "versionCode": 44,
+  "versionName": "4.13",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora historico de listas, adiciona historico e desfazer no estoque, e exporta backup compactado como o compartilhamento."
+  "notes": "Adiciona o easter egg Compra Invaders desbloqueado pela sequencia secreta nos creditos."
 }

@@ -132,6 +132,8 @@ public class MainActivity extends Activity {
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
     private long secretLastTap;
+    private int creditsSecretStep;
+    private CompraInvadersView invadersView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -177,6 +179,12 @@ public class MainActivity extends Activity {
             return;
         }
         if (homeTab == 4) {
+            showHomeScreen();
+            return;
+        }
+        if (homeTab == 7) {
+            if (invadersView != null) invadersView.stop();
+            invadersView = null;
             showHomeScreen();
             return;
         }
@@ -627,6 +635,49 @@ public class MainActivity extends Activity {
         scores.setOnClickListener(v -> game.showBestScores());
         exit.setOnClickListener(v -> showHomeScreen());
         setContentView(rootScroll());
+    }
+
+    private void showCompraInvaders() {
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 7;
+        buildRoot();
+        addTopHeader("Compra Invaders", "Defenda a lista dos precos invasores.", false);
+
+        TextView status = label("Toque em atirar e proteja o carrinho.", 14, false, mutedText());
+        status.setGravity(Gravity.CENTER);
+        root.addView(status, matchWrapWithTop(dp(8)));
+
+        invadersView = new CompraInvadersView(this, status);
+        root.addView(invadersView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(390)));
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setGravity(Gravity.CENTER);
+        root.addView(controls, matchWrapWithTop(dp(12)));
+
+        Button left = iconButton("<", accent(), Color.WHITE);
+        Button fire = button("Atirar", accent(), Color.WHITE);
+        Button right = iconButton(">", accent(), Color.WHITE);
+        Button exit = button("Sair", softButtonBg(), primaryText());
+        controls.addView(left, new LinearLayout.LayoutParams(dp(64), dp(54)));
+        LinearLayout.LayoutParams fireParams = new LinearLayout.LayoutParams(dp(92), dp(54));
+        fireParams.setMargins(dp(8), 0, dp(8), 0);
+        controls.addView(fire, fireParams);
+        controls.addView(right, new LinearLayout.LayoutParams(dp(64), dp(54)));
+        LinearLayout.LayoutParams exitParams = new LinearLayout.LayoutParams(dp(76), dp(54));
+        exitParams.setMargins(dp(8), 0, 0, 0);
+        controls.addView(exit, exitParams);
+
+        left.setOnClickListener(v -> invadersView.movePlayer(-1));
+        right.setOnClickListener(v -> invadersView.movePlayer(1));
+        fire.setOnClickListener(v -> invadersView.fire());
+        exit.setOnClickListener(v -> {
+            invadersView.stop();
+            invadersView = null;
+            showHomeScreen();
+        });
+        setContentView(rootScroll());
+        invadersView.start();
     }
 
     private void showStockHistoryWindow() {
@@ -2647,10 +2698,29 @@ public class MainActivity extends Activity {
         testers.setPadding(0, dp(14), 0, 0);
         form.addView(testers, matchWrap());
 
-        dialog()
+        final AlertDialog[] credits = new AlertDialog[1];
+        author.setOnClickListener(v -> registerCreditsSecret(0, credits[0]));
+        codex.setOnClickListener(v -> registerCreditsSecret(1, credits[0]));
+        testers.setOnClickListener(v -> registerCreditsSecret(2, credits[0]));
+
+        credits[0] = dialog()
                 .setView(form)
                 .setPositiveButton("Fechar", null)
                 .show();
+    }
+
+    private void registerCreditsSecret(int step, AlertDialog dialog) {
+        if (step == creditsSecretStep) {
+            creditsSecretStep++;
+        } else {
+            creditsSecretStep = step == 0 ? 1 : 0;
+        }
+        if (creditsSecretStep >= 3) {
+            creditsSecretStep = 0;
+            if (dialog != null) dialog.dismiss();
+            Toast.makeText(this, "Compra Invaders desbloqueado!", Toast.LENGTH_SHORT).show();
+            showCompraInvaders();
+        }
     }
 
     private void confirmDeleteList(int index) {
@@ -3460,6 +3530,8 @@ public class MainActivity extends Activity {
             showMarketGame();
         } else if (homeTab == 6) {
             showStockHistoryWindow();
+        } else if (homeTab == 7) {
+            showCompraInvaders();
         } else {
             showHomeScreen();
         }
@@ -3882,6 +3954,229 @@ public class MainActivity extends Activity {
 
     private interface OnColorChanged {
         void onChanged(int color);
+    }
+
+    private class CompraInvadersView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Handler handler = new Handler(Looper.getMainLooper());
+        private final TextView status;
+        private final boolean[][] alive = new boolean[4][7];
+        private final Runnable tick = new Runnable() {
+            @Override
+            public void run() {
+                updateGame();
+                invalidate();
+                if (running) handler.postDelayed(this, 34);
+            }
+        };
+        private boolean running;
+        private boolean gameOver;
+        private int playerCol = 3;
+        private int bulletCol = -1;
+        private float bulletY;
+        private float invaderX;
+        private float invaderY;
+        private float direction = 1;
+        private int score;
+        private int wave = 1;
+
+        CompraInvadersView(Context context, TextView status) {
+            super(context);
+            this.status = status;
+            setBackground(round(cardBg(), dp(18), stroke(), 1));
+            resetWave();
+        }
+
+        void start() {
+            running = true;
+            handler.removeCallbacks(tick);
+            handler.post(tick);
+        }
+
+        void stop() {
+            running = false;
+            handler.removeCallbacks(tick);
+        }
+
+        void movePlayer(int delta) {
+            if (gameOver) resetGame();
+            playerCol = Math.max(0, Math.min(6, playerCol + delta));
+            invalidate();
+        }
+
+        void fire() {
+            if (gameOver) {
+                resetGame();
+                return;
+            }
+            if (bulletCol < 0) {
+                bulletCol = playerCol;
+                bulletY = getHeight() - dp(72);
+            }
+        }
+
+        private void resetGame() {
+            score = 0;
+            wave = 1;
+            gameOver = false;
+            resetWave();
+        }
+
+        private void resetWave() {
+            for (int r = 0; r < alive.length; r++) {
+                for (int c = 0; c < alive[r].length; c++) alive[r][c] = true;
+            }
+            invaderX = dp(18);
+            invaderY = dp(34);
+            direction = 1;
+            bulletCol = -1;
+            updateStatus();
+        }
+
+        private void updateGame() {
+            if (gameOver || getWidth() <= 0) return;
+            invaderX += direction * (1.3f + wave * 0.35f);
+            float formationWidth = 7 * cell();
+            if (invaderX < dp(8) || invaderX + formationWidth > getWidth() - dp(8)) {
+                direction *= -1;
+                invaderY += dp(16);
+            }
+            if (bulletCol >= 0) {
+                bulletY -= dp(8);
+                if (bulletY < 0) bulletCol = -1;
+                else hitTest();
+            }
+            if (invaderY + 4 * cell() > getHeight() - dp(86)) {
+                gameOver = true;
+                status.setText("Fim de jogo - toque em Atirar para reiniciar. Pontos: " + score);
+            }
+        }
+
+        private void hitTest() {
+            float x = laneX(bulletCol);
+            for (int r = 0; r < alive.length; r++) {
+                for (int c = 0; c < alive[r].length; c++) {
+                    if (!alive[r][c]) continue;
+                    float left = invaderX + c * cell();
+                    float top = invaderY + r * cell();
+                    if (x >= left && x <= left + cell() && bulletY >= top && bulletY <= top + cell()) {
+                        alive[r][c] = false;
+                        bulletCol = -1;
+                        score += 10 * wave;
+                        if (cleared()) {
+                            wave++;
+                            resetWave();
+                        } else {
+                            updateStatus();
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
+        private boolean cleared() {
+            for (boolean[] row : alive) {
+                for (boolean cell : row) if (cell) return false;
+            }
+            return true;
+        }
+
+        private void updateStatus() {
+            status.setText("Onda " + wave + " - Pontos " + score);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(isDarkTheme() ? Color.rgb(15, 23, 42) : Color.WHITE);
+            canvas.drawRoundRect(0, 0, getWidth(), getHeight(), dp(18), dp(18), paint);
+            drawShelves(canvas);
+            drawInvaders(canvas);
+            drawPlayer(canvas);
+            drawBullet(canvas);
+            if (gameOver) drawGameOver(canvas);
+        }
+
+        private void drawShelves(Canvas canvas) {
+            paint.setColor(isDarkTheme() ? Color.rgb(51, 65, 85) : Color.rgb(226, 232, 240));
+            for (int i = 0; i < 3; i++) {
+                float y = dp(86 + i * 76);
+                canvas.drawRoundRect(dp(18), y, getWidth() - dp(18), y + dp(10), dp(5), dp(5), paint);
+            }
+        }
+
+        private void drawInvaders(Canvas canvas) {
+            float size = cell();
+            for (int r = 0; r < alive.length; r++) {
+                for (int c = 0; c < alive[r].length; c++) {
+                    if (!alive[r][c]) continue;
+                    float left = invaderX + c * size;
+                    float top = invaderY + r * size;
+                    paint.setColor(productColor(r, c));
+                    canvas.drawRoundRect(left + dp(6), top + dp(8), left + size - dp(6), top + size - dp(8), dp(8), dp(8), paint);
+                    paint.setColor(Color.WHITE);
+                    canvas.drawCircle(left + size * 0.35f, top + size * 0.42f, dp(3), paint);
+                    canvas.drawCircle(left + size * 0.65f, top + size * 0.42f, dp(3), paint);
+                }
+            }
+        }
+
+        private void drawPlayer(Canvas canvas) {
+            float x = laneX(playerCol);
+            float y = getHeight() - dp(48);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(4));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setColor(accent());
+            canvas.drawLine(x - dp(22), y - dp(12), x + dp(18), y - dp(12), paint);
+            canvas.drawLine(x - dp(15), y - dp(12), x - dp(5), y + dp(10), paint);
+            canvas.drawLine(x - dp(5), y + dp(10), x + dp(24), y + dp(10), paint);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(x - dp(2), y + dp(18), dp(5), paint);
+            canvas.drawCircle(x + dp(20), y + dp(18), dp(5), paint);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+        }
+
+        private void drawBullet(Canvas canvas) {
+            if (bulletCol < 0) return;
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Color.rgb(250, 204, 21));
+            float x = laneX(bulletCol);
+            canvas.drawRoundRect(x - dp(3), bulletY - dp(14), x + dp(3), bulletY, dp(3), dp(3), paint);
+        }
+
+        private void drawGameOver(Canvas canvas) {
+            paint.setColor(isDarkTheme() ? Color.WHITE : Color.rgb(15, 23, 42));
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTypeface(Typeface.DEFAULT_BOLD);
+            paint.setTextSize(dp(22));
+            canvas.drawText("Fim de jogo", getWidth() / 2f, getHeight() / 2f, paint);
+            paint.setTypeface(Typeface.DEFAULT);
+            paint.setTextSize(dp(14));
+            canvas.drawText("Atirar reinicia", getWidth() / 2f, getHeight() / 2f + dp(24), paint);
+        }
+
+        private float cell() {
+            return Math.max(dp(34), Math.min(dp(46), (getWidth() - dp(52)) / 7f));
+        }
+
+        private float laneX(int col) {
+            float margin = dp(26);
+            return margin + col * ((getWidth() - 2 * margin) / 6f);
+        }
+
+        private int productColor(int row, int col) {
+            int[] colors = new int[]{
+                    Color.rgb(239, 68, 68),
+                    Color.rgb(22, 163, 74),
+                    Color.rgb(37, 99, 235),
+                    Color.rgb(234, 88, 12),
+                    Color.rgb(147, 51, 234)
+            };
+            return colors[Math.abs(row * 7 + col) % colors.length];
+        }
     }
 
     private class MarketGeekView extends View {

@@ -1,7 +1,7 @@
 {
-  "versionCode": 33,
-  "versionName": "4.2",
+  "versionCode": 34,
+  "versionName": "4.3",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Substitui as fases simples do Mercado Geek por 50 fases mais inteligentes desenhadas a mao e espelhadas."
+  "notes": "Adiciona sugestoes de produtos a partir das listas finalizadas, preenchendo preco e unidade automaticamente."
 }

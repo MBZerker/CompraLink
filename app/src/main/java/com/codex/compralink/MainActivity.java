@@ -44,6 +44,7 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
@@ -101,7 +102,7 @@ public class MainActivity extends Activity {
     private final List<StockEntry> stock = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
-    private EditText itemInput;
+    private AutoCompleteTextView itemInput;
     private EditText priceInput;
     private EditText unitInput;
     private int selectedIndex = -1;
@@ -1489,7 +1490,7 @@ public class MainActivity extends Activity {
         addCard.setBackground(round(cardBg(), dp(18), stroke(), 1));
         root.addView(addCard, matchWrapWithTop(dp(12)));
 
-        itemInput = new EditText(this);
+        itemInput = new AutoCompleteTextView(this);
         itemInput.setSingleLine(true);
         itemInput.setHint("Produto");
         itemInput.setTextColor(primaryText());
@@ -1524,6 +1525,7 @@ public class MainActivity extends Activity {
         unitInput.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         unitInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
         unitInput.setPadding(dp(12), 0, dp(12), 0);
+        setupProductSuggestions();
 
         Button add = button("+", Color.rgb(250, 204, 21), Color.rgb(24, 24, 27));
         add.setTextSize(22);
@@ -1551,6 +1553,60 @@ public class MainActivity extends Activity {
             addCard.addView(unitInput, unitParams);
             addCard.addView(add, new LinearLayout.LayoutParams(dp(56), dp(54)));
         }
+    }
+
+    private void setupProductSuggestions() {
+        Map<String, ProductSuggestion> latest = productSuggestionMap();
+        if (latest.isEmpty()) return;
+        List<ProductSuggestion> suggestions = new ArrayList<>(latest.values());
+        Collections.sort(suggestions, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
+        ArrayAdapter<ProductSuggestion> adapter = new ArrayAdapter<ProductSuggestion>(this, android.R.layout.simple_dropdown_item_1line, suggestions) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                view.setBackgroundColor(cardBg());
+                if (view instanceof TextView) {
+                    TextView text = (TextView) view;
+                    ProductSuggestion suggestion = getItem(position);
+                    String price = suggestion != null && suggestion.price > 0 ? " - " + money.format(suggestion.price) : "";
+                    text.setText((suggestion == null ? "" : suggestion.name) + price);
+                    text.setTextColor(primaryText());
+                    text.setTextSize(15);
+                    text.setPadding(dp(12), dp(10), dp(12), dp(10));
+                }
+                return view;
+            }
+        };
+        itemInput.setAdapter(adapter);
+        itemInput.setThreshold(1);
+        itemInput.setDropDownBackgroundDrawable(round(cardBg(), dp(12), stroke(), 1));
+        itemInput.setOnItemClickListener((parent, view, position, id) -> {
+            ProductSuggestion suggestion = (ProductSuggestion) parent.getItemAtPosition(position);
+            if (suggestion == null) return;
+            itemInput.setText(suggestion.name);
+            itemInput.setSelection(itemInput.getText().length());
+            if (suggestion.price > 0) priceInput.setText(formatPriceInput(suggestion.price));
+            unitInput.setText(suggestion.unit == null || suggestion.unit.trim().isEmpty() ? "1" : suggestion.unit);
+            itemInput.dismissDropDown();
+        });
+    }
+
+    private Map<String, ProductSuggestion> productSuggestionMap() {
+        Map<String, ProductSuggestion> latest = new LinkedHashMap<>();
+        for (ShoppingList list : lists) {
+            if (!list.locked && !list.archived) continue;
+            long listDate = list.lockedAt > 0 ? list.lockedAt : list.createdAt;
+            for (ShoppingItem item : list.items) {
+                if (item.name == null || item.name.trim().isEmpty()) continue;
+                long itemDate = Math.max(listDate, item.updatedAt);
+                String key = normalize(item.name);
+                ProductSuggestion current = latest.get(key);
+                if (current == null || itemDate > current.updatedAt) {
+                    latest.put(key, new ProductSuggestion(item.name, item.price, item.unit, itemDate));
+                }
+            }
+        }
+        return latest;
     }
 
     private void addItems() {
@@ -2840,6 +2896,25 @@ public class MainActivity extends Activity {
             this.itemName = itemName;
             this.price = price;
             this.updatedAt = updatedAt;
+        }
+    }
+
+    private static class ProductSuggestion {
+        final String name;
+        final double price;
+        final String unit;
+        final long updatedAt;
+
+        ProductSuggestion(String name, double price, String unit, long updatedAt) {
+            this.name = name;
+            this.price = price;
+            this.unit = unit;
+            this.updatedAt = updatedAt;
+        }
+
+        @Override
+        public String toString() {
+            return name;
         }
     }
 

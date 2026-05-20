@@ -1,7 +1,7 @@
 {
-  "versionCode": 35,
-  "versionName": "4.4",
+  "versionCode": 36,
+  "versionName": "4.5",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Salva a escolha do periodo em gastos e melhora o Mercado Geek com visual, animacao, salvamento e recordes."
+  "notes": "Separa gastos do estoque: listas fechadas geram historico imutavel e categorias passam a ser reaproveitadas."
 }

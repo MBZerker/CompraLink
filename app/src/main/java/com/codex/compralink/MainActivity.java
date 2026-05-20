@@ -80,6 +80,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
     private static final String KEY_LISTS = "lists";
     private static final String KEY_STOCK = "stock";
+    private static final String KEY_SPENDING_HISTORY = "spending_history";
     private static final String KEY_THEME = "theme_mode";
     private static final String KEY_ACCENT = "accent_color";
     private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
@@ -107,6 +108,7 @@ public class MainActivity extends Activity {
 
     private final List<ShoppingList> lists = new ArrayList<>();
     private final List<StockEntry> stock = new ArrayList<>();
+    private final List<SpendingRecord> spendingHistory = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
     private AutoCompleteTextView itemInput;
@@ -132,6 +134,8 @@ public class MainActivity extends Activity {
         spendingRangeMonths = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SPENDING_RANGE, 6);
         load();
         loadStock();
+        loadSpendingHistory();
+        ensureSpendingRecordsForClosedLists();
         showSplash();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             shellReady = true;
@@ -618,6 +622,7 @@ public class MainActivity extends Activity {
         } else {
             list.locked = true;
             list.lockedAt = System.currentTimeMillis();
+            addSpendingRecordsForList(list);
         }
         save();
     }
@@ -639,6 +644,7 @@ public class MainActivity extends Activity {
         list.locked = true;
         list.archived = true;
         list.lockedAt = System.currentTimeMillis();
+        addSpendingRecordsForList(list);
         return true;
     }
 
@@ -798,7 +804,7 @@ public class MainActivity extends Activity {
         Map<String, Double> categories = new LinkedHashMap<>();
         Map<String, SpendingProduct> products = new LinkedHashMap<>();
         double total = 0;
-        for (StockEntry entry : stock) {
+        for (SpendingRecord entry : spendingHistory) {
             if (entry.price <= 0 || !entryInSelectedRange(entry)) continue;
             double value = entry.price * entry.quantity;
             total += value;
@@ -855,7 +861,7 @@ public class MainActivity extends Activity {
         Map<String, Double> categories = new LinkedHashMap<>();
         Map<String, SpendingProduct> products = new LinkedHashMap<>();
         double total = 0;
-        for (StockEntry entry : stock) {
+        for (SpendingRecord entry : spendingHistory) {
             if (entry.price <= 0 || !entryInSelectedRange(entry)) continue;
             double value = entry.price * entry.quantity;
             total += value;
@@ -986,14 +992,14 @@ public class MainActivity extends Activity {
         previousMonth.add(Calendar.MONTH, -1);
         double currentTotal = 0;
         double previousTotal = 0;
-        StockEntry biggestEntry = null;
+        SpendingRecord biggestEntry = null;
         int visibleMonths = spendingRangeMonths <= 0 ? Math.max(6, countMonthsWithData()) : spendingRangeMonths;
         for (int i = visibleMonths - 1; i >= 0; i--) {
             cal.setTimeInMillis(now);
             cal.add(Calendar.MONTH, -i);
             totals.put(monthKey(cal), 0.0);
         }
-        for (StockEntry entry : stock) {
+        for (SpendingRecord entry : spendingHistory) {
             if (entry.price <= 0) continue;
             double total = entry.price * entry.quantity;
             cal.setTimeInMillis(entry.addedAt);
@@ -1152,7 +1158,7 @@ public class MainActivity extends Activity {
                 .apply();
     }
 
-    private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, double forecast, StockEntry biggestEntry, Map<String, SpendingProduct> products) {
+    private void addMetricGrid(double currentTotal, double previousTotal, double difference, double average, double forecast, SpendingRecord biggestEntry, Map<String, SpendingProduct> products) {
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row1, matchWrapWithTop(dp(8)));
@@ -1436,7 +1442,7 @@ public class MainActivity extends Activity {
                 && a.get(Calendar.MONTH) == b.get(Calendar.MONTH);
     }
 
-    private boolean entryInSelectedRange(StockEntry entry) {
+    private boolean entryInSelectedRange(SpendingRecord entry) {
         if (spendingRangeMonths <= 0) return true;
         Calendar start = Calendar.getInstance();
         start.set(Calendar.DAY_OF_MONTH, 1);
@@ -1462,12 +1468,12 @@ public class MainActivity extends Activity {
     }
 
     private int countMonthsWithData() {
-        if (stock.isEmpty()) return 6;
+        if (spendingHistory.isEmpty()) return 6;
         Calendar first = Calendar.getInstance();
         Calendar last = Calendar.getInstance();
         long min = Long.MAX_VALUE;
         long max = 0;
-        for (StockEntry entry : stock) {
+        for (SpendingRecord entry : spendingHistory) {
             if (entry.price <= 0) continue;
             min = Math.min(min, entry.addedAt);
             max = Math.max(max, entry.addedAt);
@@ -1801,6 +1807,7 @@ public class MainActivity extends Activity {
                 existing.unit = unit == null || unit.isEmpty() ? "un" : unit;
                 existing.price = item.price;
                 existing.updatedAt = now;
+                if (isBlankCategory(existing.category)) existing.category = latestCategoryForProduct(item.name);
                 saveStock();
                 return;
             }
@@ -1812,12 +1819,14 @@ public class MainActivity extends Activity {
             linked.unit = unit == null || unit.isEmpty() ? "un" : unit;
             linked.price = item.price;
             linked.updatedAt = now;
+            if (isBlankCategory(linked.category)) linked.category = latestCategoryForProduct(item.name);
             item.stockId = linked.id;
             saveStock();
             return;
         }
         StockEntry entry = new StockEntry(item.name, amount, unit, item.price, now);
         entry.sourceItemId = item.id;
+        entry.category = latestCategoryForProduct(item.name);
         stock.add(0, entry);
         item.stockId = entry.id;
         saveStock();
@@ -1832,6 +1841,72 @@ public class MainActivity extends Activity {
             saveStock();
         }
         item.stockId = "";
+    }
+
+    private void ensureSpendingRecordsForClosedLists() {
+        boolean changed = false;
+        for (ShoppingList list : lists) {
+            if (list.locked || list.archived) {
+                changed = addSpendingRecordsForList(list) || changed;
+            }
+        }
+        if (changed) saveSpendingHistory();
+    }
+
+    private boolean addSpendingRecordsForList(ShoppingList list) {
+        if (list == null || (!list.locked && !list.archived)) return false;
+        boolean changed = false;
+        long addedAt = list.lockedAt > 0 ? list.lockedAt : list.createdAt;
+        for (ShoppingItem item : list.items) {
+            if (!item.checked || item.price <= 0 || hasSpendingRecordForItem(item.id)) continue;
+            SpendingRecord record = new SpendingRecord(item.name, quantityOf(item), item.unit, item.price, addedAt);
+            record.sourceItemId = item.id;
+            record.sourceListId = list.id;
+            record.category = latestCategoryForProduct(item.name);
+            StockEntry stockEntry = findStockBySourceItem(item.id);
+            if (stockEntry != null && !isBlankCategory(stockEntry.category)) record.category = stockEntry.category;
+            spendingHistory.add(0, record);
+            changed = true;
+        }
+        if (changed) saveSpendingHistory();
+        return changed;
+    }
+
+    private boolean hasSpendingRecordForItem(String itemId) {
+        if (itemId == null || itemId.isEmpty()) return false;
+        for (SpendingRecord record : spendingHistory) {
+            if (itemId.equals(record.sourceItemId)) return true;
+        }
+        return false;
+    }
+
+    private void updateSpendingCategoryForStock(StockEntry entry) {
+        if (entry == null || isBlankCategory(entry.category)) return;
+        boolean changed = false;
+        for (SpendingRecord record : spendingHistory) {
+            if (entry.sourceItemId.equals(record.sourceItemId)) {
+                record.category = entry.category;
+                changed = true;
+            }
+        }
+        if (changed) saveSpendingHistory();
+    }
+
+    private String latestCategoryForProduct(String name) {
+        String key = normalize(name);
+        String category = "Outros";
+        long latest = 0;
+        for (SpendingRecord record : spendingHistory) {
+            if (normalize(record.name).equals(key) && !isBlankCategory(record.category) && record.addedAt >= latest) {
+                latest = record.addedAt;
+                category = record.category;
+            }
+        }
+        return category;
+    }
+
+    private boolean isBlankCategory(String category) {
+        return category == null || category.trim().isEmpty() || "Outros".equalsIgnoreCase(category.trim());
     }
 
     private StockEntry findStockById(String id) {
@@ -2240,6 +2315,7 @@ public class MainActivity extends Activity {
         entry.category = clean.isEmpty() ? "Outros" : clean;
         entry.updatedAt = System.currentTimeMillis();
         saveStock();
+        updateSpendingCategoryForStock(entry);
         showStockWindow(false);
     }
 
@@ -2455,6 +2531,19 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void loadSpendingHistory() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_SPENDING_HISTORY, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            spendingHistory.clear();
+            for (int i = 0; i < array.length(); i++) {
+                spendingHistory.add(SpendingRecord.fromJson(array.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            spendingHistory.clear();
+        }
+    }
+
     private void save() {
         JSONArray array = new JSONArray();
         for (ShoppingList list : lists) {
@@ -2475,6 +2564,17 @@ public class MainActivity extends Activity {
             }
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_STOCK, array.toString()).apply();
+    }
+
+    private void saveSpendingHistory() {
+        JSONArray array = new JSONArray();
+        for (SpendingRecord entry : spendingHistory) {
+            try {
+                array.put(entry.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_SPENDING_HISTORY, array.toString()).apply();
     }
 
     private double parsePrice(String raw) {
@@ -2747,6 +2847,10 @@ public class MainActivity extends Activity {
     }
 
     private String categoryOf(StockEntry entry) {
+        return entry.category == null || entry.category.trim().isEmpty() ? "Outros" : entry.category;
+    }
+
+    private String categoryOf(SpendingRecord entry) {
         return entry.category == null || entry.category.trim().isEmpty() ? "Outros" : entry.category;
     }
 
@@ -3610,6 +3714,55 @@ public class MainActivity extends Activity {
             entry.updatedAt = json.optLong("updatedAt", entry.addedAt);
             entry.consumedAt = json.optLong("consumedAt", 0);
             entry.sourceItemId = json.optString("sourceItemId", "");
+            entry.category = json.optString("category", "Outros");
+            return entry;
+        }
+    }
+
+    private static class SpendingRecord {
+        String id = UUID.randomUUID().toString();
+        String name;
+        double quantity;
+        String unit;
+        double price;
+        long addedAt;
+        String sourceItemId = "";
+        String sourceListId = "";
+        String category = "Outros";
+
+        SpendingRecord(String name, double quantity, String unit, double price, long addedAt) {
+            this.name = name;
+            this.quantity = quantity;
+            this.unit = unit == null || unit.isEmpty() ? "un" : unit;
+            this.price = price;
+            this.addedAt = addedAt;
+        }
+
+        JSONObject toJson() throws JSONException {
+            JSONObject json = new JSONObject();
+            json.put("id", id);
+            json.put("name", name);
+            json.put("quantity", quantity);
+            json.put("unit", unit);
+            json.put("price", price);
+            json.put("addedAt", addedAt);
+            json.put("sourceItemId", sourceItemId);
+            json.put("sourceListId", sourceListId);
+            json.put("category", category);
+            return json;
+        }
+
+        static SpendingRecord fromJson(JSONObject json) {
+            SpendingRecord entry = new SpendingRecord(
+                    json.optString("name", "Item"),
+                    json.optDouble("quantity", 1),
+                    json.optString("unit", "un"),
+                    json.optDouble("price", 0),
+                    json.optLong("addedAt", System.currentTimeMillis())
+            );
+            entry.id = json.optString("id", UUID.randomUUID().toString());
+            entry.sourceItemId = json.optString("sourceItemId", "");
+            entry.sourceListId = json.optString("sourceListId", "");
             entry.category = json.optString("category", "Outros");
             return entry;
         }

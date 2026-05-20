@@ -112,6 +112,8 @@ public class MainActivity extends Activity {
     private boolean pendingIntentHandled;
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
+    private int secretLogoTaps;
+    private long secretLastTap;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -148,6 +150,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (homeTab == 4) {
+            showHomeScreen();
+            return;
+        }
         if (selectedIndex >= 0 || homeTab != 0) {
             selectedIndex = -1;
             homeTab = 0;
@@ -304,6 +310,7 @@ public class MainActivity extends Activity {
         appName.setTextColor(accent());
         appName.setTextSize(14);
         appName.setTypeface(Typeface.DEFAULT_BOLD);
+        appName.setOnClickListener(v -> registerSecretLogoTap());
         header.addView(appName);
 
         TextView title = new TextView(this);
@@ -382,6 +389,13 @@ public class MainActivity extends Activity {
 
                 ImageButton stockButton = imageIconButton(R.drawable.ic_box, isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(51, 65, 85), Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
+                stockButton.setOnLongClickListener(v -> {
+                    if (secretLogoTaps >= 3) {
+                        showMarketGame();
+                        return true;
+                    }
+                    return false;
+                });
                 LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(dp(48), dp(48));
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(stockButton, stockParams);
@@ -427,6 +441,87 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = weighted();
         if (tabs.getChildCount() > 0) params.setMargins(dp(6), 0, 0, 0);
         tabs.addView(btn, params);
+    }
+
+    private void registerSecretLogoTap() {
+        long now = System.currentTimeMillis();
+        if (now - secretLastTap > 1800) secretLogoTaps = 0;
+        secretLastTap = now;
+        secretLogoTaps++;
+        if (secretLogoTaps == 3) {
+            Toast.makeText(this, "Algo no estoque parece diferente...", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showMarketGame() {
+        selectedIndex = -1;
+        homeTab = 4;
+        secretLogoTaps = 0;
+        buildRoot();
+        addTopHeader("Mercado Geek", "Organize os produtos nas prateleiras certas.", false);
+
+        MarketGeekView game = new MarketGeekView(this);
+        TextView status = label(game.status(), 14, true, mutedText());
+        status.setGravity(Gravity.CENTER);
+        root.addView(status, matchWrapWithTop(dp(10)));
+        root.addView(game, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(360)
+        ));
+
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setGravity(Gravity.CENTER);
+        root.addView(controls, matchWrapWithTop(dp(12)));
+
+        Button up = iconButton("^", accent(), Color.WHITE);
+        controls.addView(up, new LinearLayout.LayoutParams(dp(64), dp(52)));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER);
+        controls.addView(row, matchWrapWithTop(dp(6)));
+        Button left = iconButton("<", accent(), Color.WHITE);
+        Button down = iconButton("v", accent(), Color.WHITE);
+        Button right = iconButton(">", accent(), Color.WHITE);
+        row.addView(left, new LinearLayout.LayoutParams(dp(64), dp(52)));
+        LinearLayout.LayoutParams mid = new LinearLayout.LayoutParams(dp(64), dp(52));
+        mid.setMargins(dp(8), 0, dp(8), 0);
+        row.addView(down, mid);
+        row.addView(right, new LinearLayout.LayoutParams(dp(64), dp(52)));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(actions, matchWrapWithTop(dp(10)));
+        Button reset = button("Reiniciar", softButtonBg(), primaryText());
+        Button exit = button("Sair", softButtonBg(), primaryText());
+        actions.addView(reset, weighted());
+        LinearLayout.LayoutParams exitParams = weighted();
+        exitParams.setMargins(dp(8), 0, 0, 0);
+        actions.addView(exit, exitParams);
+
+        View.OnClickListener refresh = v -> status.setText(game.status());
+        up.setOnClickListener(v -> {
+            game.move(0, -1);
+            refresh.onClick(v);
+        });
+        down.setOnClickListener(v -> {
+            game.move(0, 1);
+            refresh.onClick(v);
+        });
+        left.setOnClickListener(v -> {
+            game.move(-1, 0);
+            refresh.onClick(v);
+        });
+        right.setOnClickListener(v -> {
+            game.move(1, 0);
+            refresh.onClick(v);
+        });
+        reset.setOnClickListener(v -> {
+            game.resetLevel();
+            status.setText(game.status());
+        });
+        exit.setOnClickListener(v -> showHomeScreen());
+        setContentView(rootScroll());
     }
 
     private View listCard(int index) {
@@ -2902,6 +2997,177 @@ public class MainActivity extends Activity {
 
     private interface OnColorChanged {
         void onChanged(int color);
+    }
+
+    private class MarketGeekView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final String[][] levels = new String[][]{
+                {
+                        "########",
+                        "#  .   #",
+                        "#  $   #",
+                        "#  @   #",
+                        "#      #",
+                        "########"
+                },
+                {
+                        "########",
+                        "# .  . #",
+                        "# $$   #",
+                        "#  @   #",
+                        "#      #",
+                        "########"
+                },
+                {
+                        "#########",
+                        "#   .   #",
+                        "# #$# $ #",
+                        "# . @   #",
+                        "#   .   #",
+                        "#########"
+                }
+        };
+        private char[][] board;
+        private int playerX;
+        private int playerY;
+        private int level;
+        private int moves;
+        private boolean won;
+
+        MarketGeekView(Context context) {
+            super(context);
+            resetLevel();
+        }
+
+        void resetLevel() {
+            loadLevel(level);
+        }
+
+        String status() {
+            return "Fase " + (level + 1) + "/" + levels.length + " - " + moves + " movimentos";
+        }
+
+        void move(int dx, int dy) {
+            if (won) return;
+            int nx = playerX + dx;
+            int ny = playerY + dy;
+            if (!inside(nx, ny) || board[ny][nx] == '#') return;
+            if (board[ny][nx] == '$' || board[ny][nx] == '*') {
+                int bx = nx + dx;
+                int by = ny + dy;
+                if (!inside(bx, by) || board[by][bx] == '#' || board[by][bx] == '$' || board[by][bx] == '*') return;
+                board[by][bx] = board[by][bx] == '.' ? '*' : '$';
+                board[ny][nx] = board[ny][nx] == '*' ? '.' : ' ';
+            }
+            playerX = nx;
+            playerY = ny;
+            moves++;
+            if (complete()) {
+                if (level < levels.length - 1) {
+                    level++;
+                    Toast.makeText(MainActivity.this, "Fase organizada!", Toast.LENGTH_SHORT).show();
+                    loadLevel(level);
+                } else {
+                    won = true;
+                    Toast.makeText(MainActivity.this, "Mercado perfeito! Voce venceu.", Toast.LENGTH_LONG).show();
+                }
+            }
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (board == null) return;
+            canvas.drawColor(screenBg());
+            int rows = board.length;
+            int cols = board[0].length;
+            float tile = Math.min(getWidth() / (float) cols, getHeight() / (float) rows);
+            float startX = (getWidth() - tile * cols) / 2f;
+            float startY = (getHeight() - tile * rows) / 2f;
+
+            for (int y = 0; y < rows; y++) {
+                for (int x = 0; x < cols; x++) {
+                    float left = startX + x * tile;
+                    float top = startY + y * tile;
+                    drawTile(canvas, board[y][x], left, top, tile);
+                }
+            }
+            drawCart(canvas, startX + playerX * tile, startY + playerY * tile, tile);
+        }
+
+        private void drawTile(Canvas canvas, char tileChar, float left, float top, float size) {
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(inputBg());
+            canvas.drawRoundRect(left + 3, top + 3, left + size - 3, top + size - 3, dp(8), dp(8), paint);
+
+            if (tileChar == '#') {
+                paint.setColor(isDarkTheme() ? Color.rgb(71, 85, 105) : Color.rgb(148, 163, 184));
+                canvas.drawRoundRect(left + 2, top + 2, left + size - 2, top + size - 2, dp(8), dp(8), paint);
+                return;
+            }
+            if (tileChar == '.' || tileChar == '*') {
+                paint.setColor(Color.rgb(34, 197, 94));
+                canvas.drawCircle(left + size / 2f, top + size / 2f, size * 0.22f, paint);
+                paint.setColor(Color.WHITE);
+                paint.setTextAlign(Paint.Align.CENTER);
+                paint.setTextSize(size * 0.24f);
+                canvas.drawText("P", left + size / 2f, top + size * 0.58f, paint);
+            }
+            if (tileChar == '$' || tileChar == '*') {
+                paint.setColor(Color.rgb(245, 158, 11));
+                canvas.drawRoundRect(left + size * 0.22f, top + size * 0.22f, left + size * 0.78f, top + size * 0.78f, dp(6), dp(6), paint);
+                paint.setColor(Color.rgb(120, 53, 15));
+                paint.setStrokeWidth(3);
+                paint.setStyle(Paint.Style.STROKE);
+                canvas.drawLine(left + size * 0.3f, top + size * 0.45f, left + size * 0.7f, top + size * 0.45f, paint);
+                paint.setStyle(Paint.Style.FILL);
+            }
+        }
+
+        private void drawCart(Canvas canvas, float left, float top, float size) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(3, size * 0.07f));
+            paint.setColor(accent());
+            canvas.drawLine(left + size * 0.22f, top + size * 0.28f, left + size * 0.78f, top + size * 0.28f, paint);
+            canvas.drawLine(left + size * 0.3f, top + size * 0.28f, left + size * 0.42f, top + size * 0.68f, paint);
+            canvas.drawLine(left + size * 0.42f, top + size * 0.68f, left + size * 0.78f, top + size * 0.68f, paint);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(left + size * 0.42f, top + size * 0.8f, size * 0.08f, paint);
+            canvas.drawCircle(left + size * 0.72f, top + size * 0.8f, size * 0.08f, paint);
+        }
+
+        private void loadLevel(int which) {
+            String[] raw = levels[which];
+            board = new char[raw.length][raw[0].length()];
+            for (int y = 0; y < raw.length; y++) {
+                for (int x = 0; x < raw[y].length(); x++) {
+                    char c = raw[y].charAt(x);
+                    if (c == '@') {
+                        playerX = x;
+                        playerY = y;
+                        c = ' ';
+                    }
+                    board[y][x] = c;
+                }
+            }
+            moves = 0;
+            won = false;
+            invalidate();
+        }
+
+        private boolean inside(int x, int y) {
+            return y >= 0 && y < board.length && x >= 0 && x < board[y].length;
+        }
+
+        private boolean complete() {
+            for (char[] row : board) {
+                for (char c : row) {
+                    if (c == '$') return false;
+                }
+            }
+            return true;
+        }
     }
 
     private class StyledDialogBuilder extends AlertDialog.Builder {

@@ -43,6 +43,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.Filter;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
@@ -330,32 +331,45 @@ public class MainActivity extends Activity {
         topLine.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
+        LinearLayout brand = new LinearLayout(this);
+        brand.setOrientation(LinearLayout.HORIZONTAL);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView brandIcon = new ImageView(this);
+        brandIcon.setImageResource(R.drawable.ic_cart);
+        brandIcon.setColorFilter(accent());
+        brand.addView(brandIcon, new LinearLayout.LayoutParams(dp(34), dp(34)));
+
         TextView appName = new TextView(this);
         appName.setText("CompraLink");
         appName.setTextColor(accent());
-        appName.setTextSize(14);
+        appName.setTextSize(24);
         appName.setTypeface(Typeface.DEFAULT_BOLD);
+        appName.setPadding(dp(8), 0, 0, 0);
         appName.setOnClickListener(v -> registerSecretLogoTap());
-        topLine.addView(appName, weighted());
+        brand.addView(appName, matchWrap());
+        brand.setOnClickListener(v -> registerSecretLogoTap());
+        topLine.addView(brand, weighted());
 
         LinearLayout sideControls = new LinearLayout(this);
         sideControls.setOrientation(LinearLayout.VERTICAL);
         sideControls.setGravity(Gravity.CENTER_HORIZONTAL);
         sideControls.setPadding(0, dp(6), 0, 0);
 
+        int sideButtonSize = (!listOpen && homeTab == 0) ? homeButtonSize() : dp(48);
         Button themeTop = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
         themeTop.setOnClickListener(v -> toggleTheme());
-        sideControls.addView(themeTop, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        sideControls.addView(themeTop, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
 
         if (!listOpen && homeTab == 0) {
             ImageButton paletteTop = imageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
             paletteTop.setOnClickListener(v -> promptAccentColor());
-            LinearLayout.LayoutParams paletteTopParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            LinearLayout.LayoutParams paletteTopParams = new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize);
             paletteTopParams.setMargins(0, dp(8), 0, 0);
             sideControls.addView(paletteTop, paletteTopParams);
         }
 
-        topLine.addView(sideControls, new LinearLayout.LayoutParams(dp(52), ViewGroup.LayoutParams.WRAP_CONTENT));
+        topLine.addView(sideControls, new LinearLayout.LayoutParams(sideButtonSize + dp(4), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView title = new TextView(this);
         title.setText(heading);
@@ -391,13 +405,13 @@ public class MainActivity extends Activity {
             share.setOnClickListener(v -> {
                 if (canShare) shareSelectedList();
             });
-            LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
             shareParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(share, shareParams);
 
             ImageButton print = imageIconButton(R.drawable.ic_print, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
             print.setOnClickListener(v -> showPrintPreview());
-            LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
             printParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(print, printParams);
 
@@ -411,7 +425,7 @@ public class MainActivity extends Activity {
                 save();
                 showListScreen();
             });
-            LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+            LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
             sortParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(sort, sortParams);
 
@@ -424,7 +438,7 @@ public class MainActivity extends Activity {
                 actions.setGravity(Gravity.CENTER_HORIZONTAL);
                 ImageButton newList = imageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 newList.setOnClickListener(v -> promptNewList());
-                actions.addView(newList, new LinearLayout.LayoutParams(dp(48), dp(48)));
+                actions.addView(newList, new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize()));
 
                 ImageButton stockButton = imageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
@@ -435,13 +449,13 @@ public class MainActivity extends Activity {
                     }
                     return false;
                 });
-                LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(stockButton, stockParams);
 
                 ImageButton history = imageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 history.setOnClickListener(v -> showHistoryScreen());
-                LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 historyParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(history, historyParams);
             }
@@ -455,18 +469,18 @@ public class MainActivity extends Activity {
 
                 ImageButton update = imageIconButton(R.drawable.ic_update, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
-                LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 extraActions.addView(update, updateParams);
 
                 ImageButton backup = imageIconButton(R.drawable.ic_backup, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 backup.setOnClickListener(v -> exportBackup());
-                LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 backupParams.setMargins(dp(8), 0, 0, 0);
                 extraActions.addView(backup, backupParams);
 
                 ImageButton credits = imageIconButton(R.drawable.ic_credits, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 credits.setOnClickListener(v -> showCredits());
-                LinearLayout.LayoutParams creditsParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                LinearLayout.LayoutParams creditsParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 creditsParams.setMargins(dp(8), 0, 0, 0);
                 extraActions.addView(credits, creditsParams);
             }
@@ -612,7 +626,7 @@ public class MainActivity extends Activity {
                 Color.WHITE);
         lock.setOnClickListener(v -> {
             toggleListLock(list);
-            showHomeTab();
+            if (!list.locked) showHomeTab();
         });
         titleRow.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
@@ -660,8 +674,22 @@ public class MainActivity extends Activity {
             list.locked = true;
             list.lockedAt = System.currentTimeMillis();
             addSpendingRecordsForList(list);
+            askArchiveLockedList(list);
         }
         save();
+    }
+
+    private void askArchiveLockedList(ShoppingList list) {
+        dialog()
+                .setTitle("Enviar para historico?")
+                .setMessage("A lista foi protegida. Deseja remove-la da tela principal e guardar no historico?")
+                .setPositiveButton("Sim", (dialog, which) -> {
+                    list.archived = true;
+                    save();
+                    showHomeTab();
+                })
+                .setNegativeButton("Nao", (dialog, which) -> showHomeTab())
+                .show();
     }
 
     private void updateAutoLockedLists() {
@@ -1694,6 +1722,8 @@ public class MainActivity extends Activity {
         List<ProductSuggestion> suggestions = new ArrayList<>(latest.values());
         Collections.sort(suggestions, (a, b) -> Long.compare(b.updatedAt, a.updatedAt));
         ArrayAdapter<ProductSuggestion> adapter = new ArrayAdapter<ProductSuggestion>(this, android.R.layout.simple_dropdown_item_1line, suggestions) {
+            private final List<ProductSuggestion> all = new ArrayList<>(suggestions);
+
             @Override
             public View getView(int position, View convertView, ViewGroup parent) {
                 View view = super.getView(position, convertView, parent);
@@ -1708,6 +1738,33 @@ public class MainActivity extends Activity {
                     text.setPadding(dp(12), dp(10), dp(12), dp(10));
                 }
                 return view;
+            }
+
+            @Override
+            public Filter getFilter() {
+                return new Filter() {
+                    @Override
+                    protected FilterResults performFiltering(CharSequence constraint) {
+                        String query = normalize(constraint == null ? "" : constraint.toString());
+                        List<ProductSuggestion> filtered = new ArrayList<>();
+                        for (ProductSuggestion suggestion : all) {
+                            if (query.isEmpty() || normalize(suggestion.name).contains(query)) filtered.add(suggestion);
+                        }
+                        FilterResults results = new FilterResults();
+                        results.values = filtered;
+                        results.count = filtered.size();
+                        return results;
+                    }
+
+                    @Override
+                    protected void publishResults(CharSequence constraint, FilterResults results) {
+                        clear();
+                        if (results.values instanceof List) {
+                            for (Object value : (List<?>) results.values) add((ProductSuggestion) value);
+                        }
+                        notifyDataSetChanged();
+                    }
+                };
             }
         };
         itemInput.setAdapter(adapter);
@@ -1847,6 +1904,11 @@ public class MainActivity extends Activity {
         });
         if (priceBelow) {
             itemText.addView(price, matchWrapWithTop(dp(3)));
+            if (item.note != null && !item.note.trim().isEmpty()) {
+                TextView note = label(item.note, 13, false, mutedText());
+                note.setPadding(0, dp(3), 0, 0);
+                itemText.addView(note, matchWrap());
+            }
             row.addView(itemText, weighted());
         } else {
             row.addView(itemText, weighted());
@@ -2073,9 +2135,14 @@ public class MainActivity extends Activity {
         EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         setDecimalInput(unit);
         unit.setText(item.unit == null || item.unit.isEmpty() ? "1" : item.unit);
+        EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        note.setSingleLine(false);
+        note.setMinLines(2);
+        note.setText(item.note == null ? "" : item.note);
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
+        form.addView(note, matchWrapWithTop(dp(8)));
         dialog()
                 .setTitle("Editar item")
                 .setView(form)
@@ -2085,6 +2152,7 @@ public class MainActivity extends Activity {
                     item.price = parsePrice(price.getText().toString());
                     item.unit = unit.getText().toString().trim();
                     if (item.unit.isEmpty()) item.unit = "1";
+                    item.note = note.getText().toString().trim();
                     item.updatedAt = System.currentTimeMillis();
                     if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
                         addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
@@ -2294,10 +2362,6 @@ public class MainActivity extends Activity {
         previewParams.height = dp(46);
         form.addView(preview, previewParams);
 
-        TextView values = label(colorLabel(selected[0]), 13, true, primaryText());
-        values.setGravity(Gravity.CENTER);
-        form.addView(values, matchWrapWithTop(dp(8)));
-
         TextView brightLabel = label("Brilho", 13, true, mutedText());
         form.addView(brightLabel, matchWrapWithTop(dp(10)));
         SeekBar brightness = new SeekBar(this);
@@ -2310,7 +2374,6 @@ public class MainActivity extends Activity {
 
         Runnable refresh = () -> {
             preview.setBackground(round(selected[0], dp(14), stroke(), 1));
-            values.setText(colorLabel(selected[0]));
         };
         spectrum.setOnColorChanged(color -> {
             selected[0] = applyBrightness(color, brightness.getProgress());
@@ -2334,7 +2397,6 @@ public class MainActivity extends Activity {
         reset.setOnClickListener(v -> {
             selected[0] = 0;
             preview.setBackground(round(softButtonBg(), dp(14), stroke(), 1));
-            values.setText("Padrao do app");
         });
 
         dialog()
@@ -2363,10 +2425,6 @@ public class MainActivity extends Activity {
         previewParams.height = dp(46);
         form.addView(preview, previewParams);
 
-        TextView values = label(colorLabel(selected[0]), 13, true, primaryText());
-        values.setGravity(Gravity.CENTER);
-        form.addView(values, matchWrapWithTop(dp(8)));
-
         TextView brightLabel = label("Brilho", 13, true, mutedText());
         form.addView(brightLabel, matchWrapWithTop(dp(10)));
         SeekBar brightness = new SeekBar(this);
@@ -2379,7 +2437,6 @@ public class MainActivity extends Activity {
 
         Runnable refresh = () -> {
             preview.setBackground(round(selected[0], dp(14), stroke(), 1));
-            values.setText(colorLabel(selected[0]));
         };
         spectrum.setOnColorChanged(color -> {
             selected[0] = applyBrightness(color, brightness.getProgress());
@@ -2431,7 +2488,7 @@ public class MainActivity extends Activity {
         author.setPadding(0, dp(12), 0, 0);
         form.addView(author, matchWrap());
 
-        TextView codex = label("ChatGPT (Codex) e sua versao", 15, false, primaryText());
+        TextView codex = label("ChatGPT (Codex) 5.5", 15, false, primaryText());
         codex.setGravity(Gravity.CENTER);
         codex.setPadding(0, dp(6), 0, 0);
         form.addView(codex, matchWrap());
@@ -2679,11 +2736,25 @@ public class MainActivity extends Activity {
         int existingIndex = findListIndexById(imported.id);
         if (existingIndex >= 0) {
             ShoppingList existing = lists.get(existingIndex);
-            preserveLocalStockLinks(existing, imported);
-            lists.set(existingIndex, imported);
             selectedIndex = existingIndex;
-            save();
-            Toast.makeText(this, "Lista compartilhada atualizada.", Toast.LENGTH_SHORT).show();
+            if (listsEquivalent(existing, imported)) {
+                Toast.makeText(this, "Lista compartilhada ja existe e esta igual.", Toast.LENGTH_SHORT).show();
+                showListScreen();
+                return true;
+            }
+            String summary = listChangeSummary(existing, imported);
+            dialog()
+                    .setTitle("Atualizar lista?")
+                    .setMessage(summary)
+                    .setPositiveButton("Atualizar", (dialog, which) -> {
+                        preserveLocalStockLinks(existing, imported);
+                        lists.set(existingIndex, imported);
+                        selectedIndex = existingIndex;
+                        save();
+                        showListScreen();
+                    })
+                    .setNegativeButton("Cancelar", null)
+                    .show();
             return true;
         }
         clearImportedStockLinks(imported);
@@ -2692,6 +2763,61 @@ public class MainActivity extends Activity {
         save();
         Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
         return true;
+    }
+
+    private boolean listsEquivalent(ShoppingList a, ShoppingList b) {
+        return listChangeSummary(a, b).startsWith("A lista compartilhada esta igual");
+    }
+
+    private String listChangeSummary(ShoppingList current, ShoppingList incoming) {
+        int added = 0;
+        int removed = 0;
+        int changed = 0;
+        Map<String, ShoppingItem> currentItems = itemCompareMap(current);
+        Map<String, ShoppingItem> incomingItems = itemCompareMap(incoming);
+        for (String key : incomingItems.keySet()) {
+            ShoppingItem incomingItem = incomingItems.get(key);
+            ShoppingItem currentItem = currentItems.get(key);
+            if (currentItem == null) {
+                added++;
+            } else if (itemChanged(currentItem, incomingItem)) {
+                changed++;
+            }
+        }
+        for (String key : currentItems.keySet()) {
+            if (!incomingItems.containsKey(key)) removed++;
+        }
+        if (added == 0 && removed == 0 && changed == 0 && stringEquals(current.name, incoming.name)) {
+            return "A lista compartilhada esta igual a lista salva.";
+        }
+        StringBuilder message = new StringBuilder("Esta lista compartilhada ja existe, mas ha alteracoes.");
+        if (!stringEquals(current.name, incoming.name)) message.append("\nNome atualizado.");
+        if (added > 0) message.append("\n").append(added).append(added == 1 ? " item novo." : " itens novos.");
+        if (removed > 0) message.append("\n").append(removed).append(removed == 1 ? " item removido." : " itens removidos.");
+        if (changed > 0) message.append("\n").append(changed).append(changed == 1 ? " item com valor, unidade, nota ou status atualizado." : " itens com valor, unidade, nota ou status atualizados.");
+        message.append("\n\nDeseja atualizar a lista atual?");
+        return message.toString();
+    }
+
+    private Map<String, ShoppingItem> itemCompareMap(ShoppingList list) {
+        Map<String, ShoppingItem> map = new LinkedHashMap<>();
+        for (ShoppingItem item : list.items) {
+            String key = item.id == null || item.id.isEmpty() ? normalize(item.name) : item.id;
+            map.put(key, item);
+        }
+        return map;
+    }
+
+    private boolean itemChanged(ShoppingItem a, ShoppingItem b) {
+        return !stringEquals(a.name, b.name)
+                || a.checked != b.checked
+                || Math.abs(a.price - b.price) > 0.000001
+                || !stringEquals(a.unit, b.unit)
+                || !stringEquals(a.note, b.note);
+    }
+
+    private boolean stringEquals(String a, String b) {
+        return (a == null ? "" : a).equals(b == null ? "" : b);
     }
 
     private int findListIndexById(String id) {
@@ -3045,15 +3171,16 @@ public class MainActivity extends Activity {
             window.setStatusBarContrastEnforced(false);
             window.setNavigationBarContrastEnforced(false);
         }
-        window.setStatusBarColor(accentColor);
+        int statusColor = statusBarThemeColor();
+        window.setStatusBarColor(statusColor);
         window.setNavigationBarColor(screenBg());
-        window.getDecorView().setBackgroundColor(accentColor);
+        window.getDecorView().setBackgroundColor(statusColor);
         if (Build.VERSION.SDK_INT >= 23) {
             int flags = window.getDecorView().getSystemUiVisibility();
             flags &= ~View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
             flags &= ~View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
             flags &= ~View.SYSTEM_UI_FLAG_FULLSCREEN;
-            if (isLightColor(accentColor)) {
+            if (isLightColor(statusColor)) {
                 flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
             } else {
                 flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
@@ -3083,7 +3210,23 @@ public class MainActivity extends Activity {
     private void toggleTheme() {
         themeMode = isDarkTheme() ? THEME_LIGHT : THEME_DARK;
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_THEME, themeMode).apply();
-        if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
+        if (selectedIndex >= 0) {
+            showListScreen();
+        } else if (homeTab == 1) {
+            showStockWindow(false);
+        } else if (homeTab == 2) {
+            showStockWindow(true);
+        } else if (homeTab == 3) {
+            showHistoryScreen();
+        } else if (homeTab == 4) {
+            showMarketGame();
+        } else {
+            showHomeScreen();
+        }
+    }
+
+    private int statusBarThemeColor() {
+        return isDarkTheme() ? darken(accentColor) : blend(accentColor, Color.WHITE, 0.18f);
     }
 
     private String themeIcon() {
@@ -3303,6 +3446,10 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private int homeButtonSize() {
+        return dp(72);
     }
 
     private static class PriceHit {
@@ -3926,6 +4073,7 @@ public class MainActivity extends Activity {
         boolean checked;
         double price;
         String unit;
+        String note = "";
         long updatedAt;
         String stockId = "";
 
@@ -3943,6 +4091,7 @@ public class MainActivity extends Activity {
             json.put("checked", checked);
             json.put("price", price);
             json.put("unit", unit);
+            json.put("note", note);
             json.put("updatedAt", updatedAt);
             json.put("stockId", stockId);
             return json;
@@ -3956,6 +4105,7 @@ public class MainActivity extends Activity {
             );
             item.id = json.optString("id", UUID.randomUUID().toString());
             item.checked = json.optBoolean("checked", false);
+            item.note = json.optString("note", "");
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             item.stockId = json.optString("stockId", "");
             return item;

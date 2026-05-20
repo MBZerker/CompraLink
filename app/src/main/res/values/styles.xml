@@ -5,5 +5,8 @@
         <item name="android:statusBarColor">#F8FAFC</item>
         <item name="android:navigationBarColor">#F8FAFC</item>
         <item name="android:colorAccent">#0F766E</item>
+        <item name="android:textColorPrimary">#0F172A</item>
+        <item name="android:textColorSecondary">#475569</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

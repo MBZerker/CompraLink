@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -2906,6 +2907,31 @@ public class MainActivity extends Activity {
     private class StyledDialogBuilder extends AlertDialog.Builder {
         StyledDialogBuilder(Context context) {
             super(context);
+        }
+
+        @Override
+        public AlertDialog.Builder setItems(CharSequence[] items, DialogInterface.OnClickListener listener) {
+            ArrayAdapter<CharSequence> adapter = new ArrayAdapter<CharSequence>(MainActivity.this, android.R.layout.simple_list_item_1, items) {
+                @Override
+                public View getView(int position, View convertView, ViewGroup parent) {
+                    View view = super.getView(position, convertView, parent);
+                    view.setBackgroundColor(cardBg());
+                    view.setPadding(dp(10), dp(6), dp(10), dp(6));
+                    if (view instanceof TextView) {
+                        TextView text = (TextView) view;
+                        text.setTextColor(primaryText());
+                        text.setTextSize(16);
+                        text.setTypeface(Typeface.DEFAULT_BOLD);
+                    }
+                    return view;
+                }
+
+                @Override
+                public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                    return getView(position, convertView, parent);
+                }
+            };
+            return setAdapter(adapter, listener);
         }
 
         @Override

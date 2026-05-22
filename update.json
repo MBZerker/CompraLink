@@ -1,7 +1,7 @@
 {
-  "versionCode": 47,
-  "versionName": "4.16",
+  "versionCode": 48,
+  "versionName": "4.17",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Exporta backup por link HTTPS reconhecido pelo app, importa backup pela area de transferencia e remove o botao Sair do Mercado Geek."
+  "notes": "Adiciona grafico profissional de duracao de estoque dentro de Gastos, usando o historico de baixas."
 }

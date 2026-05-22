@@ -1233,6 +1233,7 @@ public class MainActivity extends Activity {
         addGoalCard(currentTotal, forecast);
         addSpendingAlerts(currentTotal, forecast, products);
         addMonthlyBars(totals, max);
+        addStockDurationInsights();
         addCategoryBreakdown(categories);
         addProductRanking(products);
         addPriceInsights(products);
@@ -1712,6 +1713,77 @@ public class MainActivity extends Activity {
             bar.setBackground(round(Color.rgb(250, 204, 21), dp(8), Color.TRANSPARENT, 0));
             int width = Math.max(dp(8), (int) (getResources().getDisplayMetrics().widthPixels * 0.72 * (product.total / max)));
             barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(12)));
+            card.addView(barBg, matchWrapWithTop(dp(8)));
+            root.addView(card, matchWrapWithTop(dp(8)));
+        }
+    }
+
+    private void addStockDurationInsights() {
+        Map<String, StockDurationStats> stats = new LinkedHashMap<>();
+        for (StockEntry entry : stockHistory) {
+            if (entry.consumedAt <= entry.addedAt || entry.quantity <= 0) continue;
+            String key = normalize(entry.name);
+            StockDurationStats row = stats.get(key);
+            if (row == null) {
+                row = new StockDurationStats(entry.name);
+                stats.put(key, row);
+            }
+            double days = Math.max(0.04, (entry.consumedAt - entry.addedAt) / 86400000.0);
+            row.cycles++;
+            row.totalDays += days;
+            row.totalQuantity += entry.quantity;
+            row.lastDays = days;
+            row.lastAt = entry.consumedAt;
+            if (row.cycles == 1 || days < row.minDays) row.minDays = days;
+            if (row.cycles == 1 || days > row.maxDays) row.maxDays = days;
+        }
+
+        root.addView(label("DuraÃ§Ã£o do estoque", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        if (stats.isEmpty()) {
+            root.addView(infoCard("Sem baixas no estoque", "Quando vocÃª der baixa em itens do estoque, o app calcula quanto tempo cada produto durou e monta este grÃ¡fico."), matchWrapWithTop(dp(8)));
+            return;
+        }
+
+        List<StockDurationStats> rows = new ArrayList<>(stats.values());
+        Collections.sort(rows, (a, b) -> Double.compare(b.averageDays(), a.averageDays()));
+        double max = 1;
+        double totalAverage = 0;
+        for (StockDurationStats row : rows) {
+            max = Math.max(max, row.averageDays());
+            totalAverage += row.averageDays();
+        }
+        double generalAverage = totalAverage / rows.size();
+        root.addView(infoCard("Resumo de duraÃ§Ã£o", "MÃ©dia entre produtos: " + formatDurationDays(generalAverage)
+                + "\nProdutos analisados: " + rows.size()), matchWrapWithTop(dp(8)));
+
+        int limit = Math.min(8, rows.size());
+        for (int i = 0; i < limit; i++) {
+            StockDurationStats row = rows.get(i);
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(12), dp(14), dp(12));
+            card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+            elevate(card, 2);
+
+            card.addView(label((i + 1) + ". " + row.name, 15, true, primaryText()));
+            TextView meta = label("MÃ©dia " + formatDurationDays(row.averageDays())
+                    + " - menor " + formatDurationDays(row.minDays)
+                    + " - maior " + formatDurationDays(row.maxDays), 13, false, mutedText());
+            meta.setPadding(0, dp(4), 0, 0);
+            card.addView(meta, matchWrap());
+
+            TextView detail = label(row.cycles + " baixa(s), " + formatQty(row.totalQuantity)
+                    + " un consumidas - Ãºltima baixa " + formatDateLabel(row.lastAt), 13, false, mutedText());
+            detail.setPadding(0, dp(4), 0, 0);
+            card.addView(detail, matchWrap());
+
+            LinearLayout barBg = new LinearLayout(this);
+            barBg.setBackground(round(inputBg(), dp(8), Color.TRANSPARENT, 0));
+            LinearLayout bar = new LinearLayout(this);
+            int color = row.averageDays() >= generalAverage ? Color.rgb(22, 163, 74) : Color.rgb(234, 88, 12);
+            bar.setBackground(round(color, dp(8), Color.TRANSPARENT, 0));
+            int width = Math.max(dp(10), (int) (getResources().getDisplayMetrics().widthPixels * 0.72 * (row.averageDays() / max)));
+            barBg.addView(bar, new LinearLayout.LayoutParams(width, dp(14)));
             card.addView(barBg, matchWrapWithTop(dp(8)));
             root.addView(card, matchWrapWithTop(dp(8)));
         }
@@ -3555,6 +3627,18 @@ public class MainActivity extends Activity {
         return Math.max(0, (end - entry.addedAt) / 86400000L);
     }
 
+    private String formatDurationDays(double days) {
+        if (days < 1) {
+            int hours = Math.max(1, (int) Math.round(days * 24));
+            return hours + (hours == 1 ? " hora" : " horas");
+        }
+        if (days < 10) {
+            return String.format(new Locale("pt", "BR"), "%.1f dias", days);
+        }
+        long rounded = Math.round(days);
+        return rounded + (rounded == 1 ? " dia" : " dias");
+    }
+
     private String formatStockAge(StockEntry entry) {
         long now = System.currentTimeMillis();
         long diff = Math.max(0, now - entry.addedAt);
@@ -3948,6 +4032,25 @@ public class MainActivity extends Activity {
 
         SpendingProduct(String name) {
             this.name = name;
+        }
+    }
+
+    private static class StockDurationStats {
+        final String name;
+        int cycles;
+        double totalDays;
+        double minDays;
+        double maxDays;
+        double lastDays;
+        double totalQuantity;
+        long lastAt;
+
+        StockDurationStats(String name) {
+            this.name = name;
+        }
+
+        double averageDays() {
+            return cycles == 0 ? 0 : totalDays / cycles;
         }
     }
 

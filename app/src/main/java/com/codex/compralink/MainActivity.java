@@ -90,6 +90,8 @@ public class MainActivity extends Activity {
     private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
     private static final String KEY_MONTHLY_GOAL = "monthly_goal";
     private static final String KEY_SPENDING_RANGE = "spending_range_months";
+    private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
+    private static final String KEY_STOCK_HISTORY_SORT_DESC = "stock_history_sort_desc";
     private static final String KEY_GAME_LEVEL = "market_game_level";
     private static final String KEY_GAME_MOVES = "market_game_moves";
     private static final String KEY_GAME_BOARD = "market_game_board";
@@ -130,6 +132,8 @@ public class MainActivity extends Activity {
     private boolean selectedFromHistory;
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
+    private boolean stockHistoryPending;
+    private boolean stockHistorySortDesc = true;
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
@@ -144,6 +148,8 @@ public class MainActivity extends Activity {
         accentColor = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_ACCENT, Color.rgb(15, 118, 110));
         monthlyGoal = Double.longBitsToDouble(getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(0)));
         spendingRangeMonths = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SPENDING_RANGE, 6);
+        stockHistoryPending = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_PENDING, false);
+        stockHistorySortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_SORT_DESC, true);
         load();
         loadStock();
         loadStockHistory();
@@ -534,6 +540,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams historyParams = weighted();
         historyParams.setMargins(dp(6), 0, 0, 0);
         tabs.addView(history, historyParams);
+        if (stockHistoryPending && homeTab != 6) startStockHistoryBlink(history);
 
         ImageButton undo = imageIconButton(R.drawable.ic_undo, stockUndoStockJson == null ? softButtonBg() : accent(), stockUndoStockJson == null ? primaryText() : Color.WHITE);
         undo.setEnabled(stockUndoStockJson != null);
@@ -552,6 +559,22 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = weighted();
         if (tabs.getChildCount() > 0) params.setMargins(dp(6), 0, 0, 0);
         tabs.addView(btn, params);
+    }
+
+    private void startStockHistoryBlink(Button button) {
+        button.post(new Runnable() {
+            private boolean green = true;
+
+            @Override
+            public void run() {
+                if (!stockHistoryPending || homeTab == 6 || button.getParent() == null) return;
+                int bg = green ? Color.rgb(22, 163, 74) : Color.rgb(220, 38, 38);
+                button.setTextColor(Color.WHITE);
+                button.setBackground(glowRound(bg, dp(14)));
+                green = !green;
+                button.postDelayed(this, 650);
+            }
+        });
     }
 
     private void registerSecretLogoTap() {
@@ -690,6 +713,7 @@ public class MainActivity extends Activity {
         selectedIndex = -1;
         selectedFromHistory = false;
         homeTab = 6;
+        clearStockHistoryPending();
         buildRoot();
         addTopHeader("Estoque", "Baixas guardadas para consulta.", false);
         addStockTabs();
@@ -1394,18 +1418,35 @@ public class MainActivity extends Activity {
     private void addStockHistoryScreen() {
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_HORIZONTAL);
+        ImageButton sort = imageIconButton(stockHistorySortDesc ? R.drawable.ic_sort_checked_bottom : R.drawable.ic_sort_checked_top, accent(), Color.WHITE);
+        sort.setEnabled(!stockHistory.isEmpty());
+        sort.setAlpha(stockHistory.isEmpty() ? 0.45f : 1.0f);
+        sort.setOnClickListener(v -> {
+            stockHistorySortDesc = !stockHistorySortDesc;
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_STOCK_HISTORY_SORT_DESC, stockHistorySortDesc).apply();
+            showStockHistoryWindow();
+        });
+        actions.addView(sort, new LinearLayout.LayoutParams(dp(54), dp(54)));
+
         ImageButton clear = imageIconButton(R.drawable.ic_trash, Color.rgb(225, 29, 72), Color.WHITE);
         clear.setEnabled(!stockHistory.isEmpty());
         clear.setAlpha(stockHistory.isEmpty() ? 0.45f : 1.0f);
         clear.setOnClickListener(v -> confirmClearStockHistory());
-        actions.addView(clear, new LinearLayout.LayoutParams(dp(54), dp(54)));
+        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(54), dp(54));
+        clearParams.setMargins(dp(8), 0, 0, 0);
+        actions.addView(clear, clearParams);
         root.addView(actions, matchWrapWithTop(dp(10)));
 
         if (stockHistory.isEmpty()) {
-            root.addView(infoCard("Historico vazio", "Itens baixados do estoque aparecem aqui."), matchWrapWithTop(dp(10)));
+            root.addView(infoCard("Hist\u00f3rico vazio", "Itens baixados do estoque aparecem aqui."), matchWrapWithTop(dp(10)));
             return;
         }
-        for (StockEntry entry : stockHistory) {
+        List<StockEntry> rows = new ArrayList<>(stockHistory);
+        Collections.sort(rows, (a, b) -> Double.compare(stockDurationDays(a), stockDurationDays(b)));
+        if (stockHistorySortDesc) Collections.reverse(rows);
+        root.addView(infoCard("Ordena\u00e7\u00e3o por dura\u00e7\u00e3o", stockHistorySortDesc ? "Maior dura\u00e7\u00e3o primeiro." : "Menor dura\u00e7\u00e3o primeiro."), matchWrapWithTop(dp(10)));
+
+        for (StockEntry entry : rows) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
@@ -1420,6 +1461,9 @@ public class MainActivity extends Activity {
             TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
             meta.setPadding(0, dp(4), 0, 0);
             card.addView(meta);
+            TextView duration = label("Dura\u00e7\u00e3o: " + formatDurationDays(stockDurationDays(entry)), 14, true, accent());
+            duration.setPadding(0, dp(5), 0, 0);
+            card.addView(duration);
             TextView dates = label("Entrada: " + formatDateTime(entry.addedAt) + "\nBaixa: " + formatDateTime(entry.consumedAt), 13, false, mutedText());
             dates.setPadding(0, dp(5), 0, 0);
             card.addView(dates);
@@ -2898,7 +2942,19 @@ public class MainActivity extends Activity {
         stockHistory.add(0, entry);
         saveStock();
         saveStockHistory();
+        markStockHistoryPending();
         showStockWindow(false);
+    }
+
+    private void markStockHistoryPending() {
+        stockHistoryPending = true;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_STOCK_HISTORY_PENDING, true).apply();
+    }
+
+    private void clearStockHistoryPending() {
+        if (!stockHistoryPending) return;
+        stockHistoryPending = false;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_STOCK_HISTORY_PENDING, false).apply();
     }
 
     private void promptEditStockQuantity(StockEntry entry) {
@@ -3625,6 +3681,12 @@ public class MainActivity extends Activity {
     private long stockDays(StockEntry entry) {
         long end = entry.consumedAt > 0 ? entry.consumedAt : System.currentTimeMillis();
         return Math.max(0, (end - entry.addedAt) / 86400000L);
+    }
+
+    private double stockDurationDays(StockEntry entry) {
+        long end = entry.consumedAt > 0 ? entry.consumedAt : System.currentTimeMillis();
+        long diff = Math.max(0, end - entry.addedAt);
+        return diff / 86400000.0;
     }
 
     private String formatDurationDays(double days) {

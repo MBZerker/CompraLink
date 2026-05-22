@@ -1,7 +1,7 @@
 {
-  "versionCode": 49,
-  "versionName": "4.18",
+  "versionCode": 50,
+  "versionName": "4.19",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Corrige acentuação dos textos do gráfico de duração de estoque."
+  "notes": "Adiciona duração e ordenação no histórico do estoque, com alerta piscante após dar baixa."
 }

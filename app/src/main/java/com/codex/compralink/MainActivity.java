@@ -341,7 +341,7 @@ public class MainActivity extends Activity {
     }
 
     private ScrollView rootScroll() {
-        ScrollView scrollView = new ScrollView(this);
+        ScrollView scrollView = isCollapsibleScreen() ? new CollapsibleScrollView(this) : new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.setBackgroundColor(screenBg());
         scrollView.addView(root, new ScrollView.LayoutParams(
@@ -349,6 +349,58 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
         return scrollView;
+    }
+
+    private boolean isCollapsibleScreen() {
+        return selectedIndex >= 0 || homeTab == 0 || homeTab == 1 || homeTab == 2 || homeTab == 3 || homeTab == 6;
+    }
+
+    private class CollapsibleScrollView extends ScrollView {
+        private View header;
+        private int headerFullHeight;
+        private int hiddenHeader;
+
+        CollapsibleScrollView(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            updateCollapsibleHeader(t - oldt);
+        }
+
+        private void updateCollapsibleHeader(int delta) {
+            if (root == null || root.getChildCount() == 0) return;
+            if (getChildAt(0) == null || getChildAt(0).getMeasuredHeight() <= getHeight() + dp(80)) {
+                setHeaderHidden(0);
+                return;
+            }
+            if (header == null) {
+                header = root.getChildAt(0);
+                header.post(() -> {
+                    headerFullHeight = header.getMeasuredHeight();
+                    setHeaderHidden(0);
+                });
+                return;
+            }
+            if (headerFullHeight <= 0) headerFullHeight = header.getMeasuredHeight();
+            if (headerFullHeight <= 0) return;
+            if (delta == 0) return;
+            setHeaderHidden(clampInt(hiddenHeader + delta, 0, headerFullHeight));
+        }
+
+        private void setHeaderHidden(int hidden) {
+            if (header == null) return;
+            if (headerFullHeight <= 0) headerFullHeight = header.getMeasuredHeight();
+            if (headerFullHeight <= 0) return;
+            hiddenHeader = clampInt(hidden, 0, headerFullHeight);
+            ViewGroup.LayoutParams params = header.getLayoutParams();
+            params.height = Math.max(0, headerFullHeight - hiddenHeader);
+            header.setLayoutParams(params);
+            float visible = 1f - (hiddenHeader / (float) headerFullHeight);
+            header.setAlpha(Math.max(0f, Math.min(1f, visible)));
+        }
     }
 
     private void addTopHeader(String heading, String subheading, boolean listOpen) {
@@ -4044,6 +4096,10 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private int homeButtonSize() {

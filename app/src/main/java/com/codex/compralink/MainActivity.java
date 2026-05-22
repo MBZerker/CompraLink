@@ -868,7 +868,7 @@ public class MainActivity extends Activity {
             double qty = quantityOf(item);
             String unitPrice = item.price > 0 ? money.format(item.price) : "R$ --";
             String total = item.price > 0 ? money.format(item.price * qty) : "R$ --";
-            TextView line = printText("• " + item.name + "\n  " + formatQty(qty) + " x " + unitPrice + " (" + total + ")", 15, false);
+            TextView line = printText("â€¢ " + item.name + "\n  " + formatQty(qty) + " x " + unitPrice + " (" + total + ")", 15, false);
             line.setPadding(0, 0, 0, dp(10));
             page.addView(line, matchWrap());
         }
@@ -980,10 +980,10 @@ public class MainActivity extends Activity {
         pageParams.gravity = Gravity.CENTER_HORIZONTAL;
         pageParams.setMargins(0, dp(12), 0, dp(20));
 
-        TextView title = printText("Relatório de gastos", 22, true);
+        TextView title = printText("RelatÃ³rio de gastos", 22, true);
         title.setGravity(Gravity.CENTER);
         page.addView(title, matchWrap());
-        page.addView(printText("Período: " + spendingRangeLabel(), 14, false), matchWrapWithTop(dp(12)));
+        page.addView(printText("PerÃ­odo: " + spendingRangeLabel(), 14, false), matchWrapWithTop(dp(12)));
         page.addView(printText("Gerado em: " + formatDateTime(System.currentTimeMillis()), 14, false), matchWrapWithTop(dp(2)));
 
         Map<String, Double> categories = new LinkedHashMap<>();
@@ -1017,10 +1017,10 @@ public class MainActivity extends Activity {
         List<Map.Entry<String, Double>> categoryRows = new ArrayList<>(categories.entrySet());
         Collections.sort(categoryRows, (a, b) -> Double.compare(b.getValue(), a.getValue()));
         if (categoryRows.isEmpty()) {
-            page.addView(printText("Sem dados no período.", 14, false), matchWrapWithTop(dp(4)));
+            page.addView(printText("Sem dados no perÃ­odo.", 14, false), matchWrapWithTop(dp(4)));
         } else {
             for (Map.Entry<String, Double> row : categoryRows) {
-                page.addView(printText("• " + row.getKey() + ": " + money.format(row.getValue()), 14, false), matchWrapWithTop(dp(4)));
+                page.addView(printText("â€¢ " + row.getKey() + ": " + money.format(row.getValue()), 14, false), matchWrapWithTop(dp(4)));
             }
         }
 
@@ -1029,7 +1029,7 @@ public class MainActivity extends Activity {
         Collections.sort(productRows, (a, b) -> Double.compare(b.total, a.total));
         int limit = Math.min(10, productRows.size());
         if (limit == 0) {
-            page.addView(printText("Sem dados no período.", 14, false), matchWrapWithTop(dp(4)));
+            page.addView(printText("Sem dados no perÃ­odo.", 14, false), matchWrapWithTop(dp(4)));
         }
         for (int i = 0; i < limit; i++) {
             SpendingProduct product = productRows.get(i);
@@ -1063,9 +1063,9 @@ public class MainActivity extends Activity {
             product.times += 1;
         }
 
-        StringBuilder html = printHtmlStart("Relatório de gastos");
-        html.append("<h1>Relatório de gastos</h1>");
-        html.append("<p>Período: ").append(escapeHtml(spendingRangeLabel())).append("</p>");
+        StringBuilder html = printHtmlStart("RelatÃ³rio de gastos");
+        html.append("<h1>RelatÃ³rio de gastos</h1>");
+        html.append("<p>PerÃ­odo: ").append(escapeHtml(spendingRangeLabel())).append("</p>");
         html.append("<p>Gerado em: ").append(escapeHtml(formatDateTime(System.currentTimeMillis()))).append("</p>");
         html.append("<h2>Resumo</h2>");
         html.append("<p><strong>Total: ").append(escapeHtml(money.format(total))).append("</strong></p>");
@@ -1078,7 +1078,7 @@ public class MainActivity extends Activity {
         List<Map.Entry<String, Double>> categoryRows = new ArrayList<>(categories.entrySet());
         Collections.sort(categoryRows, (a, b) -> Double.compare(b.getValue(), a.getValue()));
         if (categoryRows.isEmpty()) {
-            html.append("<p>Sem dados no período.</p>");
+            html.append("<p>Sem dados no perÃ­odo.</p>");
         } else {
             for (Map.Entry<String, Double> row : categoryRows) {
                 html.append("<p class=\"item\">&bull; ")
@@ -1094,7 +1094,7 @@ public class MainActivity extends Activity {
         Collections.sort(productRows, (a, b) -> Double.compare(b.total, a.total));
         int limit = Math.min(10, productRows.size());
         if (limit == 0) {
-            html.append("<p>Sem dados no período.</p>");
+            html.append("<p>Sem dados no perÃ­odo.</p>");
         }
         for (int i = 0; i < limit; i++) {
             SpendingProduct product = productRows.get(i);
@@ -1228,7 +1228,7 @@ public class MainActivity extends Activity {
         double forecast = forecastMonthTotal(currentTotal);
 
         addSpendingFilters();
-        root.addView(infoCard("Resumo", "Total do período selecionado: " + money.format(sum)), matchWrapWithTop(dp(10)));
+        root.addView(infoCard("Resumo", "Total do perÃ­odo selecionado: " + money.format(sum)), matchWrapWithTop(dp(10)));
         addMetricGrid(currentTotal, previousTotal, difference, average, forecast, biggestEntry, products);
         addGoalCard(currentTotal, forecast);
         addSpendingAlerts(currentTotal, forecast, products);
@@ -1253,7 +1253,7 @@ public class MainActivity extends Activity {
         addSpendingFilterButton(row, "12m", 12);
         addSpendingFilterButton(row, "Tudo", 0);
         addGoalButton();
-        Button report = button("Relatório", Color.rgb(51, 65, 85), Color.WHITE);
+        Button report = button("RelatÃ³rio", Color.rgb(51, 65, 85), Color.WHITE);
         report.setOnClickListener(v -> showSpendingReportPreview());
         root.addView(report, matchWrapWithTop(dp(8)));
     }
@@ -1362,7 +1362,7 @@ public class MainActivity extends Activity {
     private void confirmClearSpendingHistoryForever() {
         dialog()
                 .setTitle("Acao permanente")
-                .setMessage("Isso apagará o historico de gastos e nao podera ser restaurado pelo app. Listas e estoque nao serao apagados. Continuar?")
+                .setMessage("Isso apagarÃ¡ o historico de gastos e nao podera ser restaurado pelo app. Listas e estoque nao serao apagados. Continuar?")
                 .setPositiveButton("Limpar", (dialog, which) -> {
                     spendingHistory.clear();
                     saveSpendingHistory();
@@ -1491,27 +1491,27 @@ public class MainActivity extends Activity {
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row1, matchWrapWithTop(dp(8)));
-        row1.addView(metricCard("Mês atual", money.format(currentTotal), accent()), weighted());
+        row1.addView(metricCard("MÃªs atual", money.format(currentTotal), accent()), weighted());
         LinearLayout.LayoutParams right = weighted();
         right.setMargins(dp(8), 0, 0, 0);
-        row1.addView(metricCard("Mês anterior", money.format(previousTotal), primaryText()), right);
+        row1.addView(metricCard("MÃªs anterior", money.format(previousTotal), primaryText()), right);
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row2, matchWrapWithTop(dp(8)));
         int diffColor = difference <= 0 ? Color.rgb(22, 163, 74) : Color.rgb(225, 29, 72);
-        row2.addView(metricCard("Diferença", money.format(difference), diffColor), weighted());
+        row2.addView(metricCard("DiferenÃ§a", money.format(difference), diffColor), weighted());
         LinearLayout.LayoutParams avgParams = weighted();
         avgParams.setMargins(dp(8), 0, 0, 0);
-        row2.addView(metricCard("Média mensal", money.format(average), primaryText()), avgParams);
+        row2.addView(metricCard("MÃ©dia mensal", money.format(average), primaryText()), avgParams);
 
         LinearLayout rowForecast = new LinearLayout(this);
         rowForecast.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(rowForecast, matchWrapWithTop(dp(8)));
-        rowForecast.addView(metricCard("Previsão do mês", money.format(forecast), forecast > previousTotal && previousTotal > 0 ? Color.rgb(225, 29, 72) : accent()), weighted());
+        rowForecast.addView(metricCard("PrevisÃ£o do mÃªs", money.format(forecast), forecast > previousTotal && previousTotal > 0 ? Color.rgb(225, 29, 72) : accent()), weighted());
         LinearLayout.LayoutParams paceParams = weighted();
         paceParams.setMargins(dp(8), 0, 0, 0);
-        String pace = previousTotal <= 0 ? "Sem comparação" : (forecast > previousTotal ? "Acima do mês anterior" : "Dentro do ritmo");
+        String pace = previousTotal <= 0 ? "Sem comparaÃ§Ã£o" : (forecast > previousTotal ? "Acima do mÃªs anterior" : "Dentro do ritmo");
         rowForecast.addView(metricCard("Ritmo", pace, primaryText()), paceParams);
 
         SpendingProduct mostBought = mostBoughtProduct(products);
@@ -1559,7 +1559,7 @@ public class MainActivity extends Activity {
                 + money.format(Math.abs(remaining)), 14, true, statusColor);
         text.setPadding(0, dp(6), 0, 0);
         card.addView(text, matchWrap());
-        TextView forecastText = label("Previsão: " + money.format(forecast), 13, false, mutedText());
+        TextView forecastText = label("PrevisÃ£o: " + money.format(forecast), 13, false, mutedText());
         forecastText.setPadding(0, dp(4), 0, 0);
         card.addView(forecastText, matchWrap());
         LinearLayout barBg = new LinearLayout(this);
@@ -1584,7 +1584,7 @@ public class MainActivity extends Activity {
             addAlertLine(card, "Meta mensal ultrapassada em " + money.format(currentTotal - monthlyGoal), Color.rgb(225, 29, 72));
             count++;
         } else if (monthlyGoal > 0 && forecast > monthlyGoal) {
-            addAlertLine(card, "Previsão acima da meta em " + money.format(forecast - monthlyGoal), Color.rgb(234, 88, 12));
+            addAlertLine(card, "PrevisÃ£o acima da meta em " + money.format(forecast - monthlyGoal), Color.rgb(234, 88, 12));
             count++;
         }
         List<SpendingProduct> expensive = new ArrayList<>();
@@ -1598,11 +1598,11 @@ public class MainActivity extends Activity {
         for (int i = 0; i < limit; i++) {
             SpendingProduct product = expensive.get(i);
             double average = product.priceSum / product.times;
-            addAlertLine(card, product.name + " acima da média em " + money.format(product.latestPrice - average), Color.rgb(234, 88, 12));
+            addAlertLine(card, product.name + " acima da mÃ©dia em " + money.format(product.latestPrice - average), Color.rgb(234, 88, 12));
             count++;
         }
         if (count == 0) {
-            addAlertLine(card, "Nenhum alerta importante no período selecionado.", Color.rgb(22, 163, 74));
+            addAlertLine(card, "Nenhum alerta importante no perÃ­odo selecionado.", Color.rgb(22, 163, 74));
         }
         root.addView(card, matchWrapWithTop(dp(10)));
     }
@@ -1641,14 +1641,14 @@ public class MainActivity extends Activity {
     }
 
     private void addMonthlyBars(Map<String, Double> totals, double max) {
-        root.addView(label("Gastos por mês", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        root.addView(label("Gastos por mÃªs", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         for (String key : totals.keySet()) {
             double value = totals.get(key);
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(14), dp(12), dp(14), dp(12));
             card.setBackground(round(cardBg(), dp(14), stroke(), 1));
-            card.addView(label(key + " · " + money.format(value), 15, true, primaryText()));
+            card.addView(label(key + " Â· " + money.format(value), 15, true, primaryText()));
             LinearLayout barBg = new LinearLayout(this);
             barBg.setPadding(0, 0, 0, 0);
             barBg.setBackground(round(inputBg(), dp(8), Color.TRANSPARENT, 0));
@@ -1692,7 +1692,7 @@ public class MainActivity extends Activity {
         Collections.sort(ranking, (a, b) -> Double.compare(b.total, a.total));
         root.addView(label("Produtos que mais pesam", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         if (ranking.isEmpty()) {
-            root.addView(infoCard("Sem dados", "Marque itens com preço para criar o ranking de gastos."), matchWrapWithTop(dp(8)));
+            root.addView(infoCard("Sem dados", "Marque itens com preÃ§o para criar o ranking de gastos."), matchWrapWithTop(dp(8)));
             return;
         }
         int limit = Math.min(8, ranking.size());
@@ -1738,9 +1738,9 @@ public class MainActivity extends Activity {
             if (row.cycles == 1 || days > row.maxDays) row.maxDays = days;
         }
 
-        root.addView(label("DuraÃ§Ã£o do estoque", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        root.addView(label("Duração do estoque", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         if (stats.isEmpty()) {
-            root.addView(infoCard("Sem baixas no estoque", "Quando vocÃª der baixa em itens do estoque, o app calcula quanto tempo cada produto durou e monta este grÃ¡fico."), matchWrapWithTop(dp(8)));
+            root.addView(infoCard("Sem baixas no estoque", "Quando você der baixa em itens do estoque, o app calcula quanto tempo cada produto durou e monta este gráfico."), matchWrapWithTop(dp(8)));
             return;
         }
 
@@ -1753,7 +1753,7 @@ public class MainActivity extends Activity {
             totalAverage += row.averageDays();
         }
         double generalAverage = totalAverage / rows.size();
-        root.addView(infoCard("Resumo de duraÃ§Ã£o", "MÃ©dia entre produtos: " + formatDurationDays(generalAverage)
+        root.addView(infoCard("Resumo de duração", "Média entre produtos: " + formatDurationDays(generalAverage)
                 + "\nProdutos analisados: " + rows.size()), matchWrapWithTop(dp(8)));
 
         int limit = Math.min(8, rows.size());
@@ -1766,14 +1766,14 @@ public class MainActivity extends Activity {
             elevate(card, 2);
 
             card.addView(label((i + 1) + ". " + row.name, 15, true, primaryText()));
-            TextView meta = label("MÃ©dia " + formatDurationDays(row.averageDays())
+            TextView meta = label("Média " + formatDurationDays(row.averageDays())
                     + " - menor " + formatDurationDays(row.minDays)
                     + " - maior " + formatDurationDays(row.maxDays), 13, false, mutedText());
             meta.setPadding(0, dp(4), 0, 0);
             card.addView(meta, matchWrap());
 
             TextView detail = label(row.cycles + " baixa(s), " + formatQty(row.totalQuantity)
-                    + " un consumidas - Ãºltima baixa " + formatDateLabel(row.lastAt), 13, false, mutedText());
+                    + " un consumidas - última baixa " + formatDateLabel(row.lastAt), 13, false, mutedText());
             detail.setPadding(0, dp(4), 0, 0);
             card.addView(detail, matchWrap());
 
@@ -1795,9 +1795,9 @@ public class MainActivity extends Activity {
             if (product.times >= 2) insights.add(product);
         }
         Collections.sort(insights, (a, b) -> Double.compare(priceSpread(b), priceSpread(a)));
-        root.addView(label("Histórico de preços", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        root.addView(label("HistÃ³rico de preÃ§os", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         if (insights.isEmpty()) {
-            root.addView(infoCard("Pouco histórico", "Quando um produto aparecer em compras diferentes, o app mostra mínimo, médio, máximo e variação."), matchWrapWithTop(dp(8)));
+            root.addView(infoCard("Pouco histÃ³rico", "Quando um produto aparecer em compras diferentes, o app mostra mÃ­nimo, mÃ©dio, mÃ¡ximo e variaÃ§Ã£o."), matchWrapWithTop(dp(8)));
             return;
         }
         int limit = Math.min(6, insights.size());
@@ -1813,19 +1813,19 @@ public class MainActivity extends Activity {
             card.setBackground(round(cardBg(), dp(14), stroke(), 1));
             card.addView(label(product.name, 15, true, primaryText()));
 
-            TextView range = label("Mín. " + money.format(product.minPrice)
-                    + " - Médio " + money.format(average)
-                    + " - Máx. " + money.format(product.maxPrice), 13, false, mutedText());
+            TextView range = label("MÃ­n. " + money.format(product.minPrice)
+                    + " - MÃ©dio " + money.format(average)
+                    + " - MÃ¡x. " + money.format(product.maxPrice), 13, false, mutedText());
             range.setPadding(0, dp(5), 0, 0);
             card.addView(range, matchWrap());
 
-            TextView latest = label("Último: " + money.format(product.latestPrice)
+            TextView latest = label("Ãšltimo: " + money.format(product.latestPrice)
                     + " em " + formatDateLabel(product.latestAt), 13, true, trendColor);
             latest.setPadding(0, dp(5), 0, 0);
             card.addView(latest, matchWrap());
 
             if (economy > 0) {
-                TextView tip = label("Se comprar pelo menor histórico, economiza " + money.format(economy) + " por unidade.", 13, false, Color.rgb(22, 163, 74));
+                TextView tip = label("Se comprar pelo menor histÃ³rico, economiza " + money.format(economy) + " por unidade.", 13, false, Color.rgb(22, 163, 74));
                 tip.setPadding(0, dp(5), 0, 0);
                 card.addView(tip, matchWrap());
             }
@@ -1856,8 +1856,8 @@ public class MainActivity extends Activity {
 
     private String spendingRangeLabel() {
         if (spendingRangeMonths <= 0) return "Todos os registros";
-        if (spendingRangeMonths == 1) return "Mês atual";
-        return "Últimos " + spendingRangeMonths + " meses";
+        if (spendingRangeMonths == 1) return "MÃªs atual";
+        return "Ãšltimos " + spendingRangeMonths + " meses";
     }
 
     private double forecastMonthTotal(double currentTotal) {
@@ -3122,7 +3122,7 @@ public class MainActivity extends Activity {
         if (clean.equals(last)) return;
         if (importPayload(clean)) {
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LAST_CLIPBOARD_PAYLOAD, clean).apply();
-            Toast.makeText(this, "Lista importada da área de transferência.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Lista importada da Ã¡rea de transferÃªncia.", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -3139,7 +3139,7 @@ public class MainActivity extends Activity {
                 ShoppingList imported = ShoppingList.fromJson(new JSONObject(new String(decoded, StandardCharsets.UTF_8)));
                 return saveImportedList(imported);
             } catch (Exception e) {
-                Toast.makeText(this, "Link de lista inválido.", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Link de lista invÃ¡lido.", Toast.LENGTH_SHORT).show();
                 return false;
             }
         }
@@ -3646,7 +3646,7 @@ public class MainActivity extends Activity {
             return formatShortDate(entry.addedAt) + " - " + formatTime(entry.addedAt);
         }
         long days = diff / 86400000L;
-        return formatShortDate(entry.addedAt) + " - Há " + days + (days == 1 ? " dia" : " dias");
+        return formatShortDate(entry.addedAt) + " - HÃ¡ " + days + (days == 1 ? " dia" : " dias");
     }
 
     private String formatShortDate(long when) {
@@ -3667,7 +3667,7 @@ public class MainActivity extends Activity {
     }
 
     private String formatDateTime(long when) {
-        return formatShortDate(when) + " às " + formatTime(when);
+        return formatShortDate(when) + " Ã s " + formatTime(when);
     }
 
     private String formatDateLabel(long when) {
@@ -3764,7 +3764,7 @@ public class MainActivity extends Activity {
     }
 
     private String themeIcon() {
-        return isDarkTheme() ? "☀" : "☾";
+        return isDarkTheme() ? "â˜€" : "â˜¾";
     }
 
     private boolean isCompactWidth() {
@@ -3823,7 +3823,7 @@ public class MainActivity extends Activity {
     }
 
     private String[] categoryOptions() {
-        return new String[]{"Mercado", "Hortifruti", "Proteínas", "Limpeza", "Higiene", "Farmácia", "Bebidas", "Pet", "Outros", CUSTOM_CATEGORY};
+        return new String[]{"Mercado", "Hortifruti", "ProteÃ­nas", "Limpeza", "Higiene", "FarmÃ¡cia", "Bebidas", "Pet", "Outros", CUSTOM_CATEGORY};
     }
 
     private boolean isDefaultCategory(String category) {

@@ -1,7 +1,7 @@
 {
-  "versionCode": 48,
-  "versionName": "4.17",
+  "versionCode": 49,
+  "versionName": "4.18",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Adiciona grafico profissional de duracao de estoque dentro de Gastos, usando o historico de baixas."
+  "notes": "Corrige acentuação dos textos do gráfico de duração de estoque."
 }

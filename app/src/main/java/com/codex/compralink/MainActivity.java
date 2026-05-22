@@ -359,24 +359,9 @@ public class MainActivity extends Activity {
         private View header;
         private int headerFullHeight;
         private int hiddenHeader;
-        private float lastTouchY;
 
         CollapsibleScrollView(Context context) {
             super(context);
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent event) {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                lastTouchY = event.getY();
-            } else if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-                float dy = event.getY() - lastTouchY;
-                if (dy > 0 && hiddenHeader > 0) {
-                    updateCollapsibleHeader(-(int) dy);
-                }
-                lastTouchY = event.getY();
-            }
-            return super.onTouchEvent(event);
         }
 
         @Override

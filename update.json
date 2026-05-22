@@ -1,7 +1,7 @@
 {
-  "versionCode": 53,
-  "versionName": "4.22",
+  "versionCode": 54,
+  "versionName": "4.23",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Ajusta o cabeçalho colapsável para reaparecer imediatamente ao rolar de volta."
+  "notes": "Corrige o gatilho do cabeçalho colapsável para reaparecer apenas quando a lista começa a voltar."
 }

@@ -1,7 +1,7 @@
 {
-  "versionCode": 50,
-  "versionName": "4.19",
+  "versionCode": 51,
+  "versionName": "4.20",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Adiciona duração e ordenação no histórico do estoque, com alerta piscante após dar baixa."
+  "notes": "Corrige o botão de tema claro/escuro usando ícones reais de sol e lua."
 }

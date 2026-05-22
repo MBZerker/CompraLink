@@ -390,7 +390,9 @@ public class MainActivity extends Activity {
         sideControls.setPadding(0, dp(6), 0, 0);
 
         int sideButtonSize = (!listOpen && homeTab == 0) ? homeButtonSize() : dp(48);
-        Button themeTop = iconButton(themeIcon(), isDarkTheme() ? Color.WHITE : Color.BLACK, isDarkTheme() ? Color.BLACK : Color.WHITE);
+        ImageButton themeTop = imageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
+                isDarkTheme() ? Color.WHITE : Color.BLACK,
+                isDarkTheme() ? Color.BLACK : Color.WHITE);
         themeTop.setOnClickListener(v -> toggleTheme());
         sideControls.addView(themeTop, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
 

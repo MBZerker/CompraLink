@@ -24,8 +24,10 @@ import android.print.PrintDocumentAdapter;
 import android.print.PrintManager;
 import android.content.res.Configuration;
 import android.text.InputType;
+import android.text.Editable;
 import android.text.SpannableString;
 import android.text.Spanned;
+import android.text.TextWatcher;
 import android.text.method.DigitsKeyListener;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
@@ -130,6 +132,12 @@ public class MainActivity extends Activity {
     private boolean shellReady;
     private boolean pendingIntentHandled;
     private boolean selectedFromHistory;
+    private String homeSearch = "";
+    private String listSearch = "";
+    private String historySearch = "";
+    private String stockSearch = "";
+    private String stockHistorySearch = "";
+    private int searchToken;
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
     private boolean stockHistoryPending;
@@ -252,13 +260,22 @@ public class MainActivity extends Activity {
         updateAutoLockedLists();
         buildRoot();
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
+        addSearchBar("Pesquisar listas ou itens", homeSearch, value -> {
+            homeSearch = value;
+            showHomeScreen();
+        });
 
+        boolean shown = false;
         for (int i = 0; i < lists.size(); i++) {
             if (lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
+            if (!matchesListSearch(lists.get(i), homeSearch)) continue;
+            shown = true;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
         }
-        if (!hasVisibleLists(false)) {
-            root.addView(infoCard("Nenhuma lista criada", "Toque no carrinho para criar sua primeira lista."), matchWrapWithTop(dp(10)));
+        if (!shown) {
+            root.addView(homeSearch == null || homeSearch.trim().isEmpty()
+                    ? infoCard("Nenhuma lista criada", "Toque no carrinho para criar sua primeira lista.")
+                    : infoCard("Nada encontrado", "Nenhuma lista ou item corresponde a pesquisa."), matchWrapWithTop(dp(10)));
         }
         setContentView(rootScroll());
     }
@@ -271,13 +288,22 @@ public class MainActivity extends Activity {
         buildRoot();
         addTopHeader("Historico", "Listas protegidas ficam guardadas aqui.", false);
         addHistorySummary();
+        addSearchBar("Pesquisar historico ou itens", historySearch, value -> {
+            historySearch = value;
+            showHistoryScreen();
+        });
 
+        boolean shown = false;
         for (int i = 0; i < lists.size(); i++) {
             if (!lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
+            if (!matchesListSearch(lists.get(i), historySearch)) continue;
+            shown = true;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
         }
-        if (!hasVisibleLists(true)) {
-            root.addView(infoCard("Historico vazio", "Listas completas aparecem aqui depois de protegidas automaticamente."), matchWrapWithTop(dp(10)));
+        if (!shown) {
+            root.addView(historySearch == null || historySearch.trim().isEmpty()
+                    ? infoCard("Historico vazio", "Listas completas aparecem aqui depois de protegidas automaticamente.")
+                    : infoCard("Nada encontrado", "Nenhuma lista do historico corresponde a pesquisa."), matchWrapWithTop(dp(10)));
         }
         setContentView(rootScroll());
     }
@@ -307,6 +333,10 @@ public class MainActivity extends Activity {
         if (spending) {
             addSpendingScreen();
         } else {
+            addSearchBar("Pesquisar itens do estoque", stockSearch, value -> {
+                stockSearch = value;
+                showStockWindow(false);
+            });
             addStockScreen();
         }
         setContentView(rootScroll());
@@ -329,6 +359,10 @@ public class MainActivity extends Activity {
             addInputCard();
         }
 
+        addSearchBar("Pesquisar itens da lista", listSearch, value -> {
+            listSearch = value;
+            showListScreen();
+        });
         addItems();
         setContentView(rootScroll());
     }
@@ -341,7 +375,7 @@ public class MainActivity extends Activity {
     }
 
     private ScrollView rootScroll() {
-        ScrollView scrollView = isCollapsibleScreen() ? new CollapsibleScrollView(this) : new ScrollView(this);
+        ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.setBackgroundColor(screenBg());
         scrollView.addView(root, new ScrollView.LayoutParams(
@@ -349,58 +383,6 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
         return scrollView;
-    }
-
-    private boolean isCollapsibleScreen() {
-        return selectedIndex >= 0 || homeTab == 0 || homeTab == 1 || homeTab == 2 || homeTab == 3 || homeTab == 6;
-    }
-
-    private class CollapsibleScrollView extends ScrollView {
-        private View header;
-        private int headerFullHeight;
-        private int hiddenHeader;
-
-        CollapsibleScrollView(Context context) {
-            super(context);
-        }
-
-        @Override
-        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
-            super.onScrollChanged(l, t, oldl, oldt);
-            updateCollapsibleHeader(t - oldt);
-        }
-
-        private void updateCollapsibleHeader(int delta) {
-            if (root == null || root.getChildCount() == 0) return;
-            if (getChildAt(0) == null || getChildAt(0).getMeasuredHeight() <= getHeight() + dp(80)) {
-                setHeaderHidden(0);
-                return;
-            }
-            if (header == null) {
-                header = root.getChildAt(0);
-                header.post(() -> {
-                    headerFullHeight = header.getMeasuredHeight();
-                    setHeaderHidden(0);
-                });
-                return;
-            }
-            if (headerFullHeight <= 0) headerFullHeight = header.getMeasuredHeight();
-            if (headerFullHeight <= 0) return;
-            if (delta == 0) return;
-            setHeaderHidden(clampInt(hiddenHeader + delta, 0, headerFullHeight));
-        }
-
-        private void setHeaderHidden(int hidden) {
-            if (header == null) return;
-            if (headerFullHeight <= 0) headerFullHeight = header.getMeasuredHeight();
-            if (headerFullHeight <= 0) return;
-            hiddenHeader = clampInt(hidden, 0, headerFullHeight);
-            ViewGroup.LayoutParams params = header.getLayoutParams();
-            params.height = Math.max(0, headerFullHeight - hiddenHeader);
-            header.setLayoutParams(params);
-            float visible = 1f - (hiddenHeader / (float) headerFullHeight);
-            header.setAlpha(Math.max(0f, Math.min(1f, visible)));
-        }
     }
 
     private void addTopHeader(String heading, String subheading, boolean listOpen) {
@@ -771,6 +753,10 @@ public class MainActivity extends Activity {
         buildRoot();
         addTopHeader("Estoque", "Baixas guardadas para consulta.", false);
         addStockTabs();
+        addSearchBar("Pesquisar historico do estoque", stockHistorySearch, value -> {
+            stockHistorySearch = value;
+            showStockHistoryWindow();
+        });
         addStockHistoryScreen();
         setContentView(rootScroll());
     }
@@ -1215,7 +1201,10 @@ public class MainActivity extends Activity {
             root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
             return;
         }
+        boolean shown = false;
         for (StockEntry entry : stock) {
+            if (!matchesStockSearch(entry, stockSearch)) continue;
+            shown = true;
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
@@ -1241,6 +1230,9 @@ public class MainActivity extends Activity {
             edited.setPadding(0, dp(4), 0, 0);
             card.addView(edited);
             root.addView(card, matchWrapWithTop(dp(10)));
+        }
+        if (!shown) {
+            root.addView(infoCard("Nada encontrado", "Nenhum item do estoque corresponde a pesquisa."), matchWrapWithTop(dp(10)));
         }
     }
 
@@ -1496,9 +1488,16 @@ public class MainActivity extends Activity {
             return;
         }
         List<StockEntry> rows = new ArrayList<>(stockHistory);
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            if (!matchesStockSearch(rows.get(i), stockHistorySearch)) rows.remove(i);
+        }
         Collections.sort(rows, (a, b) -> Double.compare(stockDurationDays(a), stockDurationDays(b)));
         if (stockHistorySortDesc) Collections.reverse(rows);
         root.addView(infoCard("Ordena\u00e7\u00e3o por dura\u00e7\u00e3o", stockHistorySortDesc ? "Maior dura\u00e7\u00e3o primeiro." : "Menor dura\u00e7\u00e3o primeiro."), matchWrapWithTop(dp(10)));
+        if (rows.isEmpty()) {
+            root.addView(infoCard("Nada encontrado", "Nenhum item do historico do estoque corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+            return;
+        }
 
         for (StockEntry entry : rows) {
             LinearLayout card = new LinearLayout(this);
@@ -2005,6 +2004,54 @@ public class MainActivity extends Activity {
         return card;
     }
 
+    private void addSearchBar(String hint, String value, SearchCallback callback) {
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setHint(hint);
+        search.setText(value == null ? "" : value);
+        search.setSelection(search.getText().length());
+        search.setTextColor(primaryText());
+        search.setHintTextColor(mutedText());
+        search.setTextSize(15);
+        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        search.setBackground(round(inputBg(), dp(16), stroke(), 1));
+        search.setPadding(dp(14), 0, dp(14), 0);
+        search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                String next = s == null ? "" : s.toString();
+                int token = ++searchToken;
+                search.postDelayed(() -> {
+                    if (token == searchToken) callback.onSearchChanged(next);
+                }, 180);
+            }
+        });
+        root.addView(search, matchHeightWithTop(dp(52), dp(10)));
+        if (value != null && !value.isEmpty()) search.requestFocus();
+    }
+
+    private boolean matchesListSearch(ShoppingList list, String query) {
+        String key = normalize(query);
+        if (key.isEmpty()) return true;
+        if (normalize(list.name).contains(key)) return true;
+        for (ShoppingItem item : list.items) {
+            if (normalize(item.name).contains(key)) return true;
+            if (normalize(item.note).contains(key)) return true;
+        }
+        return false;
+    }
+
+    private boolean matchesItemSearch(ShoppingItem item, String query) {
+        String key = normalize(query);
+        return key.isEmpty() || normalize(item.name).contains(key) || normalize(item.note).contains(key);
+    }
+
+    private boolean matchesStockSearch(StockEntry entry, String query) {
+        String key = normalize(query);
+        return key.isEmpty() || normalize(entry.name).contains(key) || normalize(categoryOf(entry)).contains(key);
+    }
+
     private void addInputCard() {
         LinearLayout addCard = new LinearLayout(this);
         boolean compact = isCompactWidth();
@@ -2049,6 +2096,11 @@ public class MainActivity extends Activity {
         setDecimalInput(unitInput);
         unitInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
         unitInput.setPadding(dp(12), 0, dp(12), 0);
+        unitInput.setSelectAllOnFocus(true);
+        unitInput.setOnClickListener(v -> unitInput.selectAll());
+        unitInput.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) unitInput.selectAll();
+        });
         setupProductSuggestions();
 
         Button add = button("+", accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
@@ -2164,12 +2216,25 @@ public class MainActivity extends Activity {
 
     private void addItems() {
         ShoppingList current = lists.get(selectedIndex);
+        boolean any = false;
+        for (ShoppingItem item : current.items) {
+            if (matchesItemSearch(item, listSearch)) {
+                any = true;
+                break;
+            }
+        }
+        if (!any && listSearch != null && !listSearch.trim().isEmpty()) {
+            root.addView(infoCard("Nada encontrado", "Nenhum item da lista corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+            return;
+        }
         if (current.sortMode == SORT_CHECKED_TOP) {
             addItemsByCheckedState(true);
             addItemsByCheckedState(false);
         } else if (current.sortMode == SORT_KEEP_POSITION) {
             for (int i = 0; i < current.items.size(); i++) {
-                root.addView(itemRow(current.items.get(i), i), matchWrapWithTop(dp(8)));
+                if (matchesItemSearch(current.items.get(i), listSearch)) {
+                    root.addView(itemRow(current.items.get(i), i), matchWrapWithTop(dp(8)));
+                }
             }
         } else {
             addItemsByCheckedState(false);
@@ -2181,7 +2246,7 @@ public class MainActivity extends Activity {
         ShoppingList current = lists.get(selectedIndex);
         for (int i = 0; i < current.items.size(); i++) {
             ShoppingItem item = current.items.get(i);
-            if (item.checked == checked) {
+            if (item.checked == checked && matchesItemSearch(item, listSearch)) {
                 root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
             }
         }
@@ -3112,8 +3177,16 @@ public class MainActivity extends Activity {
     }
 
     private void shareSelectedList() {
+        CharSequence[] options = {"Lista completa", "Com privacidade"};
+        dialog()
+                .setTitle("Compartilhar")
+                .setItems(options, (dialog, which) -> shareSelectedList(which == 1))
+                .show();
+    }
+
+    private void shareSelectedList(boolean privacyMode) {
         try {
-            String link = buildShareLink(lists.get(selectedIndex));
+            String link = buildShareLink(lists.get(selectedIndex), privacyMode);
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
             send.putExtra(Intent.EXTRA_TEXT, link);
@@ -3128,9 +3201,29 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String buildShareLink(ShoppingList list) throws Exception {
-        String payload = encodeCompressed(list.toJson().toString());
+    private String buildShareLink(ShoppingList list, boolean privacyMode) throws Exception {
+        String payload = encodeCompressed((privacyMode ? privateShareJson(list) : list.toJson()).toString());
         return SHARE_BASE + payload;
+    }
+
+    private JSONObject privateShareJson(ShoppingList list) throws JSONException {
+        JSONObject json = list.toJson();
+        JSONArray items = new JSONArray();
+        for (ShoppingItem source : list.items) {
+            ShoppingItem item = new ShoppingItem(source.name, source.price, "1");
+            item.id = source.id;
+            item.checked = false;
+            item.note = "";
+            item.updatedAt = source.updatedAt;
+            item.stockId = "";
+            items.put(item.toJson());
+        }
+        json.put("items", items);
+        json.put("saveCheckedToStock", false);
+        json.put("locked", false);
+        json.put("archived", false);
+        json.put("deletedFromHistory", false);
+        return json;
     }
 
     private void handleIncomingIntent(Intent intent) {
@@ -4086,6 +4179,12 @@ public class MainActivity extends Activity {
         return new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height);
     }
 
+    private LinearLayout.LayoutParams matchHeightWithTop(int height, int top) {
+        LinearLayout.LayoutParams params = matchHeight(height);
+        params.setMargins(0, top, 0, 0);
+        return params;
+    }
+
     private LinearLayout.LayoutParams weighted() {
         return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
     }
@@ -4096,10 +4195,6 @@ public class MainActivity extends Activity {
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    private int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 
     private int homeButtonSize() {
@@ -4315,6 +4410,10 @@ public class MainActivity extends Activity {
 
     private interface OnColorChanged {
         void onChanged(int color);
+    }
+
+    private interface SearchCallback {
+        void onSearchChanged(String value);
     }
 
     private class CompraInvadersView extends View {

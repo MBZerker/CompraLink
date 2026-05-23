@@ -1594,7 +1594,7 @@ public class MainActivity extends Activity {
     private void importFiscalNoteFromUrl(String rawUrl) {
         String url = rawUrl == null ? "" : rawUrl.trim();
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            showHomeScreen();
+            showFiscalImportError("QR lido, mas nao parece ser um link valido.\n\nConteudo: " + previewErrorText(url));
             return;
         }
         new Thread(() -> {
@@ -1603,7 +1603,8 @@ public class MainActivity extends Activity {
                 ShoppingList imported = parseFiscalNote(content);
                 runOnUiThread(() -> saveFiscalList(imported));
             } catch (Exception e) {
-                runOnUiThread(this::showHomeScreen);
+                runOnUiThread(() -> showFiscalImportError("Falha ao importar a nota.\n\nLink: " + previewErrorText(url)
+                        + "\n\nErro: " + errorMessage(e)));
             }
         }).start();
     }
@@ -1614,6 +1615,8 @@ public class MainActivity extends Activity {
         connection.setReadTimeout(20000);
         connection.setRequestProperty("User-Agent", "CheckMercado/1.0");
         connection.setRequestProperty("Accept", "text/html,application/xml,text/xml,*/*");
+        int code = connection.getResponseCode();
+        if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
         try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096];
             int read;
@@ -1749,7 +1752,7 @@ public class MainActivity extends Activity {
 
     private void saveFiscalList(ShoppingList list) {
         if (list == null || list.items.isEmpty()) {
-            showHomeScreen();
+            showFiscalImportError("A nota foi acessada, mas nenhum item foi encontrado.");
             return;
         }
         lists.add(0, list);
@@ -1757,6 +1760,34 @@ public class MainActivity extends Activity {
         selectedIndex = 0;
         selectedFromHistory = false;
         showListScreen();
+    }
+
+    private void showFiscalImportError(String message) {
+        stopQrScanner();
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 0;
+        buildRoot();
+        addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
+        setContentView(rootScroll());
+        dialog()
+                .setTitle("Erro ao importar nota")
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private String errorMessage(Exception e) {
+        if (e == null) return "Erro desconhecido";
+        String message = e.getMessage();
+        if (message == null || message.trim().isEmpty()) return e.getClass().getSimpleName();
+        return e.getClass().getSimpleName() + ": " + message;
+    }
+
+    private String previewErrorText(String text) {
+        if (text == null) return "";
+        String cleaned = text.replaceAll("\\s+", " ").trim();
+        return cleaned.length() > 420 ? cleaned.substring(0, 420) + "..." : cleaned;
     }
 
     private void addStockHistoryScreen() {

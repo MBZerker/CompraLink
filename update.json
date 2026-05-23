@@ -1,7 +1,7 @@
 {
-  "versionCode": 59,
-  "versionName": "4.28",
+  "versionCode": 60,
+  "versionName": "4.29",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Renomeia o app para Check Mercado, atualiza splash e usa ML Kit para melhorar a leitura de QR Code."
+  "notes": "Mostra uma janela de erro quando a leitura da nota fiscal falha apos o QR Code ser lido."
 }

@@ -64,6 +64,9 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
@@ -78,8 +81,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
+
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
@@ -113,6 +124,7 @@ public class MainActivity extends Activity {
     private static final int SORT_CHECKED_BOTTOM = 0;
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
+    private static final int REQUEST_QR_SCAN = 9021;
     private static final String CUSTOM_CATEGORY = "Personalizada...";
     private static final long AUTO_LOCK_AFTER_MS = 24L * 60L * 60L * 1000L;
 
@@ -167,7 +179,6 @@ public class MainActivity extends Activity {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             shellReady = true;
             handleIncomingIntent(getIntent());
-            if (selectedIndex < 0) importClipboardListIfPresent();
             pendingIntentHandled = true;
             if (selectedIndex >= 0) {
                 showListScreen();
@@ -186,6 +197,20 @@ public class MainActivity extends Activity {
             handleIncomingIntent(intent);
             if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
         }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQUEST_QR_SCAN || resultCode != RESULT_OK || data == null) return;
+        String result = data.getStringExtra("SCAN_RESULT");
+        if (result == null) result = data.getStringExtra("com.google.zxing.client.android.SCAN_RESULT");
+        if (result == null && data.getData() != null) result = data.getData().toString();
+        if (result == null || result.trim().isEmpty()) {
+            Toast.makeText(this, "Nao foi possivel ler o QR Code.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        importFiscalNoteFromUrl(result.trim());
     }
 
     @Override
@@ -532,6 +557,12 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 historyParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(history, historyParams);
+
+                ImageButton qr = imageIconButton(R.drawable.ic_qr_scan, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                qr.setOnClickListener(v -> startFiscalQrScan());
+                LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
+                qrParams.setMargins(dp(8), 0, 0, 0);
+                actions.addView(qr, qrParams);
             }
 
             if (homeTab == 0) {
@@ -1459,6 +1490,184 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel gerar o backup.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void startFiscalQrScan() {
+        Intent scan = new Intent("com.google.zxing.client.android.SCAN");
+        scan.putExtra("SCAN_MODE", "QR_CODE_MODE");
+        try {
+            startActivityForResult(scan, REQUEST_QR_SCAN);
+        } catch (Exception e) {
+            promptFiscalQrUrl();
+        }
+    }
+
+    private void promptFiscalQrUrl() {
+        EditText input = dialogInput("Cole o link da nota fiscal", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        dialog()
+                .setTitle("Importar nota fiscal")
+                .setMessage("Use o leitor do Google, copie o link aberto pela nota e cole aqui.")
+                .setView(input)
+                .setPositiveButton("Importar", (dialog, which) -> importFiscalNoteFromUrl(input.getText().toString()))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void importFiscalNoteFromUrl(String rawUrl) {
+        String url = rawUrl == null ? "" : rawUrl.trim();
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            Toast.makeText(this, "Link da nota invalido.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "Lendo nota fiscal...", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                String content = downloadText(url);
+                ShoppingList imported = parseFiscalNote(content);
+                runOnUiThread(() -> saveFiscalList(imported));
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Nao foi possivel importar esta nota.", Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    private String downloadText(String link) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(20000);
+        connection.setRequestProperty("User-Agent", "CompraLink/1.0");
+        connection.setRequestProperty("Accept", "text/html,application/xml,text/xml,*/*");
+        try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private ShoppingList parseFiscalNote(String content) throws Exception {
+        String text = content == null ? "" : content.trim();
+        ShoppingList fromXml = text.startsWith("<") ? parseFiscalXml(text) : null;
+        if (fromXml != null && !fromXml.items.isEmpty()) return fromXml;
+        ShoppingList fromHtml = parseFiscalHtml(text);
+        if (fromHtml.items.isEmpty()) throw new JSONException("Nota sem itens");
+        return fromHtml;
+    }
+
+    private ShoppingList parseFiscalXml(String xml) {
+        try {
+            Document doc = DocumentBuilderFactory.newInstance()
+                    .newDocumentBuilder()
+                    .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+            String market = firstXmlText(doc, "xNome");
+            ShoppingList list = new ShoppingList(isBlank(market) ? "Nota fiscal" : market);
+            NodeList dets = doc.getElementsByTagName("det");
+            for (int i = 0; i < dets.getLength(); i++) {
+                Element det = (Element) dets.item(i);
+                String name = firstChildText(det, "xProd");
+                if (isBlank(name)) continue;
+                double qty = parsePrice(firstChildText(det, "qCom"));
+                double unitPrice = parsePrice(firstChildText(det, "vUnCom"));
+                if (qty <= 0) qty = 1;
+                ShoppingItem item = new ShoppingItem(cleanFiscalText(name), unitPrice, formatQty(qty));
+                list.items.add(item);
+            }
+            return list;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private ShoppingList parseFiscalHtml(String html) {
+        String market = firstHtmlMatch(html,
+                "id=[\"']u20[\"'][^>]*>(.*?)<",
+                "class=[\"']txtTopo[\"'][^>]*>(.*?)<",
+                "<h4[^>]*>(.*?)</h4>",
+                "<title[^>]*>(.*?)</title>");
+        ShoppingList list = new ShoppingList(isBlank(market) ? "Nota fiscal" : cleanFiscalText(market));
+        Matcher rowMatcher = Pattern.compile("(?is)<tr[^>]*>(.*?)</tr>").matcher(html);
+        while (rowMatcher.find()) addFiscalItemFromHtmlRow(list, rowMatcher.group(1));
+        if (list.items.isEmpty()) {
+            Matcher itemMatcher = Pattern.compile("(?is)txtTit[^>]*>(.*?)</span>(.*?)(?=txtTit|</table|</body)").matcher(html);
+            while (itemMatcher.find()) {
+                addFiscalItem(list, itemMatcher.group(1), itemMatcher.group(2));
+            }
+        }
+        return list;
+    }
+
+    private void addFiscalItemFromHtmlRow(ShoppingList list, String row) {
+        String name = firstHtmlMatch(row, "txtTit[^>]*>(.*?)</span>", "<td[^>]*>(.*?)</td>");
+        addFiscalItem(list, name, row);
+    }
+
+    private void addFiscalItem(ShoppingList list, String rawName, String block) {
+        String name = cleanFiscalText(rawName);
+        if (isBlank(name) || normalize(name).contains("descricao")) return;
+        double qty = firstNumber(block, "Qtde\\.?\\s*:?\\s*</?[^>]*>*\\s*([0-9.,]+)", "Quantidade\\s*:?\\s*([0-9.,]+)", "Rqtd[^>]*>.*?([0-9]+[0-9.,]*)");
+        double unitPrice = firstNumber(block, "Vl\\.?\\s*Unit\\.?\\s*:?\\s*</?[^>]*>*\\s*([0-9.,]+)", "Valor\\s*Unit\\.?\\s*:?\\s*([0-9.,]+)", "RvlUnit[^>]*>.*?([0-9]+[0-9.,]*)");
+        double total = firstNumber(block, "valor[^>]*>\\s*([0-9.,]+)", "Valor\\s*Total\\s*:?\\s*([0-9.,]+)");
+        if (qty <= 0) qty = 1;
+        if (unitPrice <= 0 && total > 0) unitPrice = total / qty;
+        ShoppingItem item = new ShoppingItem(name, unitPrice, formatQty(qty));
+        list.items.add(item);
+    }
+
+    private String firstXmlText(Document doc, String tag) {
+        NodeList nodes = doc.getElementsByTagName(tag);
+        if (nodes.getLength() == 0 || nodes.item(0) == null) return "";
+        return nodes.item(0).getTextContent();
+    }
+
+    private String firstChildText(Element element, String tag) {
+        NodeList nodes = element.getElementsByTagName(tag);
+        if (nodes.getLength() == 0 || nodes.item(0) == null) return "";
+        return nodes.item(0).getTextContent();
+    }
+
+    private String firstHtmlMatch(String text, String... patterns) {
+        for (String pattern : patterns) {
+            Matcher matcher = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(text);
+            if (matcher.find()) return cleanFiscalText(matcher.group(1));
+        }
+        return "";
+    }
+
+    private double firstNumber(String text, String... patterns) {
+        for (String pattern : patterns) {
+            Matcher matcher = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE | Pattern.DOTALL).matcher(text);
+            if (matcher.find()) return parsePrice(cleanFiscalText(matcher.group(1)));
+        }
+        return 0;
+    }
+
+    private String cleanFiscalText(String value) {
+        String text = htmlDecode(value == null ? "" : value.replaceAll("(?is)<[^>]+>", " "));
+        return text.replaceAll("\\s+", " ").trim();
+    }
+
+    private String htmlDecode(String value) {
+        return value.replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">");
+    }
+
+    private void saveFiscalList(ShoppingList list) {
+        if (list == null || list.items.isEmpty()) {
+            Toast.makeText(this, "Nenhum item encontrado na nota.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        lists.add(0, list);
+        save();
+        selectedIndex = 0;
+        selectedFromHistory = false;
+        Toast.makeText(this, "Nota importada: " + list.items.size() + " itens.", Toast.LENGTH_LONG).show();
+        showListScreen();
     }
 
     private void addStockHistoryScreen() {
@@ -3698,6 +3907,10 @@ public class MainActivity extends Activity {
         String noAccent = Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFD)
                 .replaceAll("\\p{InCombiningDiacriticalMarks}+", "");
         return noAccent.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private void hideKeyboard() {

@@ -55,6 +55,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
@@ -105,6 +106,7 @@ import com.google.zxing.MultiFormatReader;
 import com.google.zxing.PlanarYUVLuminanceSource;
 import com.google.zxing.Result;
 import com.google.zxing.common.HybridBinarizer;
+import com.google.zxing.common.GlobalHistogramBinarizer;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
@@ -1552,8 +1554,11 @@ public class MainActivity extends Activity {
         closeParams.setMargins(dp(12), dp(8), 0, dp(8));
         screen.addView(close, closeParams);
 
+        FrameLayout scannerFrame = new FrameLayout(this);
         qrScannerView = new QrScannerView(this, this::onFiscalQrRead);
-        screen.addView(qrScannerView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        scannerFrame.addView(qrScannerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        scannerFrame.addView(new QrFrameOverlay(this), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        screen.addView(scannerFrame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(screen);
     }
 
@@ -4712,6 +4717,44 @@ public class MainActivity extends Activity {
         void onQrRead(String value);
     }
 
+    private class QrFrameOverlay extends View {
+        private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        QrFrameOverlay(Context context) {
+            super(context);
+            line.setStyle(Paint.Style.STROKE);
+            line.setStrokeWidth(dp(4));
+            line.setColor(Color.WHITE);
+            shade.setColor(Color.argb(92, 0, 0, 0));
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            int size = Math.min(getWidth() - dp(48), getHeight() - dp(170));
+            size = Math.max(dp(220), Math.min(size, dp(360)));
+            int left = (getWidth() - size) / 2;
+            int top = Math.max(dp(40), (getHeight() - size) / 2 - dp(28));
+            int right = left + size;
+            int bottom = top + size;
+            canvas.drawRect(0, 0, getWidth(), top, shade);
+            canvas.drawRect(0, bottom, getWidth(), getHeight(), shade);
+            canvas.drawRect(0, top, left, bottom, shade);
+            canvas.drawRect(right, top, getWidth(), bottom, shade);
+
+            int corner = dp(44);
+            canvas.drawLine(left, top, left + corner, top, line);
+            canvas.drawLine(left, top, left, top + corner, line);
+            canvas.drawLine(right, top, right - corner, top, line);
+            canvas.drawLine(right, top, right, top + corner, line);
+            canvas.drawLine(left, bottom, left + corner, bottom, line);
+            canvas.drawLine(left, bottom, left, bottom - corner, line);
+            canvas.drawLine(right, bottom, right - corner, bottom, line);
+            canvas.drawLine(right, bottom, right, bottom - corner, line);
+        }
+    }
+
     private class CompraInvadersView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Handler handler = new Handler(Looper.getMainLooper());
@@ -5363,6 +5406,7 @@ public class MainActivity extends Activity {
         private Camera camera;
         private boolean decoded;
         private long lastDecodeAt;
+        private long lastFocusAt;
 
         QrScannerView(Context context, QrReadCallback callback) {
             super(context);
@@ -5405,6 +5449,7 @@ public class MainActivity extends Activity {
                 camera.setPreviewDisplay(holder);
                 camera.setPreviewCallback(this);
                 camera.startPreview();
+                focusCamera();
             } catch (Exception e) {
                 stop();
                 promptFiscalQrUrl();
@@ -5417,7 +5462,7 @@ public class MainActivity extends Activity {
             for (Camera.Size size : sizes) {
                 int pixels = size.width * size.height;
                 int bestPixels = best.width * best.height;
-                if (pixels > bestPixels && pixels <= 1280 * 720) best = size;
+                if (pixels > bestPixels && pixels <= 1920 * 1080) best = size;
             }
             return best;
         }
@@ -5426,13 +5471,12 @@ public class MainActivity extends Activity {
         public void onPreviewFrame(byte[] data, Camera camera) {
             if (decoded || data == null || camera == null) return;
             long now = System.currentTimeMillis();
-            if (now - lastDecodeAt < 160) return;
+            if (now - lastFocusAt > 1500) focusCamera();
+            if (now - lastDecodeAt < 110) return;
             lastDecodeAt = now;
             try {
                 Camera.Size size = camera.getParameters().getPreviewSize();
-                PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(
-                        data, size.width, size.height, 0, 0, size.width, size.height, false);
-                Result result = reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
+                Result result = decodeFrame(data, size.width, size.height);
                 if (result != null && result.getText() != null) {
                     decoded = true;
                     post(() -> callback.onQrRead(result.getText()));
@@ -5441,6 +5485,83 @@ public class MainActivity extends Activity {
             } finally {
                 reader.reset();
             }
+        }
+
+        private void focusCamera() {
+            if (camera == null) return;
+            lastFocusAt = System.currentTimeMillis();
+            try {
+                camera.autoFocus(null);
+            } catch (Exception ignored) {
+            }
+        }
+
+        private Result decodeFrame(byte[] data, int width, int height) {
+            Result result = decodeYuv(data, width, height, false);
+            if (result != null) return result;
+            result = decodeYuv(data, width, height, true);
+            if (result != null) return result;
+            byte[] rotated = rotateYuv90(data, width, height);
+            result = decodeYuv(rotated, height, width, false);
+            if (result != null) return result;
+            result = decodeYuv(rotated, height, width, true);
+            if (result != null) return result;
+            byte[] inverted = invertY(data);
+            result = decodeYuv(inverted, width, height, false);
+            if (result != null) return result;
+            byte[] rotatedInverted = rotateYuv90(inverted, width, height);
+            return decodeYuv(rotatedInverted, height, width, true);
+        }
+
+        private Result decodeYuv(byte[] data, int width, int height, boolean centerOnly) {
+            int left = 0;
+            int top = 0;
+            int cropWidth = width;
+            int cropHeight = height;
+            if (centerOnly) {
+                int crop = Math.min(width, height) * 4 / 5;
+                left = (width - crop) / 2;
+                top = (height - crop) / 2;
+                cropWidth = crop;
+                cropHeight = crop;
+            }
+            try {
+                PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(data, width, height, left, top, cropWidth, cropHeight, false);
+                return reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
+            } catch (Exception ignored) {
+                try {
+                    PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(data, width, height, left, top, cropWidth, cropHeight, false);
+                    return reader.decodeWithState(new BinaryBitmap(new GlobalHistogramBinarizer(source)));
+                } catch (Exception ignoredAgain) {
+                    return null;
+                }
+            } finally {
+                reader.reset();
+            }
+        }
+
+        private byte[] rotateYuv90(byte[] data, int width, int height) {
+            byte[] rotated = new byte[data.length];
+            int index = 0;
+            for (int x = 0; x < width; x++) {
+                for (int y = height - 1; y >= 0; y--) {
+                    rotated[index++] = data[y * width + x];
+                }
+            }
+            int frameSize = width * height;
+            for (int i = frameSize; i < data.length && index < rotated.length; i++) {
+                rotated[index++] = data[i];
+            }
+            return rotated;
+        }
+
+        private byte[] invertY(byte[] data) {
+            byte[] inverted = data.clone();
+            int ySize = inverted.length * 2 / 3;
+            for (int i = 0; i < ySize && i < inverted.length; i++) {
+                inverted[i] = (byte) (255 - (inverted[i] & 0xff));
+            }
+            return inverted;
         }
 
         void stop() {

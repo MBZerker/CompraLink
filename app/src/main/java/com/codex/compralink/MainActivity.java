@@ -1632,6 +1632,10 @@ public class MainActivity extends Activity {
                     lastError = e;
                 }
             }
+            if (blockedByCaptcha) {
+                runOnUiThread(() -> showFiscalCaptchaScreen(url, accessKey));
+                return;
+            }
             String page = lastContent;
             String message = "Falha ao importar a nota.\n\nLink: " + previewErrorText(url);
             if (blockedByCaptcha) {
@@ -1644,6 +1648,76 @@ public class MainActivity extends Activity {
             String finalMessage = message;
             runOnUiThread(() -> showFiscalImportError(finalMessage, page));
         }).start();
+    }
+
+    private void showFiscalCaptchaScreen(String url, String accessKey) {
+        stopQrScanner();
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 8;
+        applySystemBars();
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setPadding(dp(12), statusBarHeight() + dp(8), dp(12), dp(12));
+        screen.setBackgroundColor(screenBg());
+
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        Button close = iconButton("X", Color.argb(190, 15, 23, 42), Color.WHITE);
+        close.setTextSize(18);
+        close.setOnClickListener(v -> showHomeScreen());
+        toolbar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        TextView title = label("Confirmar NFC-e", 19, true, primaryText());
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        titleParams.setMargins(dp(12), 0, 0, 0);
+        toolbar.addView(title, titleParams);
+        screen.addView(toolbar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+
+        TextView help = label("Digite o codigo da SEFAZ. Quando os itens aparecerem, a lista sera salva automaticamente.", 14, false, mutedText());
+        help.setPadding(dp(4), 0, dp(4), dp(8));
+        screen.addView(help, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        WebView webView = new WebView(this);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.getSettings().setDomStorageEnabled(true);
+        boolean[] imported = {false};
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String currentUrl) {
+                if (!isBlank(accessKey)) {
+                    String js = "try{var k=document.getElementById('txt_chave_acesso');"
+                            + "if(k&&!k.value){k.value='" + accessKey + "';}"
+                            + "var c=document.getElementById('txt_cod_antirobo');if(c)c.focus();}catch(e){}";
+                    view.evaluateJavascript(js, null);
+                }
+                view.postDelayed(() -> importFiscalHtmlFromWebView(view, imported), 450);
+            }
+        });
+        screen.addView(webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(screen);
+        webView.loadUrl(url.replace("|", "%7C"));
+    }
+
+    private void importFiscalHtmlFromWebView(WebView view, boolean[] imported) {
+        if (view == null || imported[0]) return;
+        view.evaluateJavascript("(function(){return document.documentElement.outerHTML;})()", value -> {
+            if (imported[0]) return;
+            try {
+                String html = decodeJsString(value);
+                if (isFiscalCaptchaPage(html)) return;
+                ShoppingList list = parseFiscalNote(html);
+                if (list.items.isEmpty()) return;
+                imported[0] = true;
+                saveFiscalList(list);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    private String decodeJsString(String value) throws JSONException {
+        if (value == null || "null".equals(value)) return "";
+        return new JSONArray("[" + value + "]").getString(0);
     }
 
     private List<String> fiscalUrlCandidates(String rawUrl) {

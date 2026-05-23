@@ -1,7 +1,7 @@
 {
-  "versionCode": 63,
-  "versionName": "4.32",
+  "versionCode": 64,
+  "versionName": "4.33",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora a importacao da NFC-e: tenta variacoes seguras do link e informa quando a SEFAZ exige captcha antes de liberar os itens."
+  "notes": "Quando a SEFAZ exige captcha, abre a consulta dentro do app e importa automaticamente assim que o DANFE com itens for liberado."
 }

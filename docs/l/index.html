@@ -1,12 +1,12 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Abrir lista CompraLink</title>
+  <title>Abrir lista Check Mercado</title>
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Lista de compras CompraLink">
-  <meta property="og:description" content="Toque para abrir esta lista compartilhada no CompraLink.">
+  <meta property="og:title" content="Lista de compras Check Mercado">
+  <meta property="og:description" content="Toque para abrir esta lista compartilhada no Check Mercado.">
   <meta property="og:image" content="https://mbzerker.github.io/CompraLink/assets/social-preview.png">
   <meta property="og:url" content="https://mbzerker.github.io/CompraLink/l/">
   <meta name="twitter:card" content="summary_large_image">
@@ -149,13 +149,13 @@
     <section class="hero">
       <img src="../assets/social-preview.png" alt="">
       <div class="hero-copy">
-        <span class="badge">CompraLink</span>
+        <span class="badge">Check Mercado</span>
         <h1>Lista compartilhada</h1>
         <p>Abra a lista no app para salvar os produtos, marcar itens e comparar precos com compras anteriores.</p>
       </div>
     </section>
     <section class="panel">
-      <div class="status" id="status">Tentando abrir o CompraLink...</div>
+      <div class="status" id="status">Tentando abrir o Check Mercado...</div>
       <ol class="steps" id="steps">
         <li>Baixe e instale o APK.</li>
         <li>Volte para esta tela.</li>
@@ -163,9 +163,9 @@
       </ol>
       <div class="actions">
         <a class="button primary" id="open" href="#">Abrir e salvar lista no app</a>
-        <a class="button secondary" id="download" href="../CompraLink.apk">Baixar CompraLink APK</a>
+        <a class="button secondary" id="download" href="../CompraLink.apk">Baixar Check Mercado APK</a>
       </div>
-      <p class="note">Ao tocar em baixar, esta pagina tenta copiar o link da lista. Ao abrir o CompraLink depois da instalacao, o app procura esse link na area de transferencia e salva a lista.</p>
+      <p class="note">Depois de instalar, volte para esta pagina e toque em Abrir e salvar lista no app.</p>
     </section>
   </main>
   <script>
@@ -185,7 +185,7 @@
       location.href = appUrl;
     }
     open.addEventListener("click", function () {
-      status.textContent = "Abrindo o CompraLink para salvar a lista...";
+      status.textContent = "Abrindo o Check Mercado para salvar a lista...";
     });
     async function copySharedLink() {
       if (!payload || !navigator.clipboard) return false;
@@ -199,7 +199,7 @@
     download.addEventListener("click", async function () {
       const copied = await copySharedLink();
       status.textContent = copied
-        ? "Link copiado. Instale o app e abra o CompraLink para salvar a lista automaticamente."
+        ? "Link copiado. Instale o app, volte para esta pagina e toque em Abrir e salvar lista no app."
         : "Instale o app. Depois volte aqui e toque em Abrir e salvar lista no app.";
     });
     if (payload) {
@@ -220,3 +220,4 @@
   </script>
 </body>
 </html>
+

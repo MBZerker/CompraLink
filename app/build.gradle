@@ -20,8 +20,8 @@ android {
         applicationId "com.codex.compralink"
         minSdk 23
         targetSdk 35
-        versionCode 58
-        versionName "4.27"
+        versionCode 59
+        versionName "4.28"
     }
 
     signingConfigs {
@@ -46,4 +46,5 @@ android {
 
 dependencies {
     implementation "com.google.zxing:core:3.5.3"
+    implementation "com.google.mlkit:barcode-scanning:17.3.0"
 }

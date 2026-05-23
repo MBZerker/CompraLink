@@ -107,6 +107,11 @@ import com.google.zxing.PlanarYUVLuminanceSource;
 import com.google.zxing.Result;
 import com.google.zxing.common.HybridBinarizer;
 import com.google.zxing.common.GlobalHistogramBinarizer;
+import com.google.mlkit.vision.barcode.BarcodeScanner;
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions;
+import com.google.mlkit.vision.barcode.BarcodeScanning;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.common.InputImage;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
@@ -281,12 +286,12 @@ public class MainActivity extends Activity {
         LinearLayout splash = new LinearLayout(this);
         splash.setOrientation(LinearLayout.VERTICAL);
         splash.setGravity(Gravity.CENTER);
-        splash.setPadding(dp(24), dp(24), dp(24), dp(24));
+        splash.setPadding(dp(24), statusBarHeight() + dp(56), dp(24), dp(24));
         splash.setBackgroundColor(screenBg());
 
         ImageView image = new ImageView(this);
         image.setImageResource(getResources().getIdentifier("splash_art", "drawable", getPackageName()));
-        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         splash.addView(image, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -294,7 +299,7 @@ public class MainActivity extends Activity {
         ));
 
         TextView name = new TextView(this);
-        name.setText("CompraLink");
+        name.setText("Check Mercado");
         name.setTextColor(accent());
         name.setTextSize(34);
         name.setTypeface(Typeface.DEFAULT_BOLD);
@@ -466,7 +471,7 @@ public class MainActivity extends Activity {
         brand.addView(brandIcon, new LinearLayout.LayoutParams(dp(34), dp(34)));
 
         TextView appName = new TextView(this);
-        appName.setText("CompraLink");
+        appName.setText("Check Mercado");
         appName.setTextColor(accent());
         appName.setTextSize(24);
         appName.setTypeface(Typeface.DEFAULT_BOLD);
@@ -1512,13 +1517,13 @@ public class MainActivity extends Activity {
             String backup = BACKUP_BASE + encodeCompressed(buildBackupJson().toString());
             Intent send = new Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
-            send.putExtra(Intent.EXTRA_SUBJECT, "Backup CompraLink");
+            send.putExtra(Intent.EXTRA_SUBJECT, "Backup Check Mercado");
             send.putExtra(Intent.EXTRA_TEXT, backup);
             startActivity(Intent.createChooser(send, "Exportar backup"));
 
             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (clipboard != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("Backup CompraLink", backup));
+                clipboard.setPrimaryClip(ClipData.newPlainText("Backup Check Mercado", backup));
             }
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel gerar o backup.", Toast.LENGTH_SHORT).show();
@@ -1607,7 +1612,7 @@ public class MainActivity extends Activity {
         HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(20000);
-        connection.setRequestProperty("User-Agent", "CompraLink/1.0");
+        connection.setRequestProperty("User-Agent", "CheckMercado/1.0");
         connection.setRequestProperty("Accept", "text/html,application/xml,text/xml,*/*");
         try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[4096];
@@ -1847,7 +1852,7 @@ public class MainActivity extends Activity {
 
     private JSONObject buildBackupJson() throws JSONException {
         JSONObject json = new JSONObject();
-        json.put("app", "CompraLink");
+        json.put("app", "Check Mercado");
         json.put("backupVersion", 1);
         json.put("createdAt", System.currentTimeMillis());
 
@@ -3487,7 +3492,7 @@ public class MainActivity extends Activity {
 
             ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (clipboard != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("CompraLink", link));
+                clipboard.setPrimaryClip(ClipData.newPlainText("Check Mercado", link));
             }
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel compartilhar esta lista.", Toast.LENGTH_SHORT).show();
@@ -3822,8 +3827,8 @@ public class MainActivity extends Activity {
     private void promptImportBackup(String rawBackup, boolean fromClipboard) {
         String clean = cleanPayload(rawBackup);
         String message = fromClipboard
-                ? "Ha um backup do CompraLink copiado na area de transferencia. Deseja importar agora?"
-                : "Este link contem um backup do CompraLink. Deseja importar agora?";
+                ? "Ha um backup do Check Mercado copiado na area de transferencia. Deseja importar agora?"
+                : "Este link contem um backup do Check Mercado. Deseja importar agora?";
         dialog()
                 .setTitle("Importar backup?")
                 .setMessage(message + "\n\nOs dados do backup serao adicionados/atualizados no app.")
@@ -5403,14 +5408,20 @@ public class MainActivity extends Activity {
     private class QrScannerView extends SurfaceView implements SurfaceHolder.Callback, Camera.PreviewCallback {
         private final QrReadCallback callback;
         private final MultiFormatReader reader = new MultiFormatReader();
+        private final BarcodeScanner mlScanner;
         private Camera camera;
         private boolean decoded;
+        private boolean mlBusy;
         private long lastDecodeAt;
         private long lastFocusAt;
 
         QrScannerView(Context context, QrReadCallback callback) {
             super(context);
             this.callback = callback;
+            BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build();
+            mlScanner = BarcodeScanning.getClient(options);
             Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);
             hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
             hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
@@ -5476,6 +5487,7 @@ public class MainActivity extends Activity {
             lastDecodeAt = now;
             try {
                 Camera.Size size = camera.getParameters().getPreviewSize();
+                decodeWithMlKit(data, size.width, size.height);
                 Result result = decodeFrame(data, size.width, size.height);
                 if (result != null && result.getText() != null) {
                     decoded = true;
@@ -5485,6 +5497,26 @@ public class MainActivity extends Activity {
             } finally {
                 reader.reset();
             }
+        }
+
+        private void decodeWithMlKit(byte[] data, int width, int height) {
+            if (mlBusy || decoded) return;
+            mlBusy = true;
+            byte[] copy = data.clone();
+            InputImage image = InputImage.fromByteArray(copy, width, height, 90, InputImage.IMAGE_FORMAT_NV21);
+            mlScanner.process(image)
+                    .addOnSuccessListener(barcodes -> {
+                        if (decoded || barcodes == null) return;
+                        for (Barcode barcode : barcodes) {
+                            String value = barcode.getRawValue();
+                            if (value != null && !value.trim().isEmpty()) {
+                                decoded = true;
+                                callback.onQrRead(value);
+                                break;
+                            }
+                        }
+                    })
+                    .addOnCompleteListener(task -> mlBusy = false);
         }
 
         private void focusCamera() {
@@ -5571,6 +5603,10 @@ public class MainActivity extends Activity {
                     camera.stopPreview();
                     camera.release();
                 }
+            } catch (Exception ignored) {
+            }
+            try {
+                mlScanner.close();
             } catch (Exception ignored) {
             }
             camera = null;

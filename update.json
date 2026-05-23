@@ -1,7 +1,7 @@
 {
-  "versionCode": 58,
-  "versionName": "4.27",
+  "versionCode": 59,
+  "versionName": "4.28",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora leitura de QR Code com enquadramento, foco periódico, rotação, recorte central e contraste."
+  "notes": "Renomeia o app para Check Mercado, atualiza splash e usa ML Kit para melhorar a leitura de QR Code."
 }

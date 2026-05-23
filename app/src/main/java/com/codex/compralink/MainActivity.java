@@ -2,11 +2,13 @@ package com.codex.compralink;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -14,6 +16,7 @@ import android.content.res.ColorStateList;
 import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.hardware.Camera;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
@@ -34,6 +37,8 @@ import android.text.style.StyleSpan;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
@@ -80,6 +85,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.EnumMap;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -91,6 +97,14 @@ import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
+
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.DecodeHintType;
+import com.google.zxing.MultiFormatReader;
+import com.google.zxing.PlanarYUVLuminanceSource;
+import com.google.zxing.Result;
+import com.google.zxing.common.HybridBinarizer;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
@@ -125,6 +139,7 @@ public class MainActivity extends Activity {
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
     private static final int REQUEST_QR_SCAN = 9021;
+    private static final int REQUEST_CAMERA_PERMISSION = 9022;
     private static final String CUSTOM_CATEGORY = "Personalizada...";
     private static final long AUTO_LOCK_AFTER_MS = 24L * 60L * 60L * 1000L;
 
@@ -160,6 +175,7 @@ public class MainActivity extends Activity {
     private long secretLastTap;
     private int creditsSecretStep;
     private CompraInvadersView invadersView;
+    private QrScannerView qrScannerView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -214,6 +230,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_CAMERA_PERMISSION
+                && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            showFiscalQrScanner();
+        }
+    }
+
+    @Override
     public void onBackPressed() {
         if (homeTab == 5 && selectedIndex >= 0) {
             showListScreen();
@@ -226,6 +252,11 @@ public class MainActivity extends Activity {
         if (homeTab == 7) {
             if (invadersView != null) invadersView.stop();
             invadersView = null;
+            showHomeScreen();
+            return;
+        }
+        if (homeTab == 8) {
+            stopQrScanner();
             showHomeScreen();
             return;
         }
@@ -1493,12 +1524,49 @@ public class MainActivity extends Activity {
     }
 
     private void startFiscalQrScan() {
-        Intent scan = new Intent("com.google.zxing.client.android.SCAN");
-        scan.putExtra("SCAN_MODE", "QR_CODE_MODE");
-        try {
-            startActivityForResult(scan, REQUEST_QR_SCAN);
-        } catch (Exception e) {
-            promptFiscalQrUrl();
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
+            return;
+        }
+        showFiscalQrScanner();
+    }
+
+    private void showFiscalQrScanner() {
+        stopQrScanner();
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 8;
+        applySystemBars();
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(Color.BLACK);
+        screen.setPadding(0, statusBarHeight(), 0, 0);
+
+        Button close = iconButton("X", Color.argb(190, 15, 23, 42), Color.WHITE);
+        close.setOnClickListener(v -> {
+            stopQrScanner();
+            showHomeScreen();
+        });
+        LinearLayout.LayoutParams closeParams = new LinearLayout.LayoutParams(dp(52), dp(52));
+        closeParams.setMargins(dp(12), dp(8), 0, dp(8));
+        screen.addView(close, closeParams);
+
+        qrScannerView = new QrScannerView(this, this::onFiscalQrRead);
+        screen.addView(qrScannerView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(screen);
+    }
+
+    private void onFiscalQrRead(String result) {
+        if (result == null || result.trim().isEmpty()) return;
+        stopQrScanner();
+        importFiscalNoteFromUrl(result.trim());
+    }
+
+    private void stopQrScanner() {
+        if (qrScannerView != null) {
+            qrScannerView.stop();
+            qrScannerView = null;
         }
     }
 
@@ -1516,17 +1584,16 @@ public class MainActivity extends Activity {
     private void importFiscalNoteFromUrl(String rawUrl) {
         String url = rawUrl == null ? "" : rawUrl.trim();
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            Toast.makeText(this, "Link da nota invalido.", Toast.LENGTH_SHORT).show();
+            showHomeScreen();
             return;
         }
-        Toast.makeText(this, "Lendo nota fiscal...", Toast.LENGTH_SHORT).show();
         new Thread(() -> {
             try {
                 String content = downloadText(url);
                 ShoppingList imported = parseFiscalNote(content);
                 runOnUiThread(() -> saveFiscalList(imported));
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(this, "Nao foi possivel importar esta nota.", Toast.LENGTH_LONG).show());
+                runOnUiThread(this::showHomeScreen);
             }
         }).start();
     }
@@ -1541,10 +1608,23 @@ public class MainActivity extends Activity {
             byte[] buffer = new byte[4096];
             int read;
             while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+            return new String(output.toByteArray(), responseCharset(connection.getContentType()));
         } finally {
             connection.disconnect();
         }
+    }
+
+    private java.nio.charset.Charset responseCharset(String contentType) {
+        if (contentType != null) {
+            Matcher matcher = Pattern.compile("charset=([^;]+)", Pattern.CASE_INSENSITIVE).matcher(contentType);
+            if (matcher.find()) {
+                try {
+                    return java.nio.charset.Charset.forName(matcher.group(1).trim());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 
     private ShoppingList parseFiscalNote(String content) throws Exception {
@@ -1659,14 +1739,13 @@ public class MainActivity extends Activity {
 
     private void saveFiscalList(ShoppingList list) {
         if (list == null || list.items.isEmpty()) {
-            Toast.makeText(this, "Nenhum item encontrado na nota.", Toast.LENGTH_LONG).show();
+            showHomeScreen();
             return;
         }
         lists.add(0, list);
         save();
         selectedIndex = 0;
         selectedFromHistory = false;
-        Toast.makeText(this, "Nota importada: " + list.items.size() + " itens.", Toast.LENGTH_LONG).show();
         showListScreen();
     }
 
@@ -4629,6 +4708,10 @@ public class MainActivity extends Activity {
         void onSearchChanged(String value);
     }
 
+    private interface QrReadCallback {
+        void onQrRead(String value);
+    }
+
     private class CompraInvadersView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Handler handler = new Handler(Looper.getMainLooper());
@@ -5271,6 +5354,105 @@ public class MainActivity extends Activity {
                 mirrored[y] = new StringBuilder(source[y]).reverse().toString();
             }
             return mirrored;
+        }
+    }
+
+    private class QrScannerView extends SurfaceView implements SurfaceHolder.Callback, Camera.PreviewCallback {
+        private final QrReadCallback callback;
+        private final MultiFormatReader reader = new MultiFormatReader();
+        private Camera camera;
+        private boolean decoded;
+        private long lastDecodeAt;
+
+        QrScannerView(Context context, QrReadCallback callback) {
+            super(context);
+            this.callback = callback;
+            Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);
+            hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
+            hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+            reader.setHints(hints);
+            getHolder().addCallback(this);
+        }
+
+        @Override
+        public void surfaceCreated(SurfaceHolder holder) {
+            start(holder);
+        }
+
+        @Override
+        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        }
+
+        @Override
+        public void surfaceDestroyed(SurfaceHolder holder) {
+            stop();
+        }
+
+        private void start(SurfaceHolder holder) {
+            try {
+                camera = Camera.open();
+                Camera.Parameters params = camera.getParameters();
+                List<String> focusModes = params.getSupportedFocusModes();
+                if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
+                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+                } else if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
+                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
+                }
+                Camera.Size size = bestPreviewSize(params.getSupportedPreviewSizes());
+                if (size != null) params.setPreviewSize(size.width, size.height);
+                camera.setParameters(params);
+                camera.setDisplayOrientation(90);
+                camera.setPreviewDisplay(holder);
+                camera.setPreviewCallback(this);
+                camera.startPreview();
+            } catch (Exception e) {
+                stop();
+                promptFiscalQrUrl();
+            }
+        }
+
+        private Camera.Size bestPreviewSize(List<Camera.Size> sizes) {
+            if (sizes == null || sizes.isEmpty()) return null;
+            Camera.Size best = sizes.get(0);
+            for (Camera.Size size : sizes) {
+                int pixels = size.width * size.height;
+                int bestPixels = best.width * best.height;
+                if (pixels > bestPixels && pixels <= 1280 * 720) best = size;
+            }
+            return best;
+        }
+
+        @Override
+        public void onPreviewFrame(byte[] data, Camera camera) {
+            if (decoded || data == null || camera == null) return;
+            long now = System.currentTimeMillis();
+            if (now - lastDecodeAt < 160) return;
+            lastDecodeAt = now;
+            try {
+                Camera.Size size = camera.getParameters().getPreviewSize();
+                PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(
+                        data, size.width, size.height, 0, 0, size.width, size.height, false);
+                Result result = reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
+                if (result != null && result.getText() != null) {
+                    decoded = true;
+                    post(() -> callback.onQrRead(result.getText()));
+                }
+            } catch (Exception ignored) {
+            } finally {
+                reader.reset();
+            }
+        }
+
+        void stop() {
+            try {
+                if (camera != null) {
+                    camera.setPreviewCallback(null);
+                    camera.stopPreview();
+                    camera.release();
+                }
+            } catch (Exception ignored) {
+            }
+            camera = null;
         }
     }
 

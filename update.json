@@ -1,7 +1,7 @@
 {
-  "versionCode": 56,
-  "versionName": "4.25",
+  "versionCode": 57,
+  "versionName": "4.26",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Remove leitura automática da área de transferência e adiciona importação de nota fiscal por QR Code ou link."
+  "notes": "Adiciona leitor de QR Code interno para importar notas fiscais diretamente no app."
 }

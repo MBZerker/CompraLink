@@ -1,7 +1,7 @@
 {
-  "versionCode": 60,
-  "versionName": "4.29",
+  "versionCode": 61,
+  "versionName": "4.30",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Mostra uma janela de erro quando a leitura da nota fiscal falha apos o QR Code ser lido."
+  "notes": "Melhora barras de pesquisa, libera HTTP apenas para a SEFAZ BA e destaca listas importadas com animacao."
 }

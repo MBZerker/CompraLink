@@ -172,6 +172,7 @@ public class MainActivity extends Activity {
     private String stockSearch = "";
     private String stockHistorySearch = "";
     private int searchToken;
+    private boolean flashImportedListOnNextShow;
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
     private boolean stockHistoryPending;
@@ -428,6 +429,10 @@ public class MainActivity extends Activity {
         });
         addItems();
         setContentView(rootScroll());
+        if (flashImportedListOnNextShow) {
+            flashImportedListOnNextShow = false;
+            flashImportedListSuccess();
+        }
     }
 
     private void buildRoot() {
@@ -1759,6 +1764,7 @@ public class MainActivity extends Activity {
         save();
         selectedIndex = 0;
         selectedFromHistory = false;
+        flashImportedListOnNextShow = true;
         showListScreen();
     }
 
@@ -1775,6 +1781,18 @@ public class MainActivity extends Activity {
                 .setMessage(message)
                 .setPositiveButton("OK", null)
                 .show();
+    }
+
+    private void flashImportedListSuccess() {
+        if (root == null || root.getChildCount() == 0) return;
+        View target = root.getChildAt(0);
+        int[] colors = new int[]{Color.rgb(37, 99, 235), Color.WHITE, Color.rgb(220, 38, 38)};
+        Handler handler = new Handler(Looper.getMainLooper());
+        for (int i = 0; i < 15; i++) {
+            final int step = i;
+            handler.postDelayed(() -> target.setBackground(round(colors[step % colors.length], dp(20), stroke(), 1)), step * 250L);
+        }
+        handler.postDelayed(() -> target.setBackground(round(cardBg(), dp(20), stroke(), 1)), 15 * 250L);
     }
 
     private String errorMessage(Exception e) {
@@ -2334,6 +2352,27 @@ public class MainActivity extends Activity {
     }
 
     private void addSearchBar(String hint, String value, SearchCallback callback) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(4), 0, dp(12), 0);
+        box.setBackground(round(inputBg(), dp(16), stroke(), 1));
+
+        TextView clear = new TextView(this);
+        clear.setText("X");
+        clear.setGravity(Gravity.CENTER);
+        clear.setTextSize(16);
+        clear.setTypeface(Typeface.DEFAULT_BOLD);
+        clear.setTextColor(mutedText());
+        box.addView(clear, new LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.MATCH_PARENT));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_search);
+        icon.setColorFilter(mutedText());
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(22), dp(22));
+        iconParams.setMargins(0, 0, dp(8), 0);
+        box.addView(icon, iconParams);
+
         EditText search = new EditText(this);
         search.setSingleLine(true);
         search.setHint(hint);
@@ -2343,20 +2382,26 @@ public class MainActivity extends Activity {
         search.setHintTextColor(mutedText());
         search.setTextSize(15);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        search.setBackground(round(inputBg(), dp(16), stroke(), 1));
-        search.setPadding(dp(14), 0, dp(14), 0);
+        search.setBackgroundColor(Color.TRANSPARENT);
+        search.setPadding(0, 0, 0, 0);
+        clear.setAlpha(search.getText().length() == 0 ? 0.45f : 1.0f);
+        clear.setOnClickListener(v -> {
+            if (search.getText().length() > 0) search.setText("");
+        });
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override public void afterTextChanged(Editable s) {
                 String next = s == null ? "" : s.toString();
+                clear.setAlpha(next.isEmpty() ? 0.45f : 1.0f);
                 int token = ++searchToken;
                 search.postDelayed(() -> {
                     if (token == searchToken) callback.onSearchChanged(next);
                 }, 180);
             }
         });
-        root.addView(search, matchHeightWithTop(dp(52), dp(10)));
+        box.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        root.addView(box, matchHeightWithTop(dp(52), dp(10)));
         if (value != null && !value.isEmpty()) search.requestFocus();
     }
 
@@ -3699,6 +3744,7 @@ public class MainActivity extends Activity {
                         lists.set(existingIndex, imported);
                         selectedIndex = existingIndex;
                         save();
+                        flashImportedListOnNextShow = true;
                         showListScreen();
                     })
                     .setNegativeButton("Cancelar", null)
@@ -3709,6 +3755,7 @@ public class MainActivity extends Activity {
         lists.add(0, imported);
         selectedIndex = 0;
         save();
+        flashImportedListOnNextShow = true;
         Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
         return true;
     }

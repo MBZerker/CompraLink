@@ -1,7 +1,7 @@
 {
-  "versionCode": 62,
-  "versionName": "4.31",
+  "versionCode": 63,
+  "versionName": "4.32",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Pisca a lista importada na tela inicial e copia a estrutura da pagina quando a importacao da nota falha."
+  "notes": "Melhora a importacao da NFC-e: tenta variacoes seguras do link e informa quando a SEFAZ exige captcha antes de liberar os itens."
 }

@@ -83,6 +83,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -1613,25 +1614,61 @@ public class MainActivity extends Activity {
             return;
         }
         new Thread(() -> {
-            String content = "";
-            try {
-                content = downloadText(url);
-                ShoppingList imported = parseFiscalNote(content);
-                runOnUiThread(() -> saveFiscalList(imported));
-            } catch (Exception e) {
-                String page = content;
-                runOnUiThread(() -> showFiscalImportError("Falha ao importar a nota.\n\nLink: " + previewErrorText(url)
-                        + "\n\nErro: " + errorMessage(e), page));
+            String lastContent = "";
+            String accessKey = extractFiscalAccessKeyFromUrl(url);
+            Exception lastError = null;
+            boolean blockedByCaptcha = false;
+            for (String candidate : fiscalUrlCandidates(url)) {
+                try {
+                    lastContent = downloadText(candidate);
+                    if (isFiscalCaptchaPage(lastContent)) {
+                        blockedByCaptcha = true;
+                        continue;
+                    }
+                    ShoppingList imported = parseFiscalNote(lastContent);
+                    runOnUiThread(() -> saveFiscalList(imported));
+                    return;
+                } catch (Exception e) {
+                    lastError = e;
+                }
             }
+            String page = lastContent;
+            String message = "Falha ao importar a nota.\n\nLink: " + previewErrorText(url);
+            if (blockedByCaptcha) {
+                message += "\n\nA SEFAZ abriu uma tela com captcha antes de liberar os itens da nota.";
+                if (!isBlank(accessKey)) message += "\n\nChave lida: " + accessKey;
+                message += "\n\nNão criei lista porque a página recebida não contém produtos.";
+            } else if (lastError != null) {
+                message += "\n\nErro: " + errorMessage(lastError);
+            }
+            String finalMessage = message;
+            runOnUiThread(() -> showFiscalImportError(finalMessage, page));
         }).start();
+    }
+
+    private List<String> fiscalUrlCandidates(String rawUrl) {
+        LinkedHashSet<String> candidates = new LinkedHashSet<>();
+        String clean = rawUrl == null ? "" : rawUrl.trim().replace(" ", "%20");
+        addFiscalUrlCandidate(candidates, clean);
+        if (clean.startsWith("http://")) addFiscalUrlCandidate(candidates, "https://" + clean.substring(7));
+        if (clean.startsWith("https://")) addFiscalUrlCandidate(candidates, "http://" + clean.substring(8));
+        return new ArrayList<>(candidates);
+    }
+
+    private void addFiscalUrlCandidate(LinkedHashSet<String> candidates, String url) {
+        if (isBlank(url)) return;
+        candidates.add(url);
+        candidates.add(url.replace("|", "%7C"));
     }
 
     private String downloadText(String link) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
+        connection.setInstanceFollowRedirects(true);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(20000);
-        connection.setRequestProperty("User-Agent", "CheckMercado/1.0");
+        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/125 Safari/537.36");
         connection.setRequestProperty("Accept", "text/html,application/xml,text/xml,*/*");
+        connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.6,en;q=0.5");
         int code = connection.getResponseCode();
         if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
         try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -1655,6 +1692,19 @@ public class MainActivity extends Activity {
             }
         }
         return StandardCharsets.UTF_8;
+    }
+
+    private boolean isFiscalCaptchaPage(String html) {
+        if (html == null) return false;
+        String raw = html.toLowerCase(Locale.ROOT);
+        return raw.contains("txt_chave_acesso")
+                && (raw.contains("txt_cod_antirobo") || raw.contains("img_captcha") || raw.contains("anti_robo"));
+    }
+
+    private String extractFiscalAccessKeyFromUrl(String url) {
+        if (url == null) return "";
+        Matcher matcher = Pattern.compile("([0-9]{44})").matcher(url);
+        return matcher.find() ? matcher.group(1) : "";
     }
 
     private ShoppingList parseFiscalNote(String content) throws Exception {

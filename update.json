@@ -1,7 +1,7 @@
 {
-  "versionCode": 61,
-  "versionName": "4.30",
+  "versionCode": 62,
+  "versionName": "4.31",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora barras de pesquisa, libera HTTP apenas para a SEFAZ BA e destaca listas importadas com animacao."
+  "notes": "Pisca a lista importada na tela inicial e copia a estrutura da pagina quando a importacao da nota falha."
 }

@@ -172,7 +172,7 @@ public class MainActivity extends Activity {
     private String stockSearch = "";
     private String stockHistorySearch = "";
     private int searchToken;
-    private boolean flashImportedListOnNextShow;
+    private String flashImportedListId = "";
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
     private boolean stockHistoryPending;
@@ -429,10 +429,6 @@ public class MainActivity extends Activity {
         });
         addItems();
         setContentView(rootScroll());
-        if (flashImportedListOnNextShow) {
-            flashImportedListOnNextShow = false;
-            flashImportedListSuccess();
-        }
     }
 
     private void buildRoot() {
@@ -843,6 +839,10 @@ public class MainActivity extends Activity {
         int listColor = list.displayColor();
         card.setBackground(round(tintSurface(listColor), dp(16), listColor == 0 ? stroke() : listColor, 1));
         elevate(card, 3);
+        if (list.id != null && list.id.equals(flashImportedListId)) {
+            flashImportedListId = "";
+            card.post(() -> flashImportedListCard(card, listColor));
+        }
         card.setOnClickListener(v -> {
             selectedIndex = index;
             selectedFromHistory = list.archived;
@@ -883,6 +883,16 @@ public class MainActivity extends Activity {
         meta.setPadding(0, dp(5), 0, 0);
         card.addView(meta);
         return card;
+    }
+
+    private void flashImportedListCard(View target, int listColor) {
+        int[] colors = new int[]{Color.rgb(37, 99, 235), Color.WHITE, Color.rgb(220, 38, 38)};
+        Handler handler = new Handler(Looper.getMainLooper());
+        for (int i = 0; i < 15; i++) {
+            final int step = i;
+            handler.postDelayed(() -> target.setBackground(round(colors[step % colors.length], dp(16), stroke(), 1)), step * 250L);
+        }
+        handler.postDelayed(() -> target.setBackground(round(tintSurface(listColor), dp(16), listColor == 0 ? stroke() : listColor, 1)), 15 * 250L);
     }
 
     private String listSubtitle(ShoppingList list) {
@@ -1603,13 +1613,15 @@ public class MainActivity extends Activity {
             return;
         }
         new Thread(() -> {
+            String content = "";
             try {
-                String content = downloadText(url);
+                content = downloadText(url);
                 ShoppingList imported = parseFiscalNote(content);
                 runOnUiThread(() -> saveFiscalList(imported));
             } catch (Exception e) {
+                String page = content;
                 runOnUiThread(() -> showFiscalImportError("Falha ao importar a nota.\n\nLink: " + previewErrorText(url)
-                        + "\n\nErro: " + errorMessage(e)));
+                        + "\n\nErro: " + errorMessage(e), page));
             }
         }).start();
     }
@@ -1651,6 +1663,8 @@ public class MainActivity extends Activity {
         if (fromXml != null && !fromXml.items.isEmpty()) return fromXml;
         ShoppingList fromHtml = parseFiscalHtml(text);
         if (fromHtml.items.isEmpty()) throw new JSONException("Nota sem itens");
+        removeInvalidFiscalItems(fromHtml);
+        if (fromHtml.items.isEmpty()) throw new JSONException("A pagina foi lida, mas nao encontrei linhas de produto validas.");
         return fromHtml;
     }
 
@@ -1684,9 +1698,13 @@ public class MainActivity extends Activity {
                 "class=[\"']txtTopo[\"'][^>]*>(.*?)<",
                 "<h4[^>]*>(.*?)</h4>",
                 "<title[^>]*>(.*?)</title>");
-        ShoppingList list = new ShoppingList(isBlank(market) ? "Nota fiscal" : cleanFiscalText(market));
+        market = cleanFiscalMarketName(market);
+        ShoppingList list = new ShoppingList(isBlank(market) ? "Nota fiscal" : market);
         Matcher rowMatcher = Pattern.compile("(?is)<tr[^>]*>(.*?)</tr>").matcher(html);
-        while (rowMatcher.find()) addFiscalItemFromHtmlRow(list, rowMatcher.group(1));
+        while (rowMatcher.find()) {
+            String row = rowMatcher.group(1);
+            if (looksLikeFiscalItemBlock(row)) addFiscalItemFromHtmlRow(list, row);
+        }
         if (list.items.isEmpty()) {
             Matcher itemMatcher = Pattern.compile("(?is)txtTit[^>]*>(.*?)</span>(.*?)(?=txtTit|</table|</body)").matcher(html);
             while (itemMatcher.find()) {
@@ -1697,20 +1715,55 @@ public class MainActivity extends Activity {
     }
 
     private void addFiscalItemFromHtmlRow(ShoppingList list, String row) {
-        String name = firstHtmlMatch(row, "txtTit[^>]*>(.*?)</span>", "<td[^>]*>(.*?)</td>");
+        String name = firstHtmlMatch(row, "txtTit[^>]*>(.*?)</span>");
         addFiscalItem(list, name, row);
     }
 
     private void addFiscalItem(ShoppingList list, String rawName, String block) {
         String name = cleanFiscalText(rawName);
-        if (isBlank(name) || normalize(name).contains("descricao")) return;
+        if (isInvalidFiscalItemName(name, block)) return;
         double qty = firstNumber(block, "Qtde\\.?\\s*:?\\s*</?[^>]*>*\\s*([0-9.,]+)", "Quantidade\\s*:?\\s*([0-9.,]+)", "Rqtd[^>]*>.*?([0-9]+[0-9.,]*)");
         double unitPrice = firstNumber(block, "Vl\\.?\\s*Unit\\.?\\s*:?\\s*</?[^>]*>*\\s*([0-9.,]+)", "Valor\\s*Unit\\.?\\s*:?\\s*([0-9.,]+)", "RvlUnit[^>]*>.*?([0-9]+[0-9.,]*)");
         double total = firstNumber(block, "valor[^>]*>\\s*([0-9.,]+)", "Valor\\s*Total\\s*:?\\s*([0-9.,]+)");
+        if (unitPrice <= 0 && total <= 0 && !looksLikeFiscalItemBlock(block)) return;
         if (qty <= 0) qty = 1;
         if (unitPrice <= 0 && total > 0) unitPrice = total / qty;
         ShoppingItem item = new ShoppingItem(name, unitPrice, formatQty(qty));
         list.items.add(item);
+    }
+
+    private boolean looksLikeFiscalItemBlock(String block) {
+        String raw = normalize(block);
+        String key = normalize(cleanFiscalText(block));
+        return raw.contains("txttit") || raw.contains("rqtd") || raw.contains("rvlunit")
+                || key.contains("vl unit") || key.contains("qtde") || key.contains("valor total");
+    }
+
+    private void removeInvalidFiscalItems(ShoppingList list) {
+        for (int i = list.items.size() - 1; i >= 0; i--) {
+            ShoppingItem item = list.items.get(i);
+            if (isInvalidFiscalItemName(item.name, "")) list.items.remove(i);
+        }
+    }
+
+    private boolean isInvalidFiscalItemName(String name, String block) {
+        String key = normalize(name);
+        String blockKey = normalize(cleanFiscalText(block));
+        if (key.isEmpty() || key.contains("descricao")) return true;
+        if (key.contains("function ") || blockKey.contains("function ")) return true;
+        return key.contains("portal estadual") || key.contains("chave de acesso")
+                || key.contains("codigo impresso") || key.contains("secretaria da fazenda")
+                || key.contains("nota fiscal de consumidor") || key.matches("v\\.\\s*\\d+.*");
+    }
+
+    private String cleanFiscalMarketName(String market) {
+        String name = cleanFiscalText(market);
+        String key = normalize(name);
+        if (key.contains("nota fiscal") || key.contains("consulta danfe")
+                || key.contains("portal estadual") || key.contains("secretaria da fazenda")) {
+            return "";
+        }
+        return name;
     }
 
     private String firstXmlText(Document doc, String tag) {
@@ -1762,13 +1815,17 @@ public class MainActivity extends Activity {
         }
         lists.add(0, list);
         save();
-        selectedIndex = 0;
+        selectedIndex = -1;
         selectedFromHistory = false;
-        flashImportedListOnNextShow = true;
-        showListScreen();
+        flashImportedListId = list.id;
+        showHomeScreen();
     }
 
     private void showFiscalImportError(String message) {
+        showFiscalImportError(message, "");
+    }
+
+    private void showFiscalImportError(String message, String pageContent) {
         stopQrScanner();
         selectedIndex = -1;
         selectedFromHistory = false;
@@ -1776,23 +1833,16 @@ public class MainActivity extends Activity {
         buildRoot();
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
         setContentView(rootScroll());
+        String finalMessage = message;
+        if (pageContent != null && !pageContent.trim().isEmpty()) {
+            copyTextToClipboard("Estrutura da nota fiscal", previewDebugPage(pageContent));
+            finalMessage += "\n\nA estrutura da pagina foi copiada para a area de transferencia.";
+        }
         dialog()
                 .setTitle("Erro ao importar nota")
-                .setMessage(message)
+                .setMessage(finalMessage)
                 .setPositiveButton("OK", null)
                 .show();
-    }
-
-    private void flashImportedListSuccess() {
-        if (root == null || root.getChildCount() == 0) return;
-        View target = root.getChildAt(0);
-        int[] colors = new int[]{Color.rgb(37, 99, 235), Color.WHITE, Color.rgb(220, 38, 38)};
-        Handler handler = new Handler(Looper.getMainLooper());
-        for (int i = 0; i < 15; i++) {
-            final int step = i;
-            handler.postDelayed(() -> target.setBackground(round(colors[step % colors.length], dp(20), stroke(), 1)), step * 250L);
-        }
-        handler.postDelayed(() -> target.setBackground(round(cardBg(), dp(20), stroke(), 1)), 15 * 250L);
     }
 
     private String errorMessage(Exception e) {
@@ -1806,6 +1856,16 @@ public class MainActivity extends Activity {
         if (text == null) return "";
         String cleaned = text.replaceAll("\\s+", " ").trim();
         return cleaned.length() > 420 ? cleaned.substring(0, 420) + "..." : cleaned;
+    }
+
+    private String previewDebugPage(String text) {
+        String cleaned = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        return cleaned.length() > 12000 ? cleaned.substring(0, 12000) : cleaned;
+    }
+
+    private void copyTextToClipboard(String label, String text) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) clipboard.setPrimaryClip(ClipData.newPlainText(label, text));
     }
 
     private void addStockHistoryScreen() {
@@ -3742,10 +3802,10 @@ public class MainActivity extends Activity {
                     .setPositiveButton("Atualizar", (dialog, which) -> {
                         preserveLocalStockLinks(existing, imported);
                         lists.set(existingIndex, imported);
-                        selectedIndex = existingIndex;
+                        selectedIndex = -1;
                         save();
-                        flashImportedListOnNextShow = true;
-                        showListScreen();
+                        flashImportedListId = imported.id;
+                        showHomeScreen();
                     })
                     .setNegativeButton("Cancelar", null)
                     .show();
@@ -3753,10 +3813,11 @@ public class MainActivity extends Activity {
         }
         clearImportedStockLinks(imported);
         lists.add(0, imported);
-        selectedIndex = 0;
+        selectedIndex = -1;
         save();
-        flashImportedListOnNextShow = true;
+        flashImportedListId = imported.id;
         Toast.makeText(this, "Lista importada.", Toast.LENGTH_SHORT).show();
+        showHomeScreen();
         return true;
     }
 

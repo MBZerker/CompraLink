@@ -489,14 +489,17 @@ public class MainActivity extends Activity {
         sideControls.setPadding(0, dp(6), 0, 0);
 
         int sideButtonSize = (!listOpen && homeTab == 0) ? homeButtonSize() : dp(48);
-        ImageButton themeTop = imageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
+        boolean homeHeader = !listOpen && homeTab == 0;
+        ImageButton themeTop = (homeHeader ? homeImageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
                 isDarkTheme() ? Color.WHITE : Color.BLACK,
-                isDarkTheme() ? Color.BLACK : Color.WHITE);
+                isDarkTheme() ? Color.BLACK : Color.WHITE) : imageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
+                isDarkTheme() ? Color.WHITE : Color.BLACK,
+                isDarkTheme() ? Color.BLACK : Color.WHITE));
         themeTop.setOnClickListener(v -> toggleTheme());
         sideControls.addView(themeTop, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
 
         if (!listOpen && homeTab == 0) {
-            ImageButton paletteTop = imageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
+            ImageButton paletteTop = homeImageIconButton(R.drawable.ic_palette, accentColor, isLightColor(accentColor) ? Color.rgb(15, 23, 42) : Color.WHITE);
             paletteTop.setOnClickListener(v -> promptAccentColor());
             LinearLayout.LayoutParams paletteTopParams = new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize);
             paletteTopParams.setMargins(0, dp(8), 0, 0);
@@ -575,11 +578,11 @@ public class MainActivity extends Activity {
                 actions.addView(back, weighted());
             } else {
                 actions.setGravity(Gravity.CENTER_HORIZONTAL);
-                ImageButton newList = imageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton newList = homeImageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 newList.setOnClickListener(v -> promptNewList());
                 actions.addView(newList, new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize()));
 
-                ImageButton stockButton = imageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton stockButton = homeImageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
                 stockButton.setOnLongClickListener(v -> {
                     if (secretLogoTaps >= 3) {
@@ -592,13 +595,13 @@ public class MainActivity extends Activity {
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(stockButton, stockParams);
 
-                ImageButton history = imageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton history = homeImageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 history.setOnClickListener(v -> showHistoryScreen());
                 LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 historyParams.setMargins(dp(8), 0, 0, 0);
                 actions.addView(history, historyParams);
 
-                ImageButton qr = imageIconButton(R.drawable.ic_qr_scan, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 qr.setOnClickListener(v -> startFiscalQrScan());
                 LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 qrParams.setMargins(dp(8), 0, 0, 0);
@@ -612,18 +615,18 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams extraParams = matchWrapWithTop(dp(8));
                 header.addView(extraActions, extraParams);
 
-                ImageButton update = imageIconButton(R.drawable.ic_update, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton update = homeImageIconButton(R.drawable.ic_update, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 update.setOnClickListener(v -> UpdateManager.checkForUpdates(this, true));
                 LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 extraActions.addView(update, updateParams);
 
-                ImageButton backup = imageIconButton(R.drawable.ic_backup, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton backup = homeImageIconButton(R.drawable.ic_backup, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 backup.setOnClickListener(v -> exportBackup());
                 LinearLayout.LayoutParams backupParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 backupParams.setMargins(dp(8), 0, 0, 0);
                 extraActions.addView(backup, backupParams);
 
-                ImageButton credits = imageIconButton(R.drawable.ic_credits, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                ImageButton credits = homeImageIconButton(R.drawable.ic_credits, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 credits.setOnClickListener(v -> showCredits());
                 LinearLayout.LayoutParams creditsParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 creditsParams.setMargins(dp(8), 0, 0, 0);
@@ -2539,11 +2542,24 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
-        box.setPadding(dp(4), 0, dp(12), 0);
+        box.setPadding(dp(12), 0, dp(4), 0);
         box.setBackground(round(inputBg(), dp(16), stroke(), 1));
 
+        EditText search = new EditText(this);
+        search.setSingleLine(true);
+        search.setHint(hint);
+        search.setText(value == null ? "" : value);
+        search.setSelection(search.getText().length());
+        search.setTextColor(primaryText());
+        search.setHintTextColor(mutedText());
+        search.setTextSize(15);
+        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        search.setBackgroundColor(Color.TRANSPARENT);
+        search.setPadding(0, 0, 0, 0);
+        box.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+
         TextView clear = new TextView(this);
-        clear.setText("X");
+        clear.setText("x");
         clear.setGravity(Gravity.CENTER);
         clear.setTextSize(16);
         clear.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2557,17 +2573,6 @@ public class MainActivity extends Activity {
         iconParams.setMargins(0, 0, dp(8), 0);
         box.addView(icon, iconParams);
 
-        EditText search = new EditText(this);
-        search.setSingleLine(true);
-        search.setHint(hint);
-        search.setText(value == null ? "" : value);
-        search.setSelection(search.getText().length());
-        search.setTextColor(primaryText());
-        search.setHintTextColor(mutedText());
-        search.setTextSize(15);
-        search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        search.setBackgroundColor(Color.TRANSPARENT);
-        search.setPadding(0, 0, 0, 0);
         clear.setAlpha(search.getText().length() == 0 ? 0.45f : 1.0f);
         clear.setOnClickListener(v -> {
             if (search.getText().length() > 0) search.setText("");
@@ -2584,7 +2589,6 @@ public class MainActivity extends Activity {
                 }, 180);
             }
         });
-        box.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
         root.addView(box, matchHeightWithTop(dp(52), dp(10)));
         if (value != null && !value.isEmpty()) search.requestFocus();
     }
@@ -3295,21 +3299,46 @@ public class MainActivity extends Activity {
         ShoppingList list = lists.get(index);
         String[] options = list.locked
                 ? new String[]{"Copiar", "Remover"}
-                : new String[]{"Editar nome", "Mudar cor", "Remover"};
+                : new String[]{"Concluir esta lista", "Editar nome", "Mudar cor", "Remover"};
         dialog()
                 .setTitle(list.name)
                 .setItems(options, (dialog, which) -> {
                     if (list.locked && which == 0) {
                         copyListFromHistory(index);
-                    } else if (list.locked || which == 2) {
+                    } else if (list.locked || which == 3) {
                         confirmDeleteList(index);
                     } else if (which == 0) {
+                        completeList(index);
+                    } else if (which == 1) {
                         promptEditList(index);
-                    } else {
+                    } else if (which == 2) {
                         promptListColor(index);
                     }
                 })
                 .show();
+    }
+
+    private void completeList(int index) {
+        if (index < 0 || index >= lists.size()) return;
+        ShoppingList list = lists.get(index);
+        if (list.locked) return;
+        int changed = 0;
+        for (ShoppingItem item : list.items) {
+            if (item.checked) continue;
+            item.checked = true;
+            changed++;
+            if (list.saveCheckedToStock) {
+                double quantity = quantityOf(item);
+                addToStock(item, quantity, autoUnitForQuantity(quantity));
+            }
+        }
+        if (changed > 0) {
+            save();
+            Toast.makeText(this, changed + " item(ns) concluido(s).", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "Lista ja estava concluida.", Toast.LENGTH_SHORT).show();
+        }
+        showHomeScreen();
     }
 
     private void promptEditList() {
@@ -4696,6 +4725,13 @@ public class MainActivity extends Activity {
         button.setPadding(dp(11), dp(11), dp(11), dp(11));
         button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         elevate(button, 6);
+        return button;
+    }
+
+    private ImageButton homeImageIconButton(int drawable, int bg, int fg) {
+        ImageButton button = imageIconButton(drawable, bg, fg);
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setScaleType(ImageView.ScaleType.FIT_CENTER);
         return button;
     }
 

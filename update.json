@@ -1,7 +1,7 @@
 {
-  "versionCode": 64,
-  "versionName": "4.33",
+  "versionCode": 65,
+  "versionName": "4.34",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Quando a SEFAZ exige captcha, abre a consulta dentro do app e importa automaticamente assim que o DANFE com itens for liberado."
+  "notes": "Melhora a tela Suas listas: busca com controles a direita, icones maiores e opcao para concluir todos os itens de uma lista."
 }

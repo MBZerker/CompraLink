@@ -1,7 +1,7 @@
 {
-  "versionCode": 65,
-  "versionName": "4.34",
+  "versionCode": 66,
+  "versionName": "4.35",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Melhora a tela Suas listas: busca com controles a direita, icones maiores e opcao para concluir todos os itens de uma lista."
+  "notes": "Melhora a camera do QR Code, destaca a importacao de nota na tela inicial e mostra processamento antes da importacao/captcha."
 }

@@ -12,8 +12,11 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.content.res.ColorStateList;
 import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Camera;
@@ -58,6 +61,7 @@ import android.widget.AutoCompleteTextView;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -463,25 +467,9 @@ public class MainActivity extends Activity {
         topLine.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
-        LinearLayout brand = new LinearLayout(this);
-        brand.setOrientation(LinearLayout.HORIZONTAL);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
-
-        ImageView brandIcon = new ImageView(this);
-        brandIcon.setImageResource(R.drawable.ic_cart);
-        brandIcon.setColorFilter(accent());
-        brand.addView(brandIcon, new LinearLayout.LayoutParams(dp(34), dp(34)));
-
-        TextView appName = new TextView(this);
-        appName.setText("Check Mercado");
-        appName.setTextColor(accent());
-        appName.setTextSize(24);
-        appName.setTypeface(Typeface.DEFAULT_BOLD);
-        appName.setPadding(dp(8), 0, 0, 0);
-        appName.setOnClickListener(v -> registerSecretLogoTap());
-        brand.addView(appName, matchWrap());
+        BrandLogoView brand = new BrandLogoView(this);
         brand.setOnClickListener(v -> registerSecretLogoTap());
-        topLine.addView(brand, weighted());
+        topLine.addView(brand, new LinearLayout.LayoutParams(0, dp(58), 1));
 
         LinearLayout sideControls = new LinearLayout(this);
         sideControls.setOrientation(LinearLayout.VERTICAL);
@@ -577,10 +565,23 @@ public class MainActivity extends Activity {
                 back.setOnClickListener(v -> showHomeScreen());
                 actions.addView(back, weighted());
             } else {
+                actions.setOrientation(LinearLayout.VERTICAL);
                 actions.setGravity(Gravity.CENTER_HORIZONTAL);
+                ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                qr.setPadding(dp(14), dp(14), dp(14), dp(14));
+                qr.setOnClickListener(v -> startFiscalQrScan());
+                LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(dp(110), dp(110));
+                qrParams.setMargins(0, 0, 0, dp(12));
+                actions.addView(qr, qrParams);
+
+                LinearLayout mainActions = new LinearLayout(this);
+                mainActions.setOrientation(LinearLayout.HORIZONTAL);
+                mainActions.setGravity(Gravity.CENTER_HORIZONTAL);
+                actions.addView(mainActions, matchWrap());
+
                 ImageButton newList = homeImageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 newList.setOnClickListener(v -> promptNewList());
-                actions.addView(newList, new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize()));
+                mainActions.addView(newList, new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize()));
 
                 ImageButton stockButton = homeImageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
@@ -593,19 +594,13 @@ public class MainActivity extends Activity {
                 });
                 LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 stockParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(stockButton, stockParams);
+                mainActions.addView(stockButton, stockParams);
 
                 ImageButton history = homeImageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 history.setOnClickListener(v -> showHistoryScreen());
                 LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
                 historyParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(history, historyParams);
-
-                ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                qr.setOnClickListener(v -> startFiscalQrScan());
-                LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
-                qrParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(qr, qrParams);
+                mainActions.addView(history, historyParams);
             }
 
             if (homeTab == 0) {
@@ -1616,6 +1611,7 @@ public class MainActivity extends Activity {
             showFiscalImportError("QR lido, mas nao parece ser um link valido.\n\nConteudo: " + previewErrorText(url));
             return;
         }
+        showFiscalProcessingScreen();
         new Thread(() -> {
             String lastContent = "";
             String accessKey = extractFiscalAccessKeyFromUrl(url);
@@ -1651,6 +1647,45 @@ public class MainActivity extends Activity {
             String finalMessage = message;
             runOnUiThread(() -> showFiscalImportError(finalMessage, page));
         }).start();
+    }
+
+    private void showFiscalProcessingScreen() {
+        stopQrScanner();
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 8;
+        applySystemBars();
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setGravity(Gravity.CENTER);
+        screen.setPadding(dp(26), statusBarHeight() + dp(20), dp(26), dp(26));
+        screen.setBackgroundColor(screenBg());
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setGravity(Gravity.CENTER_HORIZONTAL);
+        card.setPadding(dp(26), dp(30), dp(26), dp(30));
+        card.setBackground(round(cardBg(), dp(22), stroke(), 1));
+        elevate(card, 6);
+
+        ProgressBar progress = new ProgressBar(this);
+        progress.setIndeterminate(true);
+        if (Build.VERSION.SDK_INT >= 21) {
+            progress.setIndeterminateTintList(ColorStateList.valueOf(accent()));
+        }
+        card.addView(progress, new LinearLayout.LayoutParams(dp(62), dp(62)));
+
+        TextView title = label("Processando nota", 22, true, primaryText());
+        title.setGravity(Gravity.CENTER);
+        card.addView(title, matchWrapWithTop(dp(18)));
+
+        TextView detail = label("Lendo os dados da SEFAZ...", 15, false, mutedText());
+        detail.setGravity(Gravity.CENTER);
+        card.addView(detail, matchWrapWithTop(dp(8)));
+
+        screen.addView(card, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        setContentView(screen);
     }
 
     private void showFiscalCaptchaScreen(String url, String accessKey) {
@@ -4930,6 +4965,51 @@ public class MainActivity extends Activity {
         }
     }
 
+    private class BrandLogoView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        BrandLogoView(Context context) {
+            super(context);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            int h = getHeight();
+            int icon = Math.max(dp(32), Math.min(dp(42), h - dp(12)));
+            float left = dp(2);
+            float top = (h - icon) / 2f;
+            int color = accent();
+
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(dp(3));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setColor(color);
+            paint.setShadowLayer(dp(7), 0, dp(2), Color.argb(isDarkTheme() ? 190 : 90, Color.red(color), Color.green(color), Color.blue(color)));
+            canvas.drawLine(left + icon * 0.12f, top + icon * 0.22f, left + icon * 0.26f, top + icon * 0.72f, paint);
+            canvas.drawLine(left + icon * 0.26f, top + icon * 0.72f, left + icon * 0.76f, top + icon * 0.72f, paint);
+            canvas.drawLine(left + icon * 0.30f, top + icon * 0.34f, left + icon * 0.88f, top + icon * 0.34f, paint);
+            canvas.drawLine(left + icon * 0.88f, top + icon * 0.34f, left + icon * 0.78f, top + icon * 0.58f, paint);
+            canvas.drawCircle(left + icon * 0.36f, top + icon * 0.88f, dp(3), paint);
+            canvas.drawCircle(left + icon * 0.72f, top + icon * 0.88f, dp(3), paint);
+
+            paint.clearShadowLayer();
+            paint.setStyle(Paint.Style.FILL);
+            paint.setTypeface(Typeface.DEFAULT_BOLD);
+            paint.setTextSize(dp(25));
+            float textX = left + icon + dp(10);
+            float baseline = h / 2f - (paint.descent() + paint.ascent()) / 2f;
+            paint.setShader(new LinearGradient(textX, 0, Math.max(textX + dp(210), getWidth()), 0,
+                    new int[]{lighten(color), color, Color.rgb(56, 189, 248)}, null, Shader.TileMode.CLAMP));
+            paint.setShadowLayer(dp(5), 0, dp(2), Color.argb(isDarkTheme() ? 150 : 70, 0, 0, 0));
+            canvas.drawText("Check Mercado", textX, baseline, paint);
+            paint.setShader(null);
+            paint.clearShadowLayer();
+        }
+    }
+
     private static class ColorSpectrumView extends View {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private Bitmap bitmap;
@@ -5713,6 +5793,16 @@ public class MainActivity extends Activity {
         private boolean mlBusy;
         private long lastDecodeAt;
         private long lastFocusAt;
+        private boolean previewing;
+        private final Handler focusHandler = new Handler(Looper.getMainLooper());
+        private final Runnable focusPulse = new Runnable() {
+            @Override
+            public void run() {
+                if (camera == null || decoded) return;
+                focusCamera();
+                focusHandler.postDelayed(this, 2800);
+            }
+        };
 
         QrScannerView(Context context, QrReadCallback callback) {
             super(context);
@@ -5746,12 +5836,7 @@ public class MainActivity extends Activity {
             try {
                 camera = Camera.open();
                 Camera.Parameters params = camera.getParameters();
-                List<String> focusModes = params.getSupportedFocusModes();
-                if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
-                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
-                } else if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
-                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
-                }
+                configureCamera(params);
                 Camera.Size size = bestPreviewSize(params.getSupportedPreviewSizes());
                 if (size != null) params.setPreviewSize(size.width, size.height);
                 camera.setParameters(params);
@@ -5759,10 +5844,33 @@ public class MainActivity extends Activity {
                 camera.setPreviewDisplay(holder);
                 camera.setPreviewCallback(this);
                 camera.startPreview();
-                focusCamera();
+                previewing = true;
+                focusHandler.postDelayed(() -> focusCamera(true), 350);
+                focusHandler.postDelayed(() -> focusCamera(true), 1100);
+                focusHandler.postDelayed(focusPulse, 2800);
             } catch (Exception e) {
                 stop();
                 promptFiscalQrUrl();
+            }
+        }
+
+        private void configureCamera(Camera.Parameters params) {
+            List<String> focusModes = params.getSupportedFocusModes();
+            if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE)) {
+                params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
+            } else if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO)) {
+                params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
+            } else if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_MACRO)) {
+                params.setFocusMode(Camera.Parameters.FOCUS_MODE_MACRO);
+            } else if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
+                params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
+            }
+            Camera.Area center = new Camera.Area(new Rect(-280, -280, 280, 280), 1000);
+            if (params.getMaxNumFocusAreas() > 0) {
+                params.setFocusAreas(Collections.singletonList(center));
+            }
+            if (params.getMaxNumMeteringAreas() > 0) {
+                params.setMeteringAreas(Collections.singletonList(center));
             }
         }
 
@@ -5781,7 +5889,7 @@ public class MainActivity extends Activity {
         public void onPreviewFrame(byte[] data, Camera camera) {
             if (decoded || data == null || camera == null) return;
             long now = System.currentTimeMillis();
-            if (now - lastFocusAt > 1500) focusCamera();
+            if (now - lastFocusAt > 3600) focusCamera();
             if (now - lastDecodeAt < 110) return;
             lastDecodeAt = now;
             try {
@@ -5818,11 +5926,68 @@ public class MainActivity extends Activity {
                     .addOnCompleteListener(task -> mlBusy = false);
         }
 
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                focusAt(event.getX(), event.getY());
+                return true;
+            }
+            return true;
+        }
+
+        private void focusAt(float x, float y) {
+            if (camera == null || getWidth() <= 0 || getHeight() <= 0) return;
+            try {
+                int focusX = clamp((int) (x / getWidth() * 2000 - 1000), -1000, 1000);
+                int focusY = clamp((int) (y / getHeight() * 2000 - 1000), -1000, 1000);
+                Rect area = new Rect(
+                        clamp(focusX - 220, -1000, 1000),
+                        clamp(focusY - 220, -1000, 1000),
+                        clamp(focusX + 220, -1000, 1000),
+                        clamp(focusY + 220, -1000, 1000)
+                );
+                Camera.Parameters params = camera.getParameters();
+                if (params.getMaxNumFocusAreas() > 0) {
+                    params.setFocusAreas(Collections.singletonList(new Camera.Area(area, 1000)));
+                }
+                if (params.getMaxNumMeteringAreas() > 0) {
+                    params.setMeteringAreas(Collections.singletonList(new Camera.Area(area, 1000)));
+                }
+                List<String> focusModes = params.getSupportedFocusModes();
+                if (focusModes != null && focusModes.contains(Camera.Parameters.FOCUS_MODE_AUTO)) {
+                    params.setFocusMode(Camera.Parameters.FOCUS_MODE_AUTO);
+                }
+                camera.setParameters(params);
+                focusCamera(true);
+            } catch (Exception ignored) {
+                focusCamera(true);
+            }
+        }
+
+        private int clamp(int value, int min, int max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
         private void focusCamera() {
-            if (camera == null) return;
+            focusCamera(false);
+        }
+
+        private void focusCamera(boolean force) {
+            if (camera == null || !previewing) return;
+            long now = System.currentTimeMillis();
+            if (!force && now - lastFocusAt < 2300) return;
             lastFocusAt = System.currentTimeMillis();
             try {
-                camera.autoFocus(null);
+                camera.cancelAutoFocus();
+            } catch (Exception ignored) {
+            }
+            try {
+                camera.autoFocus((success, camera) -> {
+                    try {
+                        if (camera != null) camera.cancelAutoFocus();
+                    } catch (Exception ignored) {
+                    }
+                });
             } catch (Exception ignored) {
             }
         }
@@ -5896,6 +6061,8 @@ public class MainActivity extends Activity {
         }
 
         void stop() {
+            focusHandler.removeCallbacksAndMessages(null);
+            previewing = false;
             try {
                 if (camera != null) {
                     camera.setPreviewCallback(null);

@@ -75,9 +75,12 @@ import org.json.JSONObject;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.math.BigDecimal;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.nio.charset.StandardCharsets;
 import java.text.NumberFormat;
 import java.text.Normalizer;
@@ -99,6 +102,9 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -143,6 +149,8 @@ public class MainActivity extends Activity {
     private static final int THEME_DARK = 2;
     private static final String SHARE_BASE = "https://mbzerker.github.io/CompraLink/l/?payload=";
     private static final String BACKUP_BASE = "https://mbzerker.github.io/CompraLink/l/?backup=";
+    private static final String SHORTENER_ENDPOINT = "https://nbtchat-store.nectof.workers.dev/shorten";
+    private static final String BACKUP_FILE_PREFIX = "CheckMercadoBackup:v2:";
     private static final String PAGES_HOST = "mbzerker.github.io";
     private static final String PAGES_PATH = "/CompraLink/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
@@ -152,6 +160,8 @@ public class MainActivity extends Activity {
     private static final int SORT_KEEP_POSITION = 2;
     private static final int REQUEST_QR_SCAN = 9021;
     private static final int REQUEST_CAMERA_PERMISSION = 9022;
+    private static final int REQUEST_BACKUP_SAVE = 9023;
+    private static final int REQUEST_BACKUP_OPEN = 9024;
     private static final String CUSTOM_CATEGORY = "Personalizada...";
     private static final long AUTO_LOCK_AFTER_MS = 24L * 60L * 60L * 1000L;
 
@@ -180,6 +190,7 @@ public class MainActivity extends Activity {
     private String flashImportedListId = "";
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
+    private String pendingBackupFileText;
     private boolean stockHistoryPending;
     private boolean stockHistorySortDesc = true;
     private int themeMode = THEME_SYSTEM;
@@ -231,6 +242,19 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_BACKUP_SAVE) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                savePendingBackupToUri(data.getData());
+            }
+            pendingBackupFileText = null;
+            return;
+        }
+        if (requestCode == REQUEST_BACKUP_OPEN) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                restoreBackupFromUri(data.getData());
+            }
+            return;
+        }
         if (requestCode != REQUEST_QR_SCAN || resultCode != RESULT_OK || data == null) return;
         String result = data.getStringExtra("SCAN_RESULT");
         if (result == null) result = data.getStringExtra("com.google.zxing.client.android.SCAN_RESULT");
@@ -1527,20 +1551,56 @@ public class MainActivity extends Activity {
     }
 
     private void exportBackup() {
-        try {
-            String backup = BACKUP_BASE + encodeCompressed(buildBackupJson().toString());
-            Intent send = new Intent(Intent.ACTION_SEND);
-            send.setType("text/plain");
-            send.putExtra(Intent.EXTRA_SUBJECT, "Backup Check Mercado");
-            send.putExtra(Intent.EXTRA_TEXT, backup);
-            startActivity(Intent.createChooser(send, "Exportar backup"));
+        CharSequence[] options = {"Salvar backup criptografado", "Restaurar backup"};
+        dialog()
+                .setTitle("Backup")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) saveEncryptedBackupFile();
+                    else openEncryptedBackupFile();
+                })
+                .show();
+    }
 
-            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (clipboard != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("Backup Check Mercado", backup));
-            }
+    private void saveEncryptedBackupFile() {
+        try {
+            pendingBackupFileText = buildEncryptedBackupFileText();
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_TITLE, backupFileName());
+            startActivityForResult(intent, REQUEST_BACKUP_SAVE);
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel gerar o backup.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openEncryptedBackupFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, REQUEST_BACKUP_OPEN);
+    }
+
+    private void savePendingBackupToUri(Uri uri) {
+        if (uri == null || pendingBackupFileText == null) return;
+        try (OutputStream output = getContentResolver().openOutputStream(uri)) {
+            if (output == null) throw new java.io.IOException("Destino indisponivel");
+            output.write(pendingBackupFileText.getBytes(StandardCharsets.UTF_8));
+            Toast.makeText(this, "Backup salvo.", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Nao foi possivel salvar o backup.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void restoreBackupFromUri(Uri uri) {
+        try {
+            String fileText = readText(getContentResolver().openInputStream(uri));
+            String backupLink = decryptBackupFileText(fileText);
+            String backup = extractBackup(backupLink);
+            if (isBlank(backup)) backup = backupLink;
+            promptImportBackupFile(cleanPayload(backup));
+        } catch (Exception e) {
+            Toast.makeText(this, "Backup invalido.", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -3809,18 +3869,72 @@ public class MainActivity extends Activity {
     private void shareSelectedList(boolean privacyMode) {
         try {
             String link = buildShareLink(lists.get(selectedIndex), privacyMode);
-            Intent send = new Intent(Intent.ACTION_SEND);
-            send.setType("text/plain");
-            send.putExtra(Intent.EXTRA_TEXT, link);
-            startActivity(Intent.createChooser(send, "Compartilhar lista"));
-
-            ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            if (clipboard != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("Check Mercado", link));
-            }
+            shareListUrl(link);
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel compartilhar esta lista.", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private void shareListUrl(String link) {
+        Toast.makeText(this, "Preparando link...", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String finalLink = link;
+            try {
+                finalLink = shortenPublicUrl(link);
+            } catch (Exception ignored) {
+            }
+            String shareText = finalLink;
+            runOnUiThread(() -> {
+                Intent send = new Intent(Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(Intent.EXTRA_TEXT, shareText);
+                startActivity(Intent.createChooser(send, "Compartilhar lista"));
+
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Check Mercado", shareText));
+                }
+            });
+        }).start();
+    }
+
+    private String shortenPublicUrl(String url) throws Exception {
+        if (!isPublicHttpUrl(url)) return url;
+        HttpURLConnection connection = (HttpURLConnection) new URL(SHORTENER_ENDPOINT).openConnection();
+        connection.setConnectTimeout(10000);
+        connection.setReadTimeout(15000);
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setDoOutput(true);
+        JSONObject body = new JSONObject();
+        body.put("url", url);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        int code = connection.getResponseCode();
+        String response = readText(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+        connection.disconnect();
+        if (code < 200 || code >= 300 || isBlank(response)) return url;
+        JSONObject json = new JSONObject(response);
+        String shortUrl = json.optString("shortUrl", "");
+        return json.optBoolean("ok", false) && isPublicHttpUrl(shortUrl) ? shortUrl : url;
+    }
+
+    private boolean isPublicHttpUrl(String value) {
+        if (isBlank(value)) return false;
+        Uri uri = Uri.parse(value);
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) return false;
+        if (isBlank(host)) return false;
+        String key = host.toLowerCase(Locale.ROOT);
+        return !key.equals("localhost")
+                && !key.equals("127.0.0.1")
+                && !key.equals("0.0.0.0")
+                && !key.startsWith("10.")
+                && !key.startsWith("192.168.")
+                && !key.matches("172\\.(1[6-9]|2[0-9]|3[0-1])\\..*");
     }
 
     private String buildShareLink(ShoppingList list, boolean privacyMode) throws Exception {
@@ -4104,6 +4218,64 @@ public class MainActivity extends Activity {
         return payload;
     }
 
+    private String buildEncryptedBackupFileText() throws Exception {
+        String backupLink = BACKUP_BASE + encodeCompressed(buildBackupJson().toString());
+        return BACKUP_FILE_PREFIX + encryptBackupText(backupLink);
+    }
+
+    private String encryptBackupText(String text) throws Exception {
+        byte[] iv = new byte[12];
+        new SecureRandom().nextBytes(iv);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, backupKey(), new GCMParameterSpec(128, iv));
+        byte[] encrypted = cipher.doFinal(text.getBytes(StandardCharsets.UTF_8));
+        JSONObject json = new JSONObject();
+        json.put("v", 2);
+        json.put("iv", Base64.encodeToString(iv, Base64.NO_WRAP));
+        json.put("data", Base64.encodeToString(encrypted, Base64.NO_WRAP));
+        return json.toString();
+    }
+
+    private String decryptBackupFileText(String text) throws Exception {
+        String clean = text == null ? "" : text.trim();
+        if (!clean.startsWith(BACKUP_FILE_PREFIX)) {
+            if (extractBackup(clean) != null || clean.startsWith("CompraLinkBackup:")) return clean;
+            throw new JSONException("Formato de backup desconhecido");
+        }
+        JSONObject json = new JSONObject(clean.substring(BACKUP_FILE_PREFIX.length()));
+        byte[] iv = Base64.decode(json.getString("iv"), Base64.NO_WRAP);
+        byte[] encrypted = Base64.decode(json.getString("data"), Base64.NO_WRAP);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, backupKey(), new GCMParameterSpec(128, iv));
+        return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+    }
+
+    private SecretKeySpec backupKey() throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] key = digest.digest("Check Mercado backup file key v2 MBZerker".getBytes(StandardCharsets.UTF_8));
+        return new SecretKeySpec(key, "AES");
+    }
+
+    private String backupFileName() {
+        Calendar now = Calendar.getInstance();
+        return String.format(Locale.US, "CheckMercado-backup-%04d%02d%02d-%02d%02d.cmbackup",
+                now.get(Calendar.YEAR),
+                now.get(Calendar.MONTH) + 1,
+                now.get(Calendar.DAY_OF_MONTH),
+                now.get(Calendar.HOUR_OF_DAY),
+                now.get(Calendar.MINUTE));
+    }
+
+    private String readText(InputStream input) throws Exception {
+        if (input == null) return "";
+        try (InputStream in = input; ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = in.read(buffer)) != -1) output.write(buffer, 0, read);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+        }
+    }
+
     private String encodeCompressed(String json) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (DeflaterOutputStream zip = new DeflaterOutputStream(out)) {
@@ -4163,6 +4335,20 @@ public class MainActivity extends Activity {
                     if (importBackupPayload(clean)) {
                         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_LAST_CLIPBOARD_PAYLOAD, clean).apply();
                         Toast.makeText(this, "Backup importado.", Toast.LENGTH_SHORT).show();
+                        showHomeScreen();
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptImportBackupFile(String cleanBackup) {
+        dialog()
+                .setTitle("Restaurar backup?")
+                .setMessage("Este arquivo contem um backup criptografado do Check Mercado.\n\nOs dados serao adicionados/atualizados no app.")
+                .setPositiveButton("Restaurar", (dialog, which) -> {
+                    if (importBackupPayload(cleanBackup)) {
+                        Toast.makeText(this, "Backup restaurado.", Toast.LENGTH_SHORT).show();
                         showHomeScreen();
                     }
                 })

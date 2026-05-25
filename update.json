@@ -1,7 +1,7 @@
 {
-  "versionCode": 67,
-  "versionName": "4.36",
+  "versionCode": 68,
+  "versionName": "4.37",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Usa encurtador somente para listas compartilhadas e troca backup por arquivo local criptografado/restauravel pelo seletor do Android."
+  "notes": "Atualizacao pelo proprio app: baixa o APK, solicita a permissao do Android quando necessario e abre a instalacao sem mandar o usuario para o navegador."
 }

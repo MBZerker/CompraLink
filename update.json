@@ -1,7 +1,9 @@
 {
-  "versionCode": 69,
-  "versionName": "4.38",
+  "versionCode": 70,
+  "versionName": "4.39",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "notes": "Corrige acentuacao na tela de gastos e reorganiza a tela principal com menu compacto para tema, cor, atualizacao, backup e creditos."
+  "sha256": "d8f08511afd7b8336817eb8f493d52548b5e8d4bf4d4a77203f3879b6accac6e",
+  "sizeBytes": 26305119,
+  "notes": "Melhora o atualizador interno com barra de progresso, estado persistente, retomada apos permissao e validacao do APK antes da instalacao."
 }

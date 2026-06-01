@@ -1605,6 +1605,10 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    public void openBackupFromUpdater() {
+        exportBackup();
+    }
+
     private void saveEncryptedBackupFile() {
         try {
             pendingBackupFileText = buildEncryptedBackupFileText();

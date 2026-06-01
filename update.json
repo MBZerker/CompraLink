@@ -1,9 +1,9 @@
 {
-  "versionCode": 70,
-  "versionName": "4.39",
+  "versionCode": 71,
+  "versionName": "4.40",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "d8f08511afd7b8336817eb8f493d52548b5e8d4bf4d4a77203f3879b6accac6e",
-  "sizeBytes": 26305119,
-  "notes": "Melhora o atualizador interno com barra de progresso, estado persistente, retomada apos permissao e validacao do APK antes da instalacao."
+  "sha256": "d3d0c22ce02ed2aedf800e44e658b33b0dd22587fad20d8c1afea9fad43c09aa",
+  "sizeBytes": 26305120,
+  "notes": "Reposiciona Menu e QR Code no topo e aplica cor aleatoria com contraste ao criar novas listas."
 }

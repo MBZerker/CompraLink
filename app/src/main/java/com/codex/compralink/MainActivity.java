@@ -506,7 +506,7 @@ public class MainActivity extends Activity {
         int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);
 
         LinearLayout sideControls = new LinearLayout(this);
-        sideControls.setOrientation(homeHeader ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        sideControls.setOrientation(LinearLayout.VERTICAL);
         sideControls.setGravity(Gravity.CENTER_HORIZONTAL);
         sideControls.setPadding(0, dp(6), 0, 0);
 
@@ -521,7 +521,7 @@ public class MainActivity extends Activity {
             qr.setPadding(dp(14), dp(14), dp(14), dp(14));
             qr.setOnClickListener(v -> startFiscalQrScan());
             LinearLayout.LayoutParams qrTopParams = new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize);
-            qrTopParams.setMargins(dp(8), 0, 0, 0);
+            qrTopParams.setMargins(0, dp(8), 0, 0);
             sideControls.addView(qr, qrTopParams);
         } else {
             ImageButton themeTop = imageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
@@ -531,8 +531,7 @@ public class MainActivity extends Activity {
             sideControls.addView(themeTop, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
         }
 
-        int controlsWidth = homeHeader ? sideButtonSize * 2 + dp(12) : sideButtonSize + dp(4);
-        topLine.addView(sideControls, new LinearLayout.LayoutParams(controlsWidth, ViewGroup.LayoutParams.WRAP_CONTENT));
+        topLine.addView(sideControls, new LinearLayout.LayoutParams(sideButtonSize + dp(4), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView title = new TextView(this);
         title.setText(heading);
@@ -3429,6 +3428,7 @@ public class MainActivity extends Activity {
                     String name = input.getText().toString().trim();
                     if (name.isEmpty()) name = "Nova lista";
                     ShoppingList list = new ShoppingList(name);
+                    list.color = randomListColor();
                     list.saveCheckedToStock = saveToStock.isChecked();
                     lists.add(0, list);
                     save();
@@ -4921,6 +4921,15 @@ public class MainActivity extends Activity {
         };
         int index = Math.abs(normalize(category).hashCode()) % colors.length;
         return colors[index];
+    }
+
+    private int randomListColor() {
+        float[] hsv = new float[]{
+                (float) (Math.random() * 360.0),
+                0.52f + (float) (Math.random() * 0.26),
+                isDarkTheme() ? 0.56f + (float) (Math.random() * 0.18) : 0.72f + (float) (Math.random() * 0.16)
+        };
+        return Color.HSVToColor(hsv);
     }
 
     private int accent() {

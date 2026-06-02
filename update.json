@@ -1,9 +1,9 @@
 {
-  "versionCode": 72,
-  "versionName": "4.41",
+  "versionCode": 73,
+  "versionName": "4.42",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "e70482478a708d6f7a62d782b947d5b9c54fedbea14e38663e534e2771b06e55",
-  "sizeBytes": 26306555,
-  "notes": "Adiciona autocomplete de nomes de listas, move adicionar item para popup e troca voltar por botao com icone."
+  "sha256": "e900b7329f4f90052490d94d5e4c0fe5c60f589e291f514fe5f6a88f9d7d58e7",
+  "sizeBytes": 26306554,
+  "notes": "Adiciona selecao multipla e ordenacao no estoque, baixa em lote e ajusta tamanho dos botoes da lista para caber na tela."
 }

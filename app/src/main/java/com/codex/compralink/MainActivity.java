@@ -138,6 +138,7 @@ public class MainActivity extends Activity {
     private static final String KEY_SPENDING_RANGE = "spending_range_months";
     private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
     private static final String KEY_STOCK_HISTORY_SORT_DESC = "stock_history_sort_desc";
+    private static final String KEY_STOCK_SORT_MODE = "stock_sort_mode";
     private static final String KEY_GAME_LEVEL = "market_game_level";
     private static final String KEY_GAME_MOVES = "market_game_moves";
     private static final String KEY_GAME_BOARD = "market_game_board";
@@ -159,6 +160,12 @@ public class MainActivity extends Activity {
     private static final int SORT_CHECKED_BOTTOM = 0;
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
+    private static final int STOCK_SORT_DATE = 0;
+    private static final int STOCK_SORT_NAME = 1;
+    private static final int STOCK_SORT_QUANTITY = 2;
+    private static final int STOCK_SORT_PRICE = 3;
+    private static final int STOCK_SORT_CATEGORY = 4;
+    private static final int STOCK_SORT_DAYS = 5;
     private static final int REQUEST_QR_SCAN = 9021;
     private static final int REQUEST_CAMERA_PERMISSION = 9022;
     private static final int REQUEST_BACKUP_SAVE = 9023;
@@ -194,6 +201,8 @@ public class MainActivity extends Activity {
     private String pendingBackupFileText;
     private boolean stockHistoryPending;
     private boolean stockHistorySortDesc = true;
+    private int stockSortMode = STOCK_SORT_DATE;
+    private final LinkedHashSet<String> selectedStockIds = new LinkedHashSet<>();
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
@@ -211,6 +220,7 @@ public class MainActivity extends Activity {
         spendingRangeMonths = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SPENDING_RANGE, 6);
         stockHistoryPending = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_PENDING, false);
         stockHistorySortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_SORT_DESC, true);
+        stockSortMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_STOCK_SORT_MODE, STOCK_SORT_DATE);
         load();
         loadStock();
         loadStockHistory();
@@ -551,7 +561,8 @@ public class MainActivity extends Activity {
         header.addView(actions, matchWrap());
 
         if (listOpen) {
-            int listActionSize = isCompactWidth() ? dp(48) : homeButtonSize();
+            ShoppingList current = lists.get(selectedIndex);
+            int listActionSize = listActionButtonSize(current.locked);
             ImageButton back = imageIconButton(R.drawable.ic_back, softButtonBg(), primaryText());
             back.setOnClickListener(v -> {
                 selectedIndex = -1;
@@ -564,7 +575,6 @@ public class MainActivity extends Activity {
             });
             actions.addView(back, new LinearLayout.LayoutParams(listActionSize, listActionSize));
 
-            ShoppingList current = lists.get(selectedIndex);
             if (!current.locked) {
                 ImageButton add = imageIconButton(R.drawable.ic_plus, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 add.setOnClickListener(v -> promptAddItem());
@@ -608,6 +618,13 @@ public class MainActivity extends Activity {
                 Button back = button("Voltar", softButtonBg(), primaryText());
                 back.setOnClickListener(v -> showHomeScreen());
                 actions.addView(back, weighted());
+                if (homeTab == 1) {
+                    ImageButton sort = imageIconButton(R.drawable.ic_sort_keep_position, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                    sort.setOnClickListener(v -> promptStockSort());
+                    LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+                    sortParams.setMargins(dp(8), 0, 0, 0);
+                    actions.addView(sort, sortParams);
+                }
             } else {
                 actions.setOrientation(LinearLayout.VERTICAL);
                 actions.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -1355,23 +1372,41 @@ public class MainActivity extends Activity {
 
     private void addStockScreen() {
         if (stock.isEmpty()) {
+            selectedStockIds.clear();
             root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
             return;
         }
-        boolean shown = false;
-        for (StockEntry entry : stock) {
-            if (!matchesStockSearch(entry, stockSearch)) continue;
-            shown = true;
+        pruneSelectedStockIds();
+        if (!selectedStockIds.isEmpty()) {
+            root.addView(infoCard("Selecionados", selectedStockIds.size() + " item(ns) selecionado(s). Segure um item selecionado para dar baixa em todos."), matchWrapWithTop(dp(10)));
+        }
+        List<StockEntry> rows = new ArrayList<>(stock);
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            if (!matchesStockSearch(rows.get(i), stockSearch)) rows.remove(i);
+        }
+        sortStockRows(rows);
+        if (rows.isEmpty()) {
+            root.addView(infoCard("Nada encontrado", "Nenhum item do estoque corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+            return;
+        }
+        for (StockEntry entry : rows) {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
-            card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+            boolean selected = selectedStockIds.contains(entry.id);
+            card.setBackground(round(selected ? tintSurface(accent()) : cardBg(), dp(16), selected ? accent() : stroke(), selected ? 2 : 1));
+            card.setOnClickListener(v -> toggleStockSelection(entry));
             card.setOnLongClickListener(v -> {
                 showStockOptions(entry);
                 return true;
             });
             TextView name = label(entry.name, 18, true, primaryText());
             card.addView(name);
+            if (selected) {
+                TextView marker = label("Selecionado", 13, true, accent());
+                marker.setPadding(0, dp(2), 0, 0);
+                card.addView(marker);
+            }
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
             String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
             TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
@@ -1388,9 +1423,63 @@ public class MainActivity extends Activity {
             card.addView(edited);
             root.addView(card, matchWrapWithTop(dp(10)));
         }
-        if (!shown) {
-            root.addView(infoCard("Nada encontrado", "Nenhum item do estoque corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+    }
+
+    private void toggleStockSelection(StockEntry entry) {
+        if (entry == null || entry.id == null) return;
+        if (selectedStockIds.contains(entry.id)) {
+            selectedStockIds.remove(entry.id);
+        } else {
+            selectedStockIds.add(entry.id);
         }
+        showStockWindow(false);
+    }
+
+    private void pruneSelectedStockIds() {
+        LinkedHashSet<String> live = new LinkedHashSet<>();
+        for (StockEntry entry : stock) live.add(entry.id);
+        selectedStockIds.retainAll(live);
+    }
+
+    private List<StockEntry> selectedStockEntries() {
+        List<StockEntry> rows = new ArrayList<>();
+        for (StockEntry entry : stock) {
+            if (selectedStockIds.contains(entry.id)) rows.add(entry);
+        }
+        return rows;
+    }
+
+    private void sortStockRows(List<StockEntry> rows) {
+        Collections.sort(rows, (a, b) -> {
+            switch (stockSortMode) {
+                case STOCK_SORT_NAME:
+                    return normalize(a.name).compareTo(normalize(b.name));
+                case STOCK_SORT_QUANTITY:
+                    return Double.compare(b.quantity, a.quantity);
+                case STOCK_SORT_PRICE:
+                    return Double.compare(b.price, a.price);
+                case STOCK_SORT_CATEGORY:
+                    return normalize(categoryOf(a)).compareTo(normalize(categoryOf(b)));
+                case STOCK_SORT_DAYS:
+                    return Long.compare(stockDays(b), stockDays(a));
+                case STOCK_SORT_DATE:
+                default:
+                    return Long.compare(b.addedAt, a.addedAt);
+            }
+        });
+    }
+
+    private void promptStockSort() {
+        String[] options = new String[]{"Data", "Nome", "Unidade", "Pre\u00e7o", "Categoria", "Dias"};
+        int[] modes = new int[]{STOCK_SORT_DATE, STOCK_SORT_NAME, STOCK_SORT_QUANTITY, STOCK_SORT_PRICE, STOCK_SORT_CATEGORY, STOCK_SORT_DAYS};
+        dialog()
+                .setTitle("Ordenar estoque")
+                .setItems(options, (dialog, which) -> {
+                    stockSortMode = modes[which];
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_STOCK_SORT_MODE, stockSortMode).apply();
+                    showStockWindow(false);
+                })
+                .show();
     }
 
     private void addSpendingScreen() {
@@ -3871,7 +3960,10 @@ public class MainActivity extends Activity {
     }
 
     private void showStockOptions(StockEntry entry) {
-        String[] options = new String[]{"Editar quantidade", "Editar categoria", "Dar baixa"};
+        boolean selected = entry != null && selectedStockIds.contains(entry.id) && !selectedStockIds.isEmpty();
+        String[] options = selected
+                ? new String[]{"Editar quantidade", "Editar categoria", "Dar baixa", "Dar baixa em todos"}
+                : new String[]{"Editar quantidade", "Editar categoria", "Dar baixa"};
         dialog()
                 .setTitle(entry.name)
                 .setItems(options, (dialog, which) -> {
@@ -3879,8 +3971,10 @@ public class MainActivity extends Activity {
                         promptEditStockQuantity(entry);
                     } else if (which == 1) {
                         promptEditStockCategory(entry);
-                    } else {
+                    } else if (which == 2) {
                         confirmCheckoutStock(entry);
+                    } else {
+                        confirmCheckoutSelectedStock();
                     }
                 })
                 .show();
@@ -3901,6 +3995,35 @@ public class MainActivity extends Activity {
         entry.consumedAt = System.currentTimeMillis();
         entry.updatedAt = entry.consumedAt;
         stockHistory.add(0, entry);
+        saveStock();
+        saveStockHistory();
+        markStockHistoryPending();
+        showStockWindow(false);
+    }
+
+    private void confirmCheckoutSelectedStock() {
+        List<StockEntry> rows = selectedStockEntries();
+        if (rows.isEmpty()) return;
+        dialog()
+                .setTitle("Dar baixa em todos?")
+                .setMessage(rows.size() + " item(ns) selecionado(s) sair\u00e3o do estoque atual e ficar\u00e3o no hist\u00f3rico.")
+                .setPositiveButton("Dar baixa", (dialog, which) -> checkoutSelectedStock(rows))
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void checkoutSelectedStock(List<StockEntry> rows) {
+        if (rows == null || rows.isEmpty()) return;
+        rememberStockUndo();
+        long now = System.currentTimeMillis();
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            StockEntry entry = rows.get(i);
+            if (!stock.remove(entry)) continue;
+            entry.consumedAt = now;
+            entry.updatedAt = now;
+            stockHistory.add(0, entry);
+        }
+        selectedStockIds.clear();
         saveStock();
         saveStockHistory();
         markStockHistoryPending();
@@ -5212,6 +5335,14 @@ public class MainActivity extends Activity {
 
     private int homeButtonSize() {
         return dp(72);
+    }
+
+    private int listActionButtonSize(boolean locked) {
+        int count = locked ? 4 : 5;
+        int available = getResources().getDisplayMetrics().widthPixels - dp(72);
+        int totalMargins = dp(8) * (count - 1);
+        int fitted = (available - totalMargins) / count;
+        return Math.max(dp(42), Math.min(homeButtonSize(), fitted));
     }
 
     private static class PriceHit {

@@ -515,7 +515,12 @@ public class MainActivity extends Activity {
         topLine.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
-        topLine.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.setGravity(Gravity.CENTER_VERTICAL);
+        titleBlock.setPadding(0, 0, dp(10), 0);
+        topLine.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
         int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);
 
         LinearLayout sideControls = new LinearLayout(this);
@@ -551,19 +556,19 @@ public class MainActivity extends Activity {
         title.setTextColor(primaryText());
         title.setTextSize(28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, dp(6), 0, 0);
-        header.addView(title);
+        title.setPadding(0, 0, 0, 0);
+        titleBlock.addView(title);
 
         TextView subtitle = new TextView(this);
         subtitle.setText(subheading);
         subtitle.setTextColor(mutedText());
         subtitle.setTextSize(14);
-        subtitle.setPadding(0, dp(4), 0, dp(14));
-        header.addView(subtitle);
+        subtitle.setPadding(0, dp(4), 0, 0);
+        titleBlock.addView(subtitle);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        header.addView(actions, matchWrap());
+        header.addView(actions, matchWrapWithTop(dp(14)));
 
         if (listOpen) {
             ShoppingList current = lists.get(selectedIndex);

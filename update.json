@@ -1,9 +1,9 @@
 {
-  "versionCode": 74,
-  "versionName": "4.43",
+  "versionCode": 75,
+  "versionName": "4.44",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "dbc9b4b57a14e785d3530ae5c0ae19d1ecdc7bc63b4449f40997ca09f939c477",
-  "sizeBytes": 40433630,
-  "notes": "Atualiza identidade visual com novo logo, splash, icone e fundos por tela nos temas claro e escuro."
+  "sha256": "3681df7a82604663f77a0077df7f412329802c3be57660cb7c7dac887a012c3e",
+  "sizeBytes": 39420288,
+  "notes": "Reposiciona o logotipo no topo, amplia a marca e remove fundos indesejados do logo e do icone."
 }

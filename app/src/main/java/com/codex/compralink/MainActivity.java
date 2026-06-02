@@ -500,6 +500,9 @@ public class MainActivity extends Activity {
     }
 
     private void addTopHeader(String heading, String subheading, boolean listOpen) {
+        boolean homeHeader = !listOpen && homeTab == 0;
+        addBrandBanner(homeHeader);
+
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(18), dp(18), dp(18), dp(18));
@@ -512,15 +515,7 @@ public class MainActivity extends Activity {
         topLine.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
-        ImageView brand = new ImageView(this);
-        brand.setImageResource(isDarkTheme() ? R.drawable.brand_logo_dark : R.drawable.brand_logo_light);
-        brand.setAdjustViewBounds(true);
-        brand.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        brand.setPadding(0, 0, dp(10), 0);
-        brand.setOnClickListener(v -> registerSecretLogoTap());
-        topLine.addView(brand, new LinearLayout.LayoutParams(0, dp(!listOpen && homeTab == 0 ? 72 : 58), 1));
-
-        boolean homeHeader = !listOpen && homeTab == 0;
+        topLine.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
         int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);
 
         LinearLayout sideControls = new LinearLayout(this);
@@ -668,6 +663,27 @@ public class MainActivity extends Activity {
             }
 
         }
+    }
+
+    private void addBrandBanner(boolean homeHeader) {
+        FrameLayout banner = new FrameLayout(this);
+        banner.setBackgroundColor(isDarkTheme() ? cardBg() : Color.TRANSPARENT);
+
+        ImageView brand = new ImageView(this);
+        brand.setImageResource(isDarkTheme() ? R.drawable.brand_logo_dark : R.drawable.brand_logo_light);
+        brand.setAdjustViewBounds(true);
+        brand.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        brand.setPadding(dp(2), 0, dp(2), 0);
+        brand.setOnClickListener(v -> registerSecretLogoTap());
+        banner.addView(brand, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER
+        ));
+
+        LinearLayout.LayoutParams params = matchHeight(homeHeader ? dp(116) : dp(96));
+        params.setMargins(0, 0, 0, dp(10));
+        root.addView(banner, params);
     }
 
     private void showHomeMenu(View anchor) {

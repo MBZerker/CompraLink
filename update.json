@@ -1,9 +1,9 @@
 {
-  "versionCode": 71,
-  "versionName": "4.40",
+  "versionCode": 72,
+  "versionName": "4.41",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "d3d0c22ce02ed2aedf800e44e658b33b0dd22587fad20d8c1afea9fad43c09aa",
-  "sizeBytes": 26305120,
-  "notes": "Reposiciona Menu e QR Code no topo e aplica cor aleatoria com contraste ao criar novas listas."
+  "sha256": "e70482478a708d6f7a62d782b947d5b9c54fedbea14e38663e534e2771b06e55",
+  "sizeBytes": 26306555,
+  "notes": "Adiciona autocomplete de nomes de listas, move adicionar item para popup e troca voltar por botao com icone."
 }

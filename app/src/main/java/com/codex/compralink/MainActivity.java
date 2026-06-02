@@ -455,8 +455,6 @@ public class MainActivity extends Activity {
                     ? "Esta lista esta no historico. Voce pode copiar ou remover, mas ela permanece protegida."
                     : "Desbloqueie pelo cadeado para editar esta lista.";
             root.addView(infoCard("Lista protegida", message), matchWrapWithTop(dp(10)));
-        } else {
-            addInputCard();
         }
 
         addSearchBar("Pesquisar itens da lista", listSearch, value -> {
@@ -553,7 +551,8 @@ public class MainActivity extends Activity {
         header.addView(actions, matchWrap());
 
         if (listOpen) {
-            Button back = button("Voltar", softButtonBg(), primaryText());
+            int listActionSize = isCompactWidth() ? dp(48) : homeButtonSize();
+            ImageButton back = imageIconButton(R.drawable.ic_back, softButtonBg(), primaryText());
             back.setOnClickListener(v -> {
                 selectedIndex = -1;
                 if (selectedFromHistory) {
@@ -563,7 +562,16 @@ public class MainActivity extends Activity {
                     showHomeScreen();
                 }
             });
-            actions.addView(back, weighted());
+            actions.addView(back, new LinearLayout.LayoutParams(listActionSize, listActionSize));
+
+            ShoppingList current = lists.get(selectedIndex);
+            if (!current.locked) {
+                ImageButton add = imageIconButton(R.drawable.ic_plus, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                add.setOnClickListener(v -> promptAddItem());
+                LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
+                addParams.setMargins(dp(8), 0, 0, 0);
+                actions.addView(add, addParams);
+            }
 
             ImageButton share = imageIconButton(R.drawable.ic_share_nodes, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
             boolean canShare = selectedIndex >= 0 && !lists.get(selectedIndex).items.isEmpty();
@@ -572,17 +580,16 @@ public class MainActivity extends Activity {
             share.setOnClickListener(v -> {
                 if (canShare) shareSelectedList();
             });
-            LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
+            LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
             shareParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(share, shareParams);
 
             ImageButton print = imageIconButton(R.drawable.ic_print, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
             print.setOnClickListener(v -> showPrintPreview());
-            LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
+            LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
             printParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(print, printParams);
 
-            ShoppingList current = lists.get(selectedIndex);
             ImageButton sort = imageIconButton(sortIcon(current.sortMode), softButtonBg(), primaryText());
             sort.setEnabled(!current.locked);
             sort.setAlpha(current.locked ? 0.38f : 1.0f);
@@ -592,7 +599,7 @@ public class MainActivity extends Activity {
                 save();
                 showListScreen();
             });
-            LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
+            LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
             sortParams.setMargins(dp(8), 0, 0, 0);
             actions.addView(sort, sortParams);
 
@@ -2836,6 +2843,10 @@ public class MainActivity extends Activity {
     }
 
     private void setupProductSuggestions() {
+        setupProductSuggestions(itemInput, priceInput, unitInput);
+    }
+
+    private void setupProductSuggestions(AutoCompleteTextView productInput, EditText priceField, EditText unitField) {
         Map<String, ProductSuggestion> latest = productSuggestionMap();
         if (latest.isEmpty()) return;
         List<ProductSuggestion> suggestions = new ArrayList<>(latest.values());
@@ -2886,17 +2897,77 @@ public class MainActivity extends Activity {
                 };
             }
         };
-        itemInput.setAdapter(adapter);
-        itemInput.setThreshold(1);
-        itemInput.setDropDownBackgroundDrawable(round(cardBg(), dp(12), stroke(), 1));
-        itemInput.setOnItemClickListener((parent, view, position, id) -> {
+        productInput.setAdapter(adapter);
+        productInput.setThreshold(1);
+        productInput.setDropDownBackgroundDrawable(round(cardBg(), dp(12), stroke(), 1));
+        productInput.setOnItemClickListener((parent, view, position, id) -> {
             ProductSuggestion suggestion = (ProductSuggestion) parent.getItemAtPosition(position);
             if (suggestion == null) return;
-            itemInput.setText(suggestion.name);
-            itemInput.setSelection(itemInput.getText().length());
-            if (suggestion.price > 0) priceInput.setText(formatPriceInput(suggestion.price));
-            unitInput.setText(suggestion.unit == null || suggestion.unit.trim().isEmpty() ? "1" : suggestion.unit);
-            itemInput.dismissDropDown();
+            productInput.setText(suggestion.name);
+            productInput.setSelection(productInput.getText().length());
+            if (suggestion.price > 0) priceField.setText(formatPriceInput(suggestion.price));
+            unitField.setText(suggestion.unit == null || suggestion.unit.trim().isEmpty() ? "1" : suggestion.unit);
+            productInput.dismissDropDown();
+        });
+    }
+
+    private void setupListNameSuggestions(AutoCompleteTextView input) {
+        LinkedHashSet<String> unique = new LinkedHashSet<>();
+        for (ShoppingList list : lists) {
+            if (list.name != null && !list.name.trim().isEmpty()) unique.add(list.name.trim());
+        }
+        if (unique.isEmpty()) return;
+        List<String> names = new ArrayList<>(unique);
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_dropdown_item_1line, names) {
+            private final List<String> all = new ArrayList<>(names);
+
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                view.setBackgroundColor(cardBg());
+                if (view instanceof TextView) {
+                    TextView text = (TextView) view;
+                    text.setTextColor(primaryText());
+                    text.setTextSize(15);
+                    text.setPadding(dp(12), dp(10), dp(12), dp(10));
+                }
+                return view;
+            }
+
+            @Override
+            public Filter getFilter() {
+                return new Filter() {
+                    @Override
+                    protected FilterResults performFiltering(CharSequence constraint) {
+                        String query = normalize(constraint == null ? "" : constraint.toString());
+                        List<String> filtered = new ArrayList<>();
+                        for (String name : all) {
+                            if (query.isEmpty() || normalize(name).contains(query)) filtered.add(name);
+                        }
+                        FilterResults results = new FilterResults();
+                        results.values = filtered;
+                        results.count = filtered.size();
+                        return results;
+                    }
+
+                    @Override
+                    protected void publishResults(CharSequence constraint, FilterResults results) {
+                        clear();
+                        if (results.values instanceof List) {
+                            for (Object value : (List<?>) results.values) add((String) value);
+                        }
+                        notifyDataSetChanged();
+                    }
+                };
+            }
+        };
+        input.setAdapter(adapter);
+        input.setThreshold(1);
+        input.setOnItemClickListener((parent, view, position, id) -> {
+            String value = (String) parent.getItemAtPosition(position);
+            input.setText(value);
+            input.setSelection(input.getText().length());
+            input.dismissDropDown();
         });
     }
 
@@ -3072,6 +3143,43 @@ public class MainActivity extends Activity {
         save();
         hideKeyboard();
         showListScreen();
+    }
+
+    private void promptAddItem() {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        LinearLayout form = dialogForm();
+        AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        configureSelectAll(name);
+        EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(price);
+        EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(unit);
+        unit.setText("1");
+        configureSelectAll(unit);
+        EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        note.setSingleLine(false);
+        note.setMinLines(2);
+        setupProductSuggestions(name, price, unit);
+        form.addView(name, matchHeight(dp(54)));
+        form.addView(price, matchWrapWithTop(dp(8)));
+        form.addView(unit, matchWrapWithTop(dp(8)));
+        form.addView(note, matchWrapWithTop(dp(8)));
+        dialog()
+                .setTitle("Adicionar item")
+                .setView(form)
+                .setPositiveButton("Adicionar", (dialog, which) -> {
+                    String text = name.getText().toString().trim();
+                    if (text.isEmpty()) return;
+                    String unitText = unit.getText().toString().trim();
+                    if (unitText.isEmpty()) unitText = "1";
+                    ShoppingItem item = new ShoppingItem(text, parsePrice(price.getText().toString()), unitText);
+                    item.note = note.getText().toString().trim();
+                    lists.get(selectedIndex).items.add(item);
+                    save();
+                    showListScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private void animateItemCheckMove(View row, ShoppingList list, boolean checked, Runnable after) {
@@ -3259,18 +3367,21 @@ public class MainActivity extends Activity {
     private void promptEditItem(ShoppingItem item) {
         if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
         LinearLayout form = dialogForm();
-        EditText name = dialogInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
+        configureSelectAll(name);
         EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         setDecimalInput(price);
         if (item.price > 0) price.setText(formatPriceInput(item.price));
         EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         setDecimalInput(unit);
         unit.setText(item.unit == null || item.unit.isEmpty() ? "1" : item.unit);
+        configureSelectAll(unit);
         EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         note.setSingleLine(false);
         note.setMinLines(2);
         note.setText(item.note == null ? "" : item.note);
+        setupProductSuggestions(name, price, unit);
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
@@ -3412,7 +3523,8 @@ public class MainActivity extends Activity {
 
     private void promptNewList() {
         LinearLayout form = dialogForm();
-        EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        AutoCompleteTextView input = dialogAutoCompleteInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        setupListNameSuggestions(input);
         form.addView(input, matchHeight(dp(54)));
         CheckBox saveToStock = new CheckBox(this);
         saveToStock.setText("Salvar itens marcados no estoque");
@@ -4586,6 +4698,28 @@ public class MainActivity extends Activity {
         input.setPadding(dp(12), 0, dp(12), 0);
         input.setInputType(inputType);
         return input;
+    }
+
+    private AutoCompleteTextView dialogAutoCompleteInput(String hint, int inputType) {
+        AutoCompleteTextView input = new AutoCompleteTextView(this);
+        input.setHint(hint);
+        input.setSingleLine(true);
+        input.setTextColor(primaryText());
+        input.setHintTextColor(mutedText());
+        input.setLinkTextColor(accent());
+        input.setBackground(round(inputBg(), dp(12), stroke(), 1));
+        input.setPadding(dp(12), 0, dp(12), 0);
+        input.setInputType(inputType);
+        input.setDropDownBackgroundDrawable(round(cardBg(), dp(12), stroke(), 1));
+        return input;
+    }
+
+    private void configureSelectAll(EditText input) {
+        input.setSelectAllOnFocus(true);
+        input.setOnClickListener(v -> input.selectAll());
+        input.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) input.selectAll();
+        });
     }
 
     private void setDecimalInput(EditText input) {

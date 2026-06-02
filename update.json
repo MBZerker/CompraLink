@@ -1,9 +1,9 @@
 {
-  "versionCode": 75,
-  "versionName": "4.44",
+  "versionCode": 76,
+  "versionName": "4.45",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "3681df7a82604663f77a0077df7f412329802c3be57660cb7c7dac887a012c3e",
-  "sizeBytes": 39420288,
-  "notes": "Reposiciona o logotipo no topo, amplia a marca e remove fundos indesejados do logo e do icone."
+  "sha256": "f4573737c593ec5958a3cb5283bd60fb6913f95a0158c15042fd16cdacfaef93",
+  "sizeBytes": 39420289,
+  "notes": "Usa o logotipo transparente nos dois temas e remove o fundo do banner da marca."
 }

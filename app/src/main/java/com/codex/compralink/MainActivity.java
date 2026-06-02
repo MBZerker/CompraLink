@@ -667,10 +667,10 @@ public class MainActivity extends Activity {
 
     private void addBrandBanner(boolean homeHeader) {
         FrameLayout banner = new FrameLayout(this);
-        banner.setBackgroundColor(isDarkTheme() ? cardBg() : Color.TRANSPARENT);
+        banner.setBackgroundColor(Color.TRANSPARENT);
 
         ImageView brand = new ImageView(this);
-        brand.setImageResource(isDarkTheme() ? R.drawable.brand_logo_dark : R.drawable.brand_logo_light);
+        brand.setImageResource(R.drawable.brand_logo_light);
         brand.setAdjustViewBounds(true);
         brand.setScaleType(ImageView.ScaleType.FIT_CENTER);
         brand.setPadding(dp(2), 0, dp(2), 0);

@@ -1,9 +1,9 @@
 {
-  "versionCode": 73,
-  "versionName": "4.42",
+  "versionCode": 74,
+  "versionName": "4.43",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "e900b7329f4f90052490d94d5e4c0fe5c60f589e291f514fe5f6a88f9d7d58e7",
-  "sizeBytes": 26306554,
-  "notes": "Adiciona selecao multipla e ordenacao no estoque, baixa em lote e ajusta tamanho dos botoes da lista para caber na tela."
+  "sha256": "dbc9b4b57a14e785d3530ae5c0ae19d1ecdc7bc63b4449f40997ca09f939c477",
+  "sizeBytes": 40433630,
+  "notes": "Atualiza identidade visual com novo logo, splash, icone e fundos por tela nos temas claro e escuro."
 }

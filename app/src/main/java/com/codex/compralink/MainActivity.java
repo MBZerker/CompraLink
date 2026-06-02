@@ -330,35 +330,16 @@ public class MainActivity extends Activity {
 
     private void showSplash() {
         applySystemBars();
-        LinearLayout splash = new LinearLayout(this);
-        splash.setOrientation(LinearLayout.VERTICAL);
-        splash.setGravity(Gravity.CENTER);
-        splash.setPadding(dp(24), statusBarHeight() + dp(56), dp(24), dp(24));
-        splash.setBackgroundColor(screenBg());
+        FrameLayout splash = new FrameLayout(this);
+        splash.setBackgroundColor(Color.WHITE);
 
         ImageView image = new ImageView(this);
-        image.setImageResource(getResources().getIdentifier("splash_art", "drawable", getPackageName()));
-        image.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
-        splash.addView(image, new LinearLayout.LayoutParams(
+        image.setImageResource(R.drawable.splash_art);
+        image.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        splash.addView(image, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
+                ViewGroup.LayoutParams.MATCH_PARENT
         ));
-
-        TextView name = new TextView(this);
-        name.setText("Check Mercado");
-        name.setTextColor(accent());
-        name.setTextSize(34);
-        name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setGravity(Gravity.CENTER);
-        splash.addView(name, matchWrapWithTop(dp(18)));
-
-        TextView tag = new TextView(this);
-        tag.setText("listas, precos e compartilhamento");
-        tag.setTextColor(mutedText());
-        tag.setTextSize(15);
-        tag.setGravity(Gravity.CENTER);
-        splash.addView(tag, matchWrapWithTop(dp(4)));
 
         setContentView(splash);
     }
@@ -482,15 +463,40 @@ public class MainActivity extends Activity {
         root.setPadding(dp(18), statusBarHeight() + dp(20), dp(18), dp(22));
     }
 
-    private ScrollView rootScroll() {
+    private View rootScroll() {
+        FrameLayout shell = new FrameLayout(this);
+        shell.setBackgroundColor(screenBg());
+
+        ImageView background = new ImageView(this);
+        background.setImageResource(backgroundForCurrentScreen());
+        background.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        background.setAlpha(1f);
+        shell.addView(background, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
-        scrollView.setBackgroundColor(screenBg());
+        scrollView.setBackgroundColor(Color.TRANSPARENT);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
-        return scrollView;
+        shell.addView(scrollView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        return shell;
+    }
+
+    private int backgroundForCurrentScreen() {
+        boolean dark = isDarkTheme();
+        if (selectedIndex >= 0 || homeTab == 5) return dark ? R.drawable.bg_list_dark : R.drawable.bg_list_light;
+        if (homeTab == 1 || homeTab == 6) return dark ? R.drawable.bg_stock_dark : R.drawable.bg_stock_light;
+        if (homeTab == 2) return dark ? R.drawable.bg_spending_dark : R.drawable.bg_spending_light;
+        if (homeTab == 3) return dark ? R.drawable.bg_history_dark : R.drawable.bg_history_light;
+        return dark ? R.drawable.bg_home_dark : R.drawable.bg_home_light;
     }
 
     private void addTopHeader(String heading, String subheading, boolean listOpen) {
@@ -506,9 +512,13 @@ public class MainActivity extends Activity {
         topLine.setGravity(Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
-        BrandLogoView brand = new BrandLogoView(this);
+        ImageView brand = new ImageView(this);
+        brand.setImageResource(isDarkTheme() ? R.drawable.brand_logo_dark : R.drawable.brand_logo_light);
+        brand.setAdjustViewBounds(true);
+        brand.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        brand.setPadding(0, 0, dp(10), 0);
         brand.setOnClickListener(v -> registerSecretLogoTap());
-        topLine.addView(brand, new LinearLayout.LayoutParams(0, dp(58), 1));
+        topLine.addView(brand, new LinearLayout.LayoutParams(0, dp(!listOpen && homeTab == 0 ? 72 : 58), 1));
 
         boolean homeHeader = !listOpen && homeTab == 0;
         int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);

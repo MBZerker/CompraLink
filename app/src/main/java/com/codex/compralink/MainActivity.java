@@ -670,7 +670,7 @@ public class MainActivity extends Activity {
         banner.setBackgroundColor(Color.TRANSPARENT);
 
         ImageView brand = new ImageView(this);
-        brand.setImageResource(R.drawable.brand_logo_light);
+        brand.setImageResource(isDarkTheme() ? R.drawable.brand_logo_dark : R.drawable.brand_logo_light);
         brand.setAdjustViewBounds(true);
         brand.setScaleType(ImageView.ScaleType.FIT_CENTER);
         brand.setPadding(dp(2), 0, dp(2), 0);

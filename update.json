@@ -1,9 +1,9 @@
 {
-  "versionCode": 76,
-  "versionName": "4.45",
+  "versionCode": 77,
+  "versionName": "4.46",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "f4573737c593ec5958a3cb5283bd60fb6913f95a0158c15042fd16cdacfaef93",
-  "sizeBytes": 39420289,
-  "notes": "Usa o logotipo transparente nos dois temas e remove o fundo do banner da marca."
+  "sha256": "e9854ca0a89d3f4ac45e5e2a630cc368fbec5d5c5030cd26af9612b379576564",
+  "sizeBytes": 39420284,
+  "notes": "Corrige falhas claras no logotipo do modo escuro usando a arte escura transparente."
 }

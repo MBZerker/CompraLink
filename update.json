@@ -1,9 +1,9 @@
 {
-  "versionCode": 78,
-  "versionName": "4.47",
+  "versionCode": 79,
+  "versionName": "4.48",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "6152b54cb8f0c18dfc37ba79991f5062b447c8d4bda4f17ed435d1fbaacebf56",
-  "sizeBytes": 39420284,
-  "notes": "Reorganiza o frame superior para remover espaco vazio apos mover o logotipo para o topo."
+  "sha256": "66c958cec882e15681f0d32fcb6cb87588521a1a068675480606f7ecf268eb61",
+  "sizeBytes": 39420282,
+  "notes": "Mantem a posicao da rolagem ao selecionar itens no estoque e faz o logotipo piscar ao toque."
 }

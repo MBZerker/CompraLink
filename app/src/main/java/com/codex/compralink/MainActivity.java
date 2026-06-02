@@ -15,6 +15,7 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.content.res.ColorStateList;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -44,6 +45,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowManager;
@@ -203,6 +205,9 @@ public class MainActivity extends Activity {
     private boolean stockHistorySortDesc = true;
     private int stockSortMode = STOCK_SORT_DATE;
     private final LinkedHashSet<String> selectedStockIds = new LinkedHashSet<>();
+    private String pendingStockScrollAnchorId;
+    private int pendingStockScrollAnchorOffset;
+    private View pendingStockScrollAnchorView;
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
@@ -487,6 +492,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
+        restorePendingStockScroll(scrollView);
         return shell;
     }
 
@@ -679,7 +685,10 @@ public class MainActivity extends Activity {
         brand.setAdjustViewBounds(true);
         brand.setScaleType(ImageView.ScaleType.FIT_CENTER);
         brand.setPadding(dp(2), 0, dp(2), 0);
-        brand.setOnClickListener(v -> registerSecretLogoTap());
+        brand.setOnClickListener(v -> {
+            blinkBrandLogo(brand);
+            registerSecretLogoTap();
+        });
         banner.addView(brand, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -689,6 +698,23 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = matchHeight(homeHeader ? dp(116) : dp(96));
         params.setMargins(0, 0, 0, dp(10));
         root.addView(banner, params);
+    }
+
+    private void blinkBrandLogo(ImageView brand) {
+        Handler handler = new Handler(Looper.getMainLooper());
+        int steps = 15;
+        for (int i = 0; i <= steps; i++) {
+            final int step = i;
+            handler.postDelayed(() -> {
+                if (step >= steps) {
+                    brand.clearColorFilter();
+                    brand.setAlpha(1f);
+                    return;
+                }
+                int color = step % 2 == 0 ? Color.WHITE : Color.BLACK;
+                brand.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+            }, step * 100L);
+        }
     }
 
     private void showHomeMenu(View anchor) {
@@ -1402,6 +1428,7 @@ public class MainActivity extends Activity {
     }
 
     private void addStockScreen() {
+        pendingStockScrollAnchorView = null;
         if (stock.isEmpty()) {
             selectedStockIds.clear();
             root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
@@ -1426,7 +1453,10 @@ public class MainActivity extends Activity {
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
             boolean selected = selectedStockIds.contains(entry.id);
             card.setBackground(round(selected ? tintSurface(accent()) : cardBg(), dp(16), selected ? accent() : stroke(), selected ? 2 : 1));
-            card.setOnClickListener(v -> toggleStockSelection(entry));
+            if (entry.id != null && entry.id.equals(pendingStockScrollAnchorId)) {
+                pendingStockScrollAnchorView = card;
+            }
+            card.setOnClickListener(v -> toggleStockSelection(entry, v));
             card.setOnLongClickListener(v -> {
                 showStockOptions(entry);
                 return true;
@@ -1456,14 +1486,42 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void toggleStockSelection(StockEntry entry) {
+    private void toggleStockSelection(StockEntry entry, View source) {
         if (entry == null || entry.id == null) return;
+        captureStockScrollAnchor(entry.id, source);
         if (selectedStockIds.contains(entry.id)) {
             selectedStockIds.remove(entry.id);
         } else {
             selectedStockIds.add(entry.id);
         }
         showStockWindow(false);
+    }
+
+    private void captureStockScrollAnchor(String entryId, View source) {
+        if (entryId == null || source == null) return;
+        ScrollView scrollView = parentScrollView(source);
+        if (scrollView == null) return;
+        pendingStockScrollAnchorId = entryId;
+        pendingStockScrollAnchorOffset = source.getTop() - scrollView.getScrollY();
+    }
+
+    private ScrollView parentScrollView(View view) {
+        View current = view;
+        while (current != null) {
+            if (current instanceof ScrollView) return (ScrollView) current;
+            ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return null;
+    }
+
+    private void restorePendingStockScroll(ScrollView scrollView) {
+        if (pendingStockScrollAnchorId == null || pendingStockScrollAnchorView == null) return;
+        View target = pendingStockScrollAnchorView;
+        int offset = pendingStockScrollAnchorOffset;
+        pendingStockScrollAnchorId = null;
+        pendingStockScrollAnchorView = null;
+        scrollView.post(() -> scrollView.scrollTo(0, Math.max(0, target.getTop() - offset)));
     }
 
     private void pruneSelectedStockIds() {

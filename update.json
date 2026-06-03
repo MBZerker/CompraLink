@@ -1,9 +1,9 @@
 {
-  "versionCode": 79,
-  "versionName": "4.48",
+  "versionCode": 80,
+  "versionName": "4.49",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "66c958cec882e15681f0d32fcb6cb87588521a1a068675480606f7ecf268eb61",
-  "sizeBytes": 39420282,
-  "notes": "Mantem a posicao da rolagem ao selecionar itens no estoque e faz o logotipo piscar ao toque."
+  "sha256": "2e67d6562a0ba447b74ef6732db2aa382bcdd6fbdfd14d8a071199bbe99aee77",
+  "sizeBytes": 39420288,
+  "notes": "Ajusta a piscada do logotipo para usar apenas alpha e preservar a rolagem ao selecionar itens no estoque."
 }

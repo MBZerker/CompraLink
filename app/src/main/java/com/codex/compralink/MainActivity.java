@@ -15,7 +15,6 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.content.res.ColorStateList;
 import android.graphics.Paint;
-import android.graphics.PorterDuff;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
@@ -707,12 +706,10 @@ public class MainActivity extends Activity {
             final int step = i;
             handler.postDelayed(() -> {
                 if (step >= steps) {
-                    brand.clearColorFilter();
                     brand.setAlpha(1f);
                     return;
                 }
-                int color = step % 2 == 0 ? Color.WHITE : Color.BLACK;
-                brand.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+                brand.setAlpha(step % 2 == 0 ? 0f : 1f);
             }, step * 100L);
         }
     }

@@ -44,7 +44,6 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowManager;
@@ -204,9 +203,7 @@ public class MainActivity extends Activity {
     private boolean stockHistorySortDesc = true;
     private int stockSortMode = STOCK_SORT_DATE;
     private final LinkedHashSet<String> selectedStockIds = new LinkedHashSet<>();
-    private String pendingStockScrollAnchorId;
-    private int pendingStockScrollAnchorOffset;
-    private View pendingStockScrollAnchorView;
+    private TextView stockSelectionStatus;
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
@@ -491,7 +488,6 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
-        restorePendingStockScroll(scrollView);
         return shell;
     }
 
@@ -1425,16 +1421,14 @@ public class MainActivity extends Activity {
     }
 
     private void addStockScreen() {
-        pendingStockScrollAnchorView = null;
+        stockSelectionStatus = null;
         if (stock.isEmpty()) {
             selectedStockIds.clear();
             root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
             return;
         }
         pruneSelectedStockIds();
-        if (!selectedStockIds.isEmpty()) {
-            root.addView(infoCard("Selecionados", selectedStockIds.size() + " item(ns) selecionado(s). Segure um item selecionado para dar baixa em todos."), matchWrapWithTop(dp(10)));
-        }
+        root.addView(stockSelectionCard(), matchWrapWithTop(dp(10)));
         List<StockEntry> rows = new ArrayList<>(stock);
         for (int i = rows.size() - 1; i >= 0; i--) {
             if (!matchesStockSearch(rows.get(i), stockSearch)) rows.remove(i);
@@ -1449,22 +1443,17 @@ public class MainActivity extends Activity {
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
             boolean selected = selectedStockIds.contains(entry.id);
-            card.setBackground(round(selected ? tintSurface(accent()) : cardBg(), dp(16), selected ? accent() : stroke(), selected ? 2 : 1));
-            if (entry.id != null && entry.id.equals(pendingStockScrollAnchorId)) {
-                pendingStockScrollAnchorView = card;
-            }
-            card.setOnClickListener(v -> toggleStockSelection(entry, v));
             card.setOnLongClickListener(v -> {
                 showStockOptions(entry);
                 return true;
             });
             TextView name = label(entry.name, 18, true, primaryText());
             card.addView(name);
-            if (selected) {
-                TextView marker = label("Selecionado", 13, true, accent());
-                marker.setPadding(0, dp(2), 0, 0);
-                card.addView(marker);
-            }
+            TextView marker = label(selected ? "Selecionado" : " ", 13, true, accent());
+            marker.setPadding(0, dp(2), 0, 0);
+            card.addView(marker);
+            applyStockSelectionState(card, marker, selected);
+            card.setOnClickListener(v -> toggleStockSelection(entry, card, marker));
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
             String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
             TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
@@ -1483,42 +1472,43 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void toggleStockSelection(StockEntry entry, View source) {
+    private View stockSelectionCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(10), dp(14), dp(10));
+        card.setBackground(round(inputBg(), dp(14), stroke(), 1));
+        stockSelectionStatus = label("", 13, false, mutedText());
+        card.addView(stockSelectionStatus);
+        updateStockSelectionStatus();
+        return card;
+    }
+
+    private void updateStockSelectionStatus() {
+        if (stockSelectionStatus == null) return;
+        int count = selectedStockIds.size();
+        if (count == 0) {
+            stockSelectionStatus.setText("Toque nos itens para selecionar.");
+            stockSelectionStatus.setTextColor(mutedText());
+        } else {
+            stockSelectionStatus.setText(count + " item(ns) selecionado(s). Segure um item selecionado para dar baixa em todos.");
+            stockSelectionStatus.setTextColor(accent());
+        }
+    }
+
+    private void toggleStockSelection(StockEntry entry, LinearLayout card, TextView marker) {
         if (entry == null || entry.id == null) return;
-        captureStockScrollAnchor(entry.id, source);
         if (selectedStockIds.contains(entry.id)) {
             selectedStockIds.remove(entry.id);
         } else {
             selectedStockIds.add(entry.id);
         }
-        showStockWindow(false);
+        applyStockSelectionState(card, marker, selectedStockIds.contains(entry.id));
+        updateStockSelectionStatus();
     }
 
-    private void captureStockScrollAnchor(String entryId, View source) {
-        if (entryId == null || source == null) return;
-        ScrollView scrollView = parentScrollView(source);
-        if (scrollView == null) return;
-        pendingStockScrollAnchorId = entryId;
-        pendingStockScrollAnchorOffset = source.getTop() - scrollView.getScrollY();
-    }
-
-    private ScrollView parentScrollView(View view) {
-        View current = view;
-        while (current != null) {
-            if (current instanceof ScrollView) return (ScrollView) current;
-            ViewParent parent = current.getParent();
-            current = parent instanceof View ? (View) parent : null;
-        }
-        return null;
-    }
-
-    private void restorePendingStockScroll(ScrollView scrollView) {
-        if (pendingStockScrollAnchorId == null || pendingStockScrollAnchorView == null) return;
-        View target = pendingStockScrollAnchorView;
-        int offset = pendingStockScrollAnchorOffset;
-        pendingStockScrollAnchorId = null;
-        pendingStockScrollAnchorView = null;
-        scrollView.post(() -> scrollView.scrollTo(0, Math.max(0, target.getTop() - offset)));
+    private void applyStockSelectionState(LinearLayout card, TextView marker, boolean selected) {
+        card.setBackground(round(selected ? tintSurface(accent()) : cardBg(), dp(16), selected ? accent() : stroke(), selected ? 2 : 1));
+        marker.setText(selected ? "Selecionado" : " ");
     }
 
     private void pruneSelectedStockIds() {

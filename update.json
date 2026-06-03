@@ -1,9 +1,9 @@
 {
-  "versionCode": 86,
-  "versionName": "4.55",
+  "versionCode": 87,
+  "versionName": "4.56",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "ba8dd831fb86e3128bdc0c271bb3c41c6dee626e372fd0c8650f9dc04a9c30bd",
-  "sizeBytes": 39421008,
-  "notes": "Aplica contornos neon nativos e reutilizaveis na tela inicial, mantendo a logica existente."
+  "sha256": "e371d9f471a386a24a1cf72b085ef1dfdab40020f14b0d14e0462b3454317f03",
+  "sizeBytes": 39421020,
+  "notes": "Suaviza o neon, remove Gastos da tela inicial, refina filtro/abas e corrige cores do menu escuro."
 }

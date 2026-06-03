@@ -130,25 +130,37 @@ final class CheckMercadoNeonUi {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeCap(Paint.Cap.ROUND);
             paint.setStrokeWidth(strongStroke);
-            paint.setColor(alpha(glowColor, dimmed ? 42 : 68));
-            drawTopLeftSegments(canvas);
+            drawTopLeftSegments(canvas, glowColor, dimmed ? 36 : 54);
 
             paint.setStrokeWidth(Math.max(stroke + 1f, strongStroke * 0.52f));
-            paint.setColor(alpha(glowColor, dimmed ? 92 : 235));
-            drawTopLeftSegments(canvas);
+            drawTopLeftSegments(canvas, glowColor, dimmed ? 82 : 210);
             paint.setStrokeCap(Paint.Cap.BUTT);
+            paint.setShader(null);
         }
 
-        private void drawTopLeftSegments(Canvas canvas) {
+        private void drawTopLeftSegments(Canvas canvas, int glowColor, int startAlpha) {
             float left = rect.left;
             float top = rect.top;
             float right = rect.right;
             float bottom = rect.bottom;
+            float topEnd = left + (right - left) * 0.46f;
+            float leftEnd = top + (bottom - top) * 0.46f;
             float arcSize = radius * 2f;
             RectF arc = new RectF(left, top, left + arcSize, top + arcSize);
+            paint.setShader(null);
+            paint.setColor(alpha(glowColor, Math.max(28, startAlpha - 35)));
             canvas.drawArc(arc, 180f, 90f, false, paint);
-            canvas.drawLine(left + radius, top, left + (right - left) * 0.42f, top, paint);
-            canvas.drawLine(left, top + radius, left, top + (bottom - top) * 0.42f, paint);
+
+            paint.setShader(new LinearGradient(
+                    left + radius, top, topEnd, top,
+                    alpha(glowColor, startAlpha), alpha(glowColor, 0), Shader.TileMode.CLAMP));
+            canvas.drawLine(left + radius, top, topEnd, top, paint);
+
+            paint.setShader(new LinearGradient(
+                    left, top + radius, left, leftEnd,
+                    alpha(glowColor, startAlpha), alpha(glowColor, 0), Shader.TileMode.CLAMP));
+            canvas.drawLine(left, top + radius, left, leftEnd, paint);
+            paint.setShader(null);
         }
 
         @Override

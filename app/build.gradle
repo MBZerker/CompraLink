@@ -20,8 +20,8 @@ android {
         applicationId "com.codex.compralink"
         minSdk 23
         targetSdk 35
-        versionCode 86
-        versionName "4.55"
+        versionCode 87
+        versionName "4.56"
     }
 
     signingConfigs {

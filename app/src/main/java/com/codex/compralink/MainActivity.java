@@ -427,7 +427,9 @@ public class MainActivity extends Activity {
         selectedFromHistory = false;
         homeTab = spending ? 2 : 1;
         buildRoot();
-        addTopHeader("Estoque", spending ? "Gastos ficam dentro do estoque." : "Itens comprados e duracao estimada.", false);
+        addTopHeader(spending ? "Gastos" : "Estoque",
+                spending ? "Resumo e graficos das compras registradas." : "Itens comprados e duracao estimada.",
+                false);
         addStockTabs();
         if (spending) {
             addSpendingScreen();
@@ -652,7 +654,7 @@ public class MainActivity extends Activity {
                 mainActions.setOrientation(LinearLayout.HORIZONTAL);
                 mainActions.setGravity(Gravity.CENTER_HORIZONTAL);
                 actions.addView(mainActions, matchWrap());
-                int mainActionSize = homeMainActionSize(4);
+                int mainActionSize = homeMainActionSize(3);
 
                 ImageButton newList = homeImageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 if (neonHome()) applyNeonIconButton(newList, CheckMercadoNeonUi.GREEN);
@@ -679,13 +681,6 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
                 historyParams.setMargins(dp(8), 0, 0, 0);
                 mainActions.addView(history, historyParams);
-
-                ImageButton spending = homeImageIconButton(R.drawable.ic_report, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                if (neonHome()) applyNeonIconButton(spending, CheckMercadoNeonUi.CYAN);
-                spending.setOnClickListener(v -> showStockWindow(true));
-                LinearLayout.LayoutParams spendingParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
-                spendingParams.setMargins(dp(8), 0, 0, 0);
-                mainActions.addView(spending, spendingParams);
             }
 
         }
@@ -793,41 +788,76 @@ public class MainActivity extends Activity {
     }
 
     private void addStockTabs() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(12), 0, 0);
+        root.addView(row, matchWrap());
+
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
-        tabs.setPadding(0, dp(12), 0, 0);
-        root.addView(tabs, matchWrap());
-        addStockTabButton(tabs, "Estoque", false);
-        addStockTabButton(tabs, "Gastos", true);
+        tabs.setGravity(Gravity.CENTER_VERTICAL);
+        tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
+        tabs.setBackground(isDarkTheme() ? CheckMercadoNeonUi.panel(this) : round(inputBg(), dp(14), stroke(), 1));
+        row.addView(tabs, new LinearLayout.LayoutParams(0, dp(58), 1));
 
-        Button history = button("Historico", homeTab == 6 ? accent() : softButtonBg(), homeTab == 6 ? Color.WHITE : primaryText());
-        history.setTextSize(13);
-        history.setOnClickListener(v -> showStockHistoryWindow());
-        LinearLayout.LayoutParams historyParams = weighted();
-        historyParams.setMargins(dp(6), 0, 0, 0);
-        tabs.addView(history, historyParams);
+        addStockTabButton(tabs, "Estoque", R.drawable.ic_box, 1, () -> showStockWindow(false));
+        addStockTabDivider(tabs);
+        addStockTabButton(tabs, "Gastos", R.drawable.ic_report, 2, () -> showStockWindow(true));
+        addStockTabDivider(tabs);
+        View history = addStockTabButton(tabs, "Historico", R.drawable.ic_history, 6, this::showStockHistoryWindow);
         if (stockHistoryPending && homeTab != 6) startStockHistoryBlink(history);
 
         ImageButton undo = imageIconButton(R.drawable.ic_undo, stockUndoStockJson == null ? softButtonBg() : accent(), stockUndoStockJson == null ? primaryText() : Color.WHITE);
+        if (isDarkTheme()) applyNeonIconButton(undo, stockUndoStockJson == null ? CheckMercadoNeonUi.BLUE : CheckMercadoNeonUi.GREEN);
         undo.setEnabled(stockUndoStockJson != null);
         undo.setAlpha(stockUndoStockJson == null ? 0.45f : 1.0f);
         undo.setOnClickListener(v -> undoStockAction());
         LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(dp(48), dp(48));
         undoParams.setMargins(dp(6), 0, 0, 0);
-        tabs.addView(undo, undoParams);
+        row.addView(undo, undoParams);
     }
 
-    private void addStockTabButton(LinearLayout tabs, String label, boolean spending) {
-        int tab = spending ? 2 : 1;
-        Button btn = button(label, homeTab == tab ? accent() : softButtonBg(), homeTab == tab ? Color.WHITE : primaryText());
-        btn.setTextSize(13);
-        btn.setOnClickListener(v -> showStockWindow(spending));
-        LinearLayout.LayoutParams params = weighted();
-        if (tabs.getChildCount() > 0) params.setMargins(dp(6), 0, 0, 0);
-        tabs.addView(btn, params);
+    private View addStockTabButton(LinearLayout tabs, String label, int iconRes, int tab, Runnable action) {
+        boolean active = homeTab == tab;
+        LinearLayout tabView = new LinearLayout(this);
+        tabView.setOrientation(LinearLayout.HORIZONTAL);
+        tabView.setGravity(Gravity.CENTER);
+        tabView.setPadding(dp(8), 0, dp(8), 0);
+        tabView.setClickable(true);
+        tabView.setFocusable(true);
+        tabView.setOnClickListener(v -> action.run());
+        if (active) {
+            tabView.setBackground(isDarkTheme()
+                    ? CheckMercadoNeonUi.iconButton(this, CheckMercadoNeonUi.GREEN)
+                    : glowRound(accent(), dp(14)));
+        }
+
+        int color = active
+                ? (isDarkTheme() ? CheckMercadoNeonUi.GREEN : Color.WHITE)
+                : (isDarkTheme() ? CheckMercadoNeonUi.MUTED : mutedText());
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(color);
+        tabView.addView(icon, new LinearLayout.LayoutParams(dp(21), dp(21)));
+
+        TextView text = label(label, 12, true, color);
+        text.setPadding(dp(6), 0, 0, 0);
+        tabView.addView(text);
+
+        tabs.addView(tabView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        return tabView;
     }
 
-    private void startStockHistoryBlink(Button button) {
+    private void addStockTabDivider(LinearLayout tabs) {
+        View divider = new View(this);
+        divider.setBackgroundColor(isDarkTheme() ? Color.argb(72, 45, 140, 255) : Color.argb(90, 148, 163, 184));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(1), dp(26));
+        params.setMargins(dp(2), 0, dp(2), 0);
+        tabs.addView(divider, params);
+    }
+
+    private void startStockHistoryBlink(View button) {
         button.post(new Runnable() {
             private boolean green = true;
 
@@ -835,8 +865,7 @@ public class MainActivity extends Activity {
             public void run() {
                 if (!stockHistoryPending || homeTab == 6 || button.getParent() == null) return;
                 int bg = green ? Color.rgb(22, 163, 74) : Color.rgb(220, 38, 38);
-                button.setTextColor(Color.WHITE);
-                button.setBackground(glowRound(bg, dp(14)));
+                button.setBackground(isDarkTheme() ? CheckMercadoNeonUi.iconButton(MainActivity.this, bg) : glowRound(bg, dp(14)));
                 green = !green;
                 button.postDelayed(this, 650);
             }
@@ -981,7 +1010,7 @@ public class MainActivity extends Activity {
         homeTab = 6;
         clearStockHistoryPending();
         buildRoot();
-        addTopHeader("Estoque", "Baixas guardadas para consulta.", false);
+        addTopHeader("Historico", "Baixas do estoque guardadas para consulta.", false);
         addStockTabs();
         addSearchBar("Pesquisar historico do estoque", stockHistorySearch, value -> {
             stockHistorySearch = value;
@@ -2917,8 +2946,8 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
-        box.setPadding(dp(12), 0, dp(4), 0);
-        box.setBackground(neonHome()
+        box.setPadding(dp(12), 0, dp(6), 0);
+        box.setBackground(isDarkTheme()
                 ? CheckMercadoNeonUi.input(this, filterActiveForCurrentScreen())
                 : inputPanelBg(filterActiveForCurrentScreen()));
         row.addView(box, new LinearLayout.LayoutParams(0, dp(52), 1));
@@ -2967,19 +2996,22 @@ public class MainActivity extends Activity {
                 }, 180);
             }
         });
-        ImageButton filter = imageIconButton(R.drawable.ic_filter_sliders,
-                filterActiveForCurrentScreen() ? accent() : softButtonBg(),
-                filterActiveForCurrentScreen()
-                        ? (isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE)
-                        : accent());
-        if (neonHome()) {
-            applyNeonIconButton(filter, filterActiveForCurrentScreen() ? CheckMercadoNeonUi.GREEN : CheckMercadoNeonUi.BLUE);
-        }
-        filter.setPadding(dp(13), dp(13), dp(13), dp(13));
+        View divider = new View(this);
+        divider.setBackgroundColor(isDarkTheme() ? Color.argb(82, 57, 229, 108) : Color.argb(110, 148, 163, 184));
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(dp(1), dp(28));
+        dividerParams.setMargins(dp(4), 0, dp(4), 0);
+        box.addView(divider, dividerParams);
+
+        ImageButton filter = new ImageButton(this);
+        filter.setImageResource(R.drawable.ic_filter_sliders);
+        filter.setColorFilter(isDarkTheme()
+                ? (filterActiveForCurrentScreen() ? CheckMercadoNeonUi.GREEN : CheckMercadoNeonUi.MUTED)
+                : accent());
+        filter.setBackgroundColor(Color.TRANSPARENT);
+        filter.setPadding(dp(9), dp(9), dp(9), dp(9));
+        filter.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         filter.setOnClickListener(v -> showSearchFilter());
-        LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(dp(52), dp(52));
-        filterParams.setMargins(dp(10), 0, 0, 0);
-        row.addView(filter, filterParams);
+        box.addView(filter, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
 
         root.addView(row, matchHeightWithTop(dp(52), dp(10)));
         if (value != null && !value.isEmpty()) search.requestFocus();
@@ -3414,6 +3446,8 @@ public class MainActivity extends Activity {
         box.setChecked(item.checked);
         box.setEnabled(!current.locked);
         box.setAlpha(current.locked ? 0.55f : 1.0f);
+        box.setScaleX(1.28f);
+        box.setScaleY(1.28f);
         tintCheckBox(box);
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (current.locked) return;
@@ -3431,7 +3465,7 @@ public class MainActivity extends Activity {
                 animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             }
         });
-        row.addView(box, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        row.addView(box, new LinearLayout.LayoutParams(dp(56), dp(56)));
 
         TextView name = new TextView(this);
         name.setText(item.name);
@@ -5336,8 +5370,9 @@ public class MainActivity extends Activity {
                 new int[]{android.R.attr.state_checked},
                 new int[]{}
         };
-        int unchecked = isDarkTheme() ? Color.rgb(241, 245, 249) : Color.rgb(71, 85, 105);
-        int[] colors = new int[]{accent(), unchecked};
+        int checked = isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent();
+        int unchecked = isDarkTheme() ? withAlpha(CheckMercadoNeonUi.GREEN, 230) : Color.rgb(71, 85, 105);
+        int[] colors = new int[]{checked, unchecked};
         box.setButtonTintList(new ColorStateList(states, colors));
         box.setTextColor(primaryText());
     }
@@ -6999,6 +7034,31 @@ public class MainActivity extends Activity {
                 }
             };
             return setAdapter(adapter, listener);
+        }
+
+        @Override
+        public AlertDialog.Builder setSingleChoiceItems(CharSequence[] items, int checkedItem, DialogInterface.OnClickListener listener) {
+            ArrayAdapter<CharSequence> adapter = new ArrayAdapter<CharSequence>(MainActivity.this, android.R.layout.simple_list_item_single_choice, items) {
+                @Override
+                public View getView(int position, View convertView, ViewGroup parent) {
+                    View view = super.getView(position, convertView, parent);
+                    view.setBackgroundColor(cardBg());
+                    view.setPadding(dp(10), dp(7), dp(10), dp(7));
+                    if (view instanceof TextView) {
+                        TextView text = (TextView) view;
+                        text.setTextColor(position == checkedItem ? accent() : primaryText());
+                        text.setTextSize(16);
+                        text.setTypeface(Typeface.DEFAULT, position == checkedItem ? Typeface.BOLD : Typeface.NORMAL);
+                    }
+                    return view;
+                }
+
+                @Override
+                public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                    return getView(position, convertView, parent);
+                }
+            };
+            return setSingleChoiceItems(adapter, checkedItem, listener);
         }
 
         @Override

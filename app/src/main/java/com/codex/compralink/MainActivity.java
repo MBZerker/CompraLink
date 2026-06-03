@@ -526,10 +526,10 @@ public class MainActivity extends Activity {
         header.addView(topLine, matchWrap());
 
         int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);
-        int iconColor = isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE;
+        int iconColor = isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText();
 
         if (homeHeader) {
-            ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), iconColor);
+            ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent());
             if (neonHome()) applyNeonIconButton(qr, CheckMercadoNeonUi.GREEN);
             qr.setPadding(dp(14), dp(14), dp(14), dp(14));
             qr.setOnClickListener(v -> startFiscalQrScan());
@@ -550,15 +550,15 @@ public class MainActivity extends Activity {
         sideControls.setPadding(0, dp(6), 0, 0);
 
         if (homeHeader) {
-            ImageButton menu = homeImageIconButton(R.drawable.ic_menu, menuButtonBg(), iconColor);
+            ImageButton menu = homeImageIconButton(R.drawable.ic_menu, menuButtonBg(), isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText());
             if (neonHome()) applyNeonIconButton(menu, CheckMercadoNeonUi.BLUE);
             menu.setPadding(dp(14), dp(14), dp(14), dp(14));
             menu.setOnClickListener(this::showHomeMenu);
             sideControls.addView(menu, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
         } else {
             ImageButton themeTop = imageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
-                    isDarkTheme() ? Color.WHITE : Color.BLACK,
-                    isDarkTheme() ? Color.BLACK : Color.WHITE);
+                    accent(),
+                    isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText());
             themeTop.setOnClickListener(v -> toggleTheme());
             sideControls.addView(themeTop, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
         }
@@ -758,7 +758,7 @@ public class MainActivity extends Activity {
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setGravity(Gravity.CENTER_VERTICAL);
         tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
-        tabs.setBackground(isDarkTheme() ? CheckMercadoNeonUi.panel(this) : round(inputBg(), dp(14), stroke(), 1));
+        tabs.setBackground(inputPanelBg(false));
         root.addView(tabs, matchHeightWithTop(dp(64), dp(12)));
 
         addStockTabButton(tabs, "Estoque", R.drawable.ic_box, 1, () -> showStockWindow(false));
@@ -786,13 +786,11 @@ public class MainActivity extends Activity {
         tabView.setFocusable(true);
         tabView.setOnClickListener(v -> action.run());
         if (active) {
-            tabView.setBackground(isDarkTheme()
-                    ? CheckMercadoNeonUi.iconButton(this, CheckMercadoNeonUi.GREEN)
-                    : glowRound(accent(), dp(14)));
+            tabView.setBackground(outlineButtonBg(isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), dp(14)));
         }
 
         int color = active
-                ? (isDarkTheme() ? CheckMercadoNeonUi.GREEN : Color.WHITE)
+                ? (isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent())
                 : (isDarkTheme() ? CheckMercadoNeonUi.MUTED : mutedText());
         ImageView icon = new ImageView(this);
         icon.setImageResource(iconRes);
@@ -1030,8 +1028,9 @@ public class MainActivity extends Activity {
         name.setTextColor(neon ? CheckMercadoNeonUi.TEXT : (listColor == 0 ? primaryText() : readableOnTint(listColor)));
         content.addView(name, matchWrap());
 
-        TextView meta = label(formatShortDate(list.createdAt) + " - " + list.items.size() + " itens - " + completedCount(list) + " concluidos",
-                13, false, neon ? CheckMercadoNeonUi.MUTED : mutedText());
+        LinearLayout meta = iconText(R.drawable.ic_calendar_tiny,
+                formatShortDate(list.createdAt) + " - " + list.items.size() + " itens - " + completedCount(list) + " concluidos",
+                13, false, neon ? CheckMercadoNeonUi.MUTED : mutedText(), neon ? CheckMercadoNeonUi.MUTED : mutedText());
         meta.setPadding(0, dp(5), 0, 0);
         content.addView(meta, matchWrap());
 
@@ -1050,9 +1049,10 @@ public class MainActivity extends Activity {
         rightParams.setMargins(dp(8), 0, 0, 0);
         card.addView(right, rightParams);
 
+        int lockColor = list.locked ? Color.rgb(225, 29, 72) : Color.rgb(22, 163, 74);
         ImageButton lock = imageIconButton(list.locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open,
-                list.locked ? Color.rgb(225, 29, 72) : Color.rgb(22, 163, 74),
-                Color.WHITE);
+                lockColor,
+                isDarkTheme() ? Color.WHITE : lockColor);
         if (neon) applyNeonIconButton(lock, list.locked ? CheckMercadoNeonUi.DANGER : CheckMercadoNeonUi.GREEN);
         lock.setOnClickListener(v -> {
             toggleListLock(list);
@@ -1546,15 +1546,17 @@ public class MainActivity extends Activity {
             TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
             meta.setPadding(0, dp(4), 0, 0);
             card.addView(meta);
-            TextView duration = label(formatStockAge(entry), 14, false, accent());
+            LinearLayout duration = iconText(R.drawable.ic_calendar_tiny, formatStockAge(entry), 14, false, accent(), accent());
             duration.setPadding(0, dp(5), 0, 0);
             card.addView(duration);
-            TextView category = label("Categoria: " + categoryOf(entry), 13, false, mutedText());
+            LinearLayout category = iconText(R.drawable.ic_tag_tiny, "Categoria: " + categoryOf(entry), 13, false, mutedText(), mutedText());
             category.setPadding(0, dp(4), 0, 0);
             card.addView(category);
-            TextView edited = label("Editado: " + formatDateTime(entry.updatedAt), 13, false, mutedText());
-            edited.setPadding(0, dp(4), 0, 0);
-            card.addView(edited);
+            if (entry.updatedAt > entry.addedAt + 1000L && entry.consumedAt <= 0) {
+                LinearLayout edited = iconText(R.drawable.ic_calendar_tiny, "Editado: " + formatDateTime(entry.updatedAt), 13, false, mutedText(), mutedText());
+                edited.setPadding(0, dp(4), 0, 0);
+                card.addView(edited);
+            }
             root.addView(card, matchWrapWithTop(dp(10)));
         }
     }
@@ -1691,7 +1693,7 @@ public class MainActivity extends Activity {
         double forecast = forecastMonthTotal(currentTotal);
 
         addSpendingFilters();
-        root.addView(infoCard("Resumo", "Total do per\u00edodo selecionado: " + money.format(sum)), matchWrapWithTop(dp(10)));
+        root.addView(infoCardWithIcon("Resumo", "Total do per\u00edodo selecionado:\n" + money.format(sum), R.drawable.ic_money_circle, Color.rgb(57, 229, 108)), matchWrapWithTop(dp(10)));
         addMetricGrid(currentTotal, previousTotal, difference, average, forecast, biggestEntry, products);
         addGoalCard(currentTotal, forecast);
         addSpendingAlerts(currentTotal, forecast, products);
@@ -2452,7 +2454,10 @@ public class MainActivity extends Activity {
             TextView duration = label("Dura\u00e7\u00e3o: " + formatDurationDays(stockDurationDays(entry)), 14, true, accent());
             duration.setPadding(0, dp(5), 0, 0);
             card.addView(duration);
-            TextView dates = label("Entrada: " + formatDateTime(entry.addedAt) + "\nBaixa: " + formatDateTime(entry.consumedAt), 13, false, mutedText());
+            LinearLayout category = iconText(R.drawable.ic_tag_tiny, "Categoria: " + categoryOf(entry), 13, false, mutedText(), mutedText());
+            category.setPadding(0, dp(5), 0, 0);
+            card.addView(category);
+            LinearLayout dates = iconText(R.drawable.ic_calendar_tiny, "Entrada: " + formatDateTime(entry.addedAt) + "\nBaixa: " + formatDateTime(entry.consumedAt), 13, false, mutedText(), mutedText());
             dates.setPadding(0, dp(5), 0, 0);
             card.addView(dates);
             root.addView(card, matchWrapWithTop(dp(10)));
@@ -2530,52 +2535,69 @@ public class MainActivity extends Activity {
         LinearLayout row1 = new LinearLayout(this);
         row1.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row1, matchWrapWithTop(dp(8)));
-        row1.addView(metricCard("M\u00eas atual", money.format(currentTotal), accent()), weighted());
+        row1.addView(metricCard("M\u00eas atual", money.format(currentTotal), accent(), R.drawable.ic_calendar_money, Color.rgb(57, 229, 108)), weighted());
         LinearLayout.LayoutParams right = weighted();
         right.setMargins(dp(8), 0, 0, 0);
-        row1.addView(metricCard("M\u00eas anterior", money.format(previousTotal), primaryText()), right);
+        row1.addView(metricCard("M\u00eas anterior", money.format(previousTotal), primaryText(), R.drawable.ic_calendar_tiny, Color.rgb(45, 140, 255)), right);
 
         LinearLayout row2 = new LinearLayout(this);
         row2.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row2, matchWrapWithTop(dp(8)));
         int diffColor = difference <= 0 ? Color.rgb(22, 163, 74) : Color.rgb(225, 29, 72);
-        row2.addView(metricCard("Diferen\u00e7a", money.format(difference), diffColor), weighted());
+        row2.addView(metricCard("Diferen\u00e7a", money.format(difference), diffColor, R.drawable.ic_trend_down, diffColor), weighted());
         LinearLayout.LayoutParams avgParams = weighted();
         avgParams.setMargins(dp(8), 0, 0, 0);
-        row2.addView(metricCard("M\u00e9dia mensal", money.format(average), primaryText()), avgParams);
+        row2.addView(metricCard("M\u00e9dia mensal", money.format(average), primaryText(), R.drawable.ic_chart_pie, Color.rgb(45, 140, 255)), avgParams);
 
         LinearLayout rowForecast = new LinearLayout(this);
         rowForecast.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(rowForecast, matchWrapWithTop(dp(8)));
-        rowForecast.addView(metricCard("Previs\u00e3o do m\u00eas", money.format(forecast), forecast > previousTotal && previousTotal > 0 ? Color.rgb(225, 29, 72) : accent()), weighted());
+        int forecastColor = forecast > previousTotal && previousTotal > 0 ? Color.rgb(225, 29, 72) : accent();
+        rowForecast.addView(metricCard("Previs\u00e3o do m\u00eas", money.format(forecast), forecastColor, R.drawable.ic_arrow_up, forecastColor), weighted());
         LinearLayout.LayoutParams paceParams = weighted();
         paceParams.setMargins(dp(8), 0, 0, 0);
         String pace = previousTotal <= 0 ? "Sem compara\u00e7\u00e3o" : (forecast > previousTotal ? "Acima do m\u00eas anterior" : "Dentro do ritmo");
-        rowForecast.addView(metricCard("Ritmo", pace, primaryText()), paceParams);
+        rowForecast.addView(metricCard("Ritmo", pace, primaryText(), R.drawable.ic_gauge, Color.rgb(57, 229, 108)), paceParams);
 
         SpendingProduct mostBought = mostBoughtProduct(products);
         LinearLayout row3 = new LinearLayout(this);
         row3.setOrientation(LinearLayout.HORIZONTAL);
         root.addView(row3, matchWrapWithTop(dp(8)));
         String biggest = biggestEntry == null ? "Sem dados" : biggestEntry.name + " - " + money.format(biggestEntry.price * biggestEntry.quantity);
-        row3.addView(metricCard("Maior compra", biggest, primaryText()), weighted());
+        row3.addView(metricCard("Maior compra", biggest, primaryText(), R.drawable.ic_money_circle, Color.rgb(57, 229, 108)), weighted());
         LinearLayout.LayoutParams boughtParams = weighted();
         boughtParams.setMargins(dp(8), 0, 0, 0);
         String bought = mostBought == null ? "Sem dados" : mostBought.name + " - " + formatQty(mostBought.quantity) + " un";
-        row3.addView(metricCard("Mais comprado", bought, primaryText()), boughtParams);
+        row3.addView(metricCard("Mais comprado", bought, primaryText(), R.drawable.ic_cart, Color.rgb(45, 140, 255)), boughtParams);
     }
 
-    private View metricCard(String title, String value, int valueColor) {
+    private View metricCard(String title, String value, int valueColor, int iconRes, int iconColor) {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(round(cardBg(), dp(14), stroke(), 1));
+        card.setBackground(glassCardBg(0));
         elevate(card, 2);
-        card.addView(label(title, 12, true, mutedText()));
+
+        FrameLayout iconFrame = new FrameLayout(this);
+        iconFrame.setBackground(softPillBg(iconColor));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(iconColor);
+        iconFrame.addView(icon, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        iconParams.setMargins(0, 0, dp(10), 0);
+        card.addView(iconFrame, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        texts.addView(label(title, 12, true, mutedText()));
         TextView valueView = label(value, 16, true, valueColor);
         valueView.setPadding(0, dp(5), 0, 0);
         valueView.setSingleLine(false);
-        card.addView(valueView, matchWrap());
+        texts.addView(valueView, matchWrap());
         return card;
     }
 
@@ -2944,6 +2966,34 @@ public class MainActivity extends Activity {
         TextView b = label(body, 14, false, neonHome() ? CheckMercadoNeonUi.MUTED : mutedText());
         b.setPadding(0, dp(5), 0, 0);
         card.addView(b);
+        return card;
+    }
+
+    private View infoCardWithIcon(String title, String body, int iconRes, int iconColor) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(glassCardBg(0));
+        elevate(card, 5);
+
+        FrameLayout iconFrame = new FrameLayout(this);
+        iconFrame.setBackground(softPillBg(iconColor));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(iconColor);
+        iconFrame.addView(icon, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(56), dp(56));
+        iconParams.setMargins(0, 0, dp(12), 0);
+        card.addView(iconFrame, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        texts.addView(label(title, 18, true, primaryText()));
+        TextView b = label(body, 14, false, mutedText());
+        b.setPadding(0, dp(5), 0, 0);
+        texts.addView(b);
         return card;
     }
 
@@ -5274,6 +5324,23 @@ public class MainActivity extends Activity {
         view.setTextColor(color);
         if (bold) view.setTypeface(Typeface.DEFAULT_BOLD);
         return view;
+    }
+
+    private LinearLayout iconText(int iconRes, String text, int size, boolean bold, int textColor, int iconColor) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(iconColor);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(16), dp(16));
+        iconParams.setMargins(0, 0, dp(6), 0);
+        row.addView(icon, iconParams);
+
+        TextView label = label(text, size, bold, textColor);
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        return row;
     }
 
     private String formatQty(double value) {

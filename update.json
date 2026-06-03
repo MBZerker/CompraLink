@@ -1,9 +1,9 @@
 {
-  "versionCode": 89,
-  "versionName": "4.58",
+  "versionCode": 90,
+  "versionName": "4.59",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "7fda8bd804632652f9f9f65be43772395c707d289c56dd82577f9ceba470ca6b",
-  "sizeBytes": 39422313,
-  "notes": "Aumenta menus de tres pontos, corrige checkbox cortado, suaviza transparencia dos frames e ajusta contraste dos botoes no tema claro."
+  "sha256": "7207160b9dbe15fab45c6b802121bf303a6ea1e8fbad464085dcbd3e34a074c4",
+  "sizeBytes": 39443548,
+  "notes": "Refina contraste dos botoes em claro/escuro, suaviza abas, adiciona icones em gastos e mostra Editado no estoque apenas quando houver edicao real."
 }

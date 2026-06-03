@@ -108,8 +108,8 @@ final class CheckMercadoNeonUi {
             rect.set(getBounds());
             rect.inset(glow, glow);
 
-            int top = disabled ? Color.rgb(9, 14, 26) : blend(color, CARD_2, 0.12f);
-            int bottom = disabled ? Color.rgb(7, 10, 20) : CARD;
+            int top = alpha(disabled ? Color.rgb(9, 14, 26) : blend(color, CARD_2, 0.12f), disabled ? 112 : 178);
+            int bottom = alpha(disabled ? Color.rgb(7, 10, 20) : CARD, disabled ? 104 : 170);
             paint.setStyle(Paint.Style.FILL);
             paint.setShader(new LinearGradient(
                     rect.left, rect.top, rect.right, rect.bottom,

@@ -633,10 +633,10 @@ public class MainActivity extends Activity {
                 LinearLayout mainActions = iconStrip();
                 actions.addView(mainActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, mainActionSize + dp(10)));
 
-                ImageButton newList = addStripIcon(mainActions, R.drawable.ic_cart, neonHome() ? CheckMercadoNeonUi.GREEN : iconColor, true, mainActionSize, v -> promptNewList());
+                ImageButton newList = addStripIcon(mainActions, R.drawable.ic_cart, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, mainActionSize, v -> promptNewList());
                 newList.setOnClickListener(v -> promptNewList());
 
-                ImageButton stockButton = addStripIcon(mainActions, R.drawable.ic_box, neonHome() ? CheckMercadoNeonUi.TEXT : iconColor, true, mainActionSize, v -> showStockWindow(false));
+                ImageButton stockButton = addStripIcon(mainActions, R.drawable.ic_box, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, mainActionSize, v -> showStockWindow(false));
                 stockButton.setOnClickListener(v -> showStockWindow(false));
                 stockButton.setOnLongClickListener(v -> {
                     if (secretLogoTaps >= 3) {
@@ -646,7 +646,7 @@ public class MainActivity extends Activity {
                     return false;
                 });
 
-                addStripIcon(mainActions, R.drawable.ic_history, neonHome() ? CheckMercadoNeonUi.TEXT : iconColor, true, mainActionSize, v -> showHistoryScreen());
+                addStripIcon(mainActions, R.drawable.ic_history, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, mainActionSize, v -> showHistoryScreen());
             }
 
         }
@@ -1062,9 +1062,9 @@ public class MainActivity extends Activity {
         lock.setAlpha(list.archived && list.locked ? 0.45f : 1.0f);
         right.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        ImageButton more = plainIconButton(R.drawable.ic_more_vertical, neon ? CheckMercadoNeonUi.MUTED : mutedText(), dp(8));
+        ImageButton more = moreMenuButton(neon ? CheckMercadoNeonUi.MUTED : mutedText());
         more.setOnClickListener(v -> showListOptions(index));
-        LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(dp(42), dp(34));
+        LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(dp(46), dp(42));
         moreParams.setMargins(0, dp(5), 0, 0);
         right.addView(more, moreParams);
         return card;
@@ -1532,9 +1532,9 @@ public class MainActivity extends Activity {
             TextView name = label(entry.name, 18, true, primaryText());
             top.addView(name, weighted());
 
-            ImageButton more = plainIconButton(R.drawable.ic_more_vertical, mutedText(), dp(8));
+            ImageButton more = moreMenuButton(mutedText());
             more.setOnClickListener(v -> showStockOptions(entry));
-            top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(34)));
+            top.addView(more, new LinearLayout.LayoutParams(dp(46), dp(42)));
 
             TextView marker = label(selected ? "Selecionado" : "", 13, true, accent());
             marker.setPadding(0, selected ? dp(3) : 0, 0, 0);
@@ -2441,9 +2441,9 @@ public class MainActivity extends Activity {
             top.setGravity(Gravity.CENTER_VERTICAL);
             card.addView(top, matchWrap());
             top.addView(label(entry.name, 18, true, primaryText()), weighted());
-            ImageButton more = plainIconButton(R.drawable.ic_more_vertical, mutedText(), dp(8));
+            ImageButton more = moreMenuButton(mutedText());
             more.setOnClickListener(v -> showStockHistoryOptions(entry));
-            top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(34)));
+            top.addView(more, new LinearLayout.LayoutParams(dp(46), dp(42)));
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
             String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
             TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
@@ -3442,7 +3442,9 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(10), dp(9), dp(10), dp(9));
+        row.setPadding(dp(14), dp(10), dp(12), dp(10));
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
         row.setBackground(item.checked ? checkedItemBg() : glassCardBg(0));
         elevate(row, item.checked ? 2 : 5);
         row.setOnLongClickListener(v -> {
@@ -3455,8 +3457,8 @@ public class MainActivity extends Activity {
         box.setChecked(item.checked);
         box.setEnabled(!current.locked);
         box.setAlpha(current.locked ? 0.55f : 1.0f);
-        box.setScaleX(1.45f);
-        box.setScaleY(1.45f);
+        box.setScaleX(1.28f);
+        box.setScaleY(1.28f);
         tintCheckBox(box);
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (current.locked) return;
@@ -3474,7 +3476,13 @@ public class MainActivity extends Activity {
                 animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             }
         });
-        row.addView(box, new LinearLayout.LayoutParams(dp(62), dp(62)));
+        FrameLayout checkHolder = new FrameLayout(this);
+        checkHolder.setClipChildren(false);
+        checkHolder.setClipToPadding(false);
+        checkHolder.addView(box, new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER));
+        LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(dp(64), dp(64));
+        checkParams.setMargins(0, 0, dp(4), 0);
+        row.addView(checkHolder, checkParams);
 
         TextView name = new TextView(this);
         name.setText(item.name);
@@ -3538,9 +3546,9 @@ public class MainActivity extends Activity {
             actionParams.setMargins(dp(7), 0, 0, 0);
             row.addView(itemActions, actionParams);
 
-            ImageButton more = plainIconButton(R.drawable.ic_more_vertical, mutedText(), dp(8));
+            ImageButton more = moreMenuButton(mutedText());
             more.setOnClickListener(v -> showItemOptions(item, index));
-            itemActions.addView(more, new LinearLayout.LayoutParams(dp(40), dp(32)));
+            itemActions.addView(more, new LinearLayout.LayoutParams(dp(44), dp(40)));
 
             ImageButton remove = plainIconButton(R.drawable.ic_trash, isDarkTheme() ? CheckMercadoNeonUi.DANGER : Color.rgb(153, 27, 27), dp(7));
             remove.setOnClickListener(v -> removeListItem(index));
@@ -5485,7 +5493,7 @@ public class MainActivity extends Activity {
         strip.setPadding(dp(5), dp(5), dp(5), dp(5));
         strip.setBackground(isDarkTheme()
                 ? CheckMercadoNeonUi.panel(this)
-                : round(inputBg(), dp(18), stroke(), 1));
+                : inputPanelBg(false));
         elevate(strip, 5);
         return strip;
     }
@@ -5525,6 +5533,12 @@ public class MainActivity extends Activity {
         button.setBackgroundColor(Color.TRANSPARENT);
         button.setPadding(padding, padding, padding, padding);
         button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        return button;
+    }
+
+    private ImageButton moreMenuButton(int fg) {
+        ImageButton button = plainIconButton(R.drawable.ic_more_vertical, fg, dp(2));
+        button.setScaleType(ImageView.ScaleType.FIT_CENTER);
         return button;
     }
 
@@ -5674,7 +5688,7 @@ public class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setPadding(dp(8), 0, dp(8), 0);
-        button.setBackground(glowRound(bg, dp(14)));
+        button.setBackground(outlineButtonBg(bg, dp(14)));
         elevate(button, 5);
         return button;
     }
@@ -5691,7 +5705,7 @@ public class MainActivity extends Activity {
         ImageButton button = new ImageButton(this);
         button.setImageResource(drawable);
         button.setColorFilter(fg);
-        button.setBackground(glowRound(bg, dp(14)));
+        button.setBackground(outlineButtonBg(bg, dp(14)));
         button.setPadding(dp(11), dp(11), dp(11), dp(11));
         button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         elevate(button, 6);
@@ -5722,14 +5736,14 @@ public class MainActivity extends Activity {
     private GradientDrawable glassPanelBg() {
         int base = cardBg();
         int top = isDarkTheme()
-                ? withAlpha(blend(accent(), Color.rgb(18, 31, 58), 0.12f), 238)
-                : withAlpha(Color.WHITE, 248);
+                ? withAlpha(blend(accent(), Color.rgb(18, 31, 58), 0.12f), 178)
+                : withAlpha(Color.WHITE, 178);
         int middle = isDarkTheme()
-                ? withAlpha(blend(accent(), Color.rgb(8, 18, 38), 0.08f), 226)
-                : withAlpha(blend(accent(), Color.WHITE, 0.05f), 242);
+                ? withAlpha(blend(accent(), Color.rgb(8, 18, 38), 0.08f), 170)
+                : withAlpha(blend(accent(), Color.WHITE, 0.05f), 170);
         int bottom = isDarkTheme()
-                ? withAlpha(Color.rgb(7, 14, 31), 236)
-                : withAlpha(blend(accent(), Color.rgb(241, 245, 249), 0.06f), 244);
+                ? withAlpha(Color.rgb(7, 14, 31), 176)
+                : withAlpha(blend(accent(), Color.rgb(241, 245, 249), 0.06f), 176);
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{top, middle, bottom}
@@ -5742,11 +5756,11 @@ public class MainActivity extends Activity {
     private GradientDrawable glassCardBg(int tint) {
         int baseTint = tint == 0 ? accent() : tint;
         int top = isDarkTheme()
-                ? withAlpha(blend(baseTint, Color.rgb(21, 33, 56), tint == 0 ? 0.08f : 0.28f), 232)
-                : withAlpha(blend(baseTint, Color.WHITE, tint == 0 ? 0.03f : 0.18f), 246);
+                ? withAlpha(blend(baseTint, Color.rgb(21, 33, 56), tint == 0 ? 0.08f : 0.28f), 178)
+                : withAlpha(blend(baseTint, Color.WHITE, tint == 0 ? 0.03f : 0.18f), 178);
         int bottom = isDarkTheme()
-                ? withAlpha(blend(baseTint, Color.rgb(8, 15, 31), tint == 0 ? 0.05f : 0.18f), 226)
-                : withAlpha(blend(baseTint, Color.rgb(241, 245, 249), tint == 0 ? 0.02f : 0.12f), 240);
+                ? withAlpha(blend(baseTint, Color.rgb(8, 15, 31), tint == 0 ? 0.05f : 0.18f), 170)
+                : withAlpha(blend(baseTint, Color.rgb(241, 245, 249), tint == 0 ? 0.02f : 0.12f), 170);
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{top, bottom}
@@ -5774,8 +5788,8 @@ public class MainActivity extends Activity {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{
-                        isDarkTheme() ? Color.argb(224, 28, 39, 56) : Color.argb(238, 236, 241, 247),
-                        isDarkTheme() ? Color.argb(214, 18, 27, 43) : Color.argb(232, 226, 232, 240)
+                        isDarkTheme() ? Color.argb(178, 28, 39, 56) : Color.argb(178, 236, 241, 247),
+                        isDarkTheme() ? Color.argb(170, 18, 27, 43) : Color.argb(170, 226, 232, 240)
                 }
         );
         drawable.setCornerRadius(dp(18));
@@ -5788,8 +5802,8 @@ public class MainActivity extends Activity {
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
                 new int[]{
-                        isDarkTheme() ? Color.argb(224, 18, 29, 49) : Color.argb(244, 255, 255, 255),
-                        isDarkTheme() ? Color.argb(216, 31, 43, 65) : Color.argb(238, 241, 245, 249)
+                        isDarkTheme() ? Color.argb(178, 18, 29, 49) : Color.argb(178, 255, 255, 255),
+                        isDarkTheme() ? Color.argb(170, 31, 43, 65) : Color.argb(170, 241, 245, 249)
                 }
         );
         drawable.setCornerRadius(dp(18));
@@ -5811,6 +5825,25 @@ public class MainActivity extends Activity {
         );
         drawable.setCornerRadius(radius);
         drawable.setStroke(dp(1), blend(Color.WHITE, color, isDarkTheme() ? 0.42f : 0.58f));
+        return drawable;
+    }
+
+    private GradientDrawable outlineButtonBg(int color, int radius) {
+        int top = isDarkTheme()
+                ? withAlpha(blend(color, Color.rgb(18, 31, 58), 0.18f), 148)
+                : withAlpha(blend(color, Color.WHITE, 0.08f), 132);
+        int bottom = isDarkTheme()
+                ? withAlpha(blend(color, Color.rgb(8, 18, 38), 0.12f), 124)
+                : withAlpha(blend(color, Color.rgb(241, 245, 249), 0.06f), 118);
+        int border = isDarkTheme()
+                ? blend(color, CheckMercadoNeonUi.BLUE, 0.34f)
+                : blend(color, Color.rgb(37, 99, 235), 0.24f);
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{top, bottom}
+        );
+        drawable.setCornerRadius(radius);
+        drawable.setStroke(dp(1), withAlpha(border, isDarkTheme() ? 210 : 185));
         return drawable;
     }
 

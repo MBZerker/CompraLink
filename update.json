@@ -1,9 +1,9 @@
 {
-  "versionCode": 83,
-  "versionName": "4.52",
+  "versionCode": 84,
+  "versionName": "4.53",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "7efae416fc046b3cbfc8c69c517f4fb66da163080b893fc9d1877755156f1d48",
-  "sizeBytes": 39421017,
-  "notes": "Refina o visual dos cards e botoes, compacta o cabecalho e remove a faixa de selecao do estoque."
+  "sha256": "a2afda727ede9e3a3a5d31675bd60e69ffda81a10f8b758a75297df251918332",
+  "sizeBytes": 39798087,
+  "notes": "Aplica a primeira etapa do visual premium na tela inicial com assets reais, card principal, atalhos em grid e busca renovada."
 }

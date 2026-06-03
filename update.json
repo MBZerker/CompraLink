@@ -1,9 +1,9 @@
 {
-  "versionCode": 82,
-  "versionName": "4.51",
+  "versionCode": 83,
+  "versionName": "4.52",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "4db2e5f6722070137d47fb7cb7d7d66f3b5f9563671a83c93056ad0d83f94164",
-  "sizeBytes": 39421020,
-  "notes": "Aproxima o visual dos mockups com cards translucidos, busca com filtro funcional e botoes reorganizados."
+  "sha256": "7efae416fc046b3cbfc8c69c517f4fb66da163080b893fc9d1877755156f1d48",
+  "sizeBytes": 39421017,
+  "notes": "Refina o visual dos cards e botoes, compacta o cabecalho e remove a faixa de selecao do estoque."
 }

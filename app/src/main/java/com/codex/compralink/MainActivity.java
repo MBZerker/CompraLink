@@ -513,19 +513,19 @@ public class MainActivity extends Activity {
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(18), dp(18), dp(18), dp(18));
-        header.setBackground(round(cardBg(), dp(20), stroke(), 1));
-        elevate(header, 3);
+        header.setPadding(dp(22), homeHeader ? dp(16) : dp(18), dp(22), dp(18));
+        header.setBackground(glassPanelBg());
+        elevate(header, 8);
         root.addView(header, matchWrap());
 
         LinearLayout topLine = new LinearLayout(this);
         topLine.setOrientation(LinearLayout.HORIZONTAL);
-        topLine.setGravity(Gravity.CENTER_VERTICAL);
+        topLine.setGravity(homeHeader ? Gravity.TOP : Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.setGravity(Gravity.CENTER_VERTICAL);
+        titleBlock.setGravity(homeHeader ? Gravity.TOP : Gravity.CENTER_VERTICAL);
         titleBlock.setPadding(0, 0, dp(10), 0);
         topLine.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
@@ -538,7 +538,7 @@ public class MainActivity extends Activity {
 
         if (homeHeader) {
             int iconColor = isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE;
-            ImageButton menu = homeImageIconButton(R.drawable.ic_menu, accent(), iconColor);
+            ImageButton menu = homeImageIconButton(R.drawable.ic_menu, menuButtonBg(), iconColor);
             menu.setPadding(dp(14), dp(14), dp(14), dp(14));
             menu.setOnClickListener(this::showHomeMenu);
             sideControls.addView(menu, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
@@ -562,7 +562,7 @@ public class MainActivity extends Activity {
         TextView title = new TextView(this);
         title.setText(heading);
         title.setTextColor(primaryText());
-        title.setTextSize(28);
+        title.setTextSize(homeHeader ? 30 : 28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, 0, 0, 0);
         titleBlock.addView(title);
@@ -991,8 +991,8 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         int listColor = list.displayColor();
-        card.setBackground(round(tintSurface(listColor), dp(16), listColor == 0 ? stroke() : listColor, 1));
-        elevate(card, 3);
+        card.setBackground(glassCardBg(listColor));
+        elevate(card, 7);
         if (list.id != null && list.id.equals(flashImportedListId)) {
             flashImportedListId = "";
             card.post(() -> flashImportedListCard(card, listColor));
@@ -1044,9 +1044,9 @@ public class MainActivity extends Activity {
         Handler handler = new Handler(Looper.getMainLooper());
         for (int i = 0; i < 15; i++) {
             final int step = i;
-            handler.postDelayed(() -> target.setBackground(round(colors[step % colors.length], dp(16), stroke(), 1)), step * 250L);
+            handler.postDelayed(() -> target.setBackground(glassCardBg(colors[step % colors.length])), step * 250L);
         }
-        handler.postDelayed(() -> target.setBackground(round(tintSurface(listColor), dp(16), listColor == 0 ? stroke() : listColor, 1)), 15 * 250L);
+        handler.postDelayed(() -> target.setBackground(glassCardBg(listColor)), 15 * 250L);
     }
 
     private String listSubtitle(ShoppingList list) {
@@ -1442,7 +1442,6 @@ public class MainActivity extends Activity {
             return;
         }
         pruneSelectedStockIds();
-        root.addView(stockSelectionCard(), matchWrapWithTop(dp(10)));
         List<StockEntry> rows = new ArrayList<>(stock);
         for (int i = rows.size() - 1; i >= 0; i--) {
             if (!matchesStockSearch(rows.get(i), stockSearch) || !matchesStockCategoryFilter(rows.get(i), false)) rows.remove(i);
@@ -1463,8 +1462,8 @@ public class MainActivity extends Activity {
             });
             TextView name = label(entry.name, 18, true, primaryText());
             card.addView(name);
-            TextView marker = label(selected ? "Selecionado" : " ", 13, true, accent());
-            marker.setPadding(0, dp(2), 0, 0);
+            TextView marker = label(selected ? "Selecionado" : "", 13, true, accent());
+            marker.setPadding(0, selected ? dp(3) : 0, 0, 0);
             card.addView(marker);
             applyStockSelectionState(card, marker, selected);
             card.setOnClickListener(v -> toggleStockSelection(entry, card, marker));
@@ -1486,27 +1485,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private View stockSelectionCard() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(10), dp(14), dp(10));
-        card.setBackground(round(inputBg(), dp(14), stroke(), 1));
-        stockSelectionStatus = label("", 13, false, mutedText());
-        card.addView(stockSelectionStatus);
-        updateStockSelectionStatus();
-        return card;
-    }
-
     private void updateStockSelectionStatus() {
-        if (stockSelectionStatus == null) return;
-        int count = selectedStockIds.size();
-        if (count == 0) {
-            stockSelectionStatus.setText("Toque nos itens para selecionar.");
-            stockSelectionStatus.setTextColor(mutedText());
-        } else {
-            stockSelectionStatus.setText(count + " item(ns) selecionado(s). Segure um item selecionado para dar baixa em todos.");
-            stockSelectionStatus.setTextColor(accent());
-        }
+        // A selecao aparece no proprio item; nao exibimos uma faixa extra no estoque.
     }
 
     private void toggleStockSelection(StockEntry entry, LinearLayout card, TextView marker) {
@@ -1521,8 +1501,11 @@ public class MainActivity extends Activity {
     }
 
     private void applyStockSelectionState(LinearLayout card, TextView marker, boolean selected) {
-        card.setBackground(round(selected ? tintSurface(accent()) : cardBg(), dp(16), selected ? accent() : stroke(), selected ? 2 : 1));
-        marker.setText(selected ? "Selecionado" : " ");
+        card.setBackground(selected ? selectedCardBg() : glassCardBg(0));
+        if (marker != null) {
+            marker.setText(selected ? "Selecionado" : "");
+            marker.setPadding(0, selected ? dp(3) : 0, 0, 0);
+        }
     }
 
     private void pruneSelectedStockIds() {
@@ -2365,7 +2348,8 @@ public class MainActivity extends Activity {
             LinearLayout card = new LinearLayout(this);
             card.setOrientation(LinearLayout.VERTICAL);
             card.setPadding(dp(16), dp(14), dp(16), dp(14));
-            card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+            card.setBackground(glassCardBg(0));
+            elevate(card, 5);
             card.setOnLongClickListener(v -> {
                 confirmDeleteStockHistoryEntry(entry);
                 return true;
@@ -2857,7 +2841,8 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(round(cardBg(), dp(16), stroke(), 1));
+        card.setBackground(glassCardBg(0));
+        elevate(card, 5);
         elevate(card, 2);
         card.addView(label(title, 18, true, primaryText()));
         TextView b = label(body, 14, false, mutedText());
@@ -2875,7 +2860,7 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
         box.setPadding(dp(12), 0, dp(4), 0);
-        box.setBackground(round(inputBg(), dp(16), filterActiveForCurrentScreen() ? accent() : stroke(), 1));
+        box.setBackground(inputPanelBg(filterActiveForCurrentScreen()));
         row.addView(box, new LinearLayout.LayoutParams(0, dp(52), 1));
 
         EditText search = new EditText(this);
@@ -2923,7 +2908,7 @@ public class MainActivity extends Activity {
             }
         });
         ImageButton filter = imageIconButton(R.drawable.ic_filter_sliders,
-                filterActiveForCurrentScreen() ? accent() : inputBg(),
+                filterActiveForCurrentScreen() ? accent() : softButtonBg(),
                 filterActiveForCurrentScreen()
                         ? (isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE)
                         : accent());
@@ -3354,7 +3339,8 @@ public class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(10), dp(9), dp(10), dp(9));
-        row.setBackground(round(item.checked ? checkedBg() : cardBg(), dp(16), stroke(), 1));
+        row.setBackground(item.checked ? checkedItemBg() : glassCardBg(0));
+        elevate(row, item.checked ? 2 : 5);
         row.setOnLongClickListener(v -> {
             if (current.locked) return true;
             promptEditItem(item);
@@ -5339,19 +5325,19 @@ public class MainActivity extends Activity {
     }
 
     private int cardBg() {
-        return isDarkTheme() ? Color.argb(210, 8, 18, 38) : Color.argb(238, 255, 255, 255);
+        return isDarkTheme() ? Color.argb(224, 8, 18, 38) : Color.argb(242, 255, 255, 255);
     }
 
     private int checkedBg() {
-        return isDarkTheme() ? Color.argb(205, 30, 41, 59) : Color.argb(230, 241, 245, 249);
+        return isDarkTheme() ? Color.argb(218, 30, 41, 59) : Color.argb(236, 241, 245, 249);
     }
 
     private int inputBg() {
-        return isDarkTheme() ? Color.argb(178, 15, 23, 42) : Color.argb(232, 248, 250, 252);
+        return isDarkTheme() ? Color.argb(208, 15, 23, 42) : Color.argb(238, 248, 250, 252);
     }
 
     private int softButtonBg() {
-        return isDarkTheme() ? Color.argb(190, 30, 41, 59) : Color.argb(232, 226, 232, 240);
+        return isDarkTheme() ? Color.rgb(30, 41, 59) : Color.rgb(226, 232, 240);
     }
 
     private int stroke() {
@@ -5454,6 +5440,10 @@ public class MainActivity extends Activity {
         return Color.rgb(r, g, b);
     }
 
+    private int withAlpha(int color, int alpha) {
+        return Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color));
+    }
+
     private boolean isLightColor(int color) {
         double luminance = (0.299 * Color.red(color)) + (0.587 * Color.green(color)) + (0.114 * Color.blue(color));
         return luminance > 186;
@@ -5513,13 +5503,98 @@ public class MainActivity extends Activity {
         return drawable;
     }
 
-    private GradientDrawable glowRound(int color, int radius) {
+    private GradientDrawable glassPanelBg() {
+        int base = cardBg();
+        int top = isDarkTheme()
+                ? withAlpha(blend(accent(), Color.rgb(18, 31, 58), 0.12f), 238)
+                : withAlpha(Color.WHITE, 248);
+        int middle = isDarkTheme()
+                ? withAlpha(blend(accent(), Color.rgb(8, 18, 38), 0.08f), 226)
+                : withAlpha(blend(accent(), Color.WHITE, 0.05f), 242);
+        int bottom = isDarkTheme()
+                ? withAlpha(Color.rgb(7, 14, 31), 236)
+                : withAlpha(blend(accent(), Color.rgb(241, 245, 249), 0.06f), 244);
         GradientDrawable drawable = new GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{lighten(color), color, darken(color)}
+                new int[]{top, middle, bottom}
+        );
+        drawable.setCornerRadius(dp(24));
+        drawable.setStroke(dp(1), blend(accent(), stroke(), isDarkTheme() ? 0.34f : 0.18f));
+        return drawable;
+    }
+
+    private GradientDrawable glassCardBg(int tint) {
+        int baseTint = tint == 0 ? accent() : tint;
+        int top = isDarkTheme()
+                ? withAlpha(blend(baseTint, Color.rgb(21, 33, 56), tint == 0 ? 0.08f : 0.28f), 232)
+                : withAlpha(blend(baseTint, Color.WHITE, tint == 0 ? 0.03f : 0.18f), 246);
+        int bottom = isDarkTheme()
+                ? withAlpha(blend(baseTint, Color.rgb(8, 15, 31), tint == 0 ? 0.05f : 0.18f), 226)
+                : withAlpha(blend(baseTint, Color.rgb(241, 245, 249), tint == 0 ? 0.02f : 0.12f), 240);
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{top, bottom}
+        );
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(1), tint == 0 ? stroke() : blend(baseTint, stroke(), isDarkTheme() ? 0.72f : 0.45f));
+        return drawable;
+    }
+
+    private GradientDrawable selectedCardBg() {
+        int color = accent();
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{
+                        withAlpha(blend(color, Color.WHITE, isDarkTheme() ? 0.35f : 0.24f), isDarkTheme() ? 236 : 246),
+                        withAlpha(blend(color, screenBg(), isDarkTheme() ? 0.32f : 0.16f), isDarkTheme() ? 228 : 238)
+                }
+        );
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(2), color);
+        return drawable;
+    }
+
+    private GradientDrawable checkedItemBg() {
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{
+                        isDarkTheme() ? Color.argb(224, 28, 39, 56) : Color.argb(238, 236, 241, 247),
+                        isDarkTheme() ? Color.argb(214, 18, 27, 43) : Color.argb(232, 226, 232, 240)
+                }
+        );
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(1), stroke());
+        return drawable;
+    }
+
+    private GradientDrawable inputPanelBg(boolean active) {
+        int border = active ? accent() : stroke();
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{
+                        isDarkTheme() ? Color.argb(224, 18, 29, 49) : Color.argb(244, 255, 255, 255),
+                        isDarkTheme() ? Color.argb(216, 31, 43, 65) : Color.argb(238, 241, 245, 249)
+                }
+        );
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(active ? dp(2) : dp(1), border);
+        return drawable;
+    }
+
+    private int menuButtonBg() {
+        return isDarkTheme() ? blend(accent(), Color.rgb(15, 23, 42), 0.46f) : blend(accent(), Color.WHITE, 0.34f);
+    }
+
+    private GradientDrawable glowRound(int color, int radius) {
+        int top = blend(Color.WHITE, color, isDarkTheme() ? 0.26f : 0.46f);
+        int mid = color;
+        int bottom = darken(color);
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{top, mid, bottom}
         );
         drawable.setCornerRadius(radius);
-        drawable.setStroke(1, blend(Color.WHITE, color, isDarkTheme() ? 0.22f : 0.38f));
+        drawable.setStroke(dp(1), blend(Color.WHITE, color, isDarkTheme() ? 0.42f : 0.58f));
         return drawable;
     }
 

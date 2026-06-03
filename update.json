@@ -1,9 +1,9 @@
 {
-  "versionCode": 84,
-  "versionName": "4.53",
+  "versionCode": 85,
+  "versionName": "4.54",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "a2afda727ede9e3a3a5d31675bd60e69ffda81a10f8b758a75297df251918332",
-  "sizeBytes": 39798087,
-  "notes": "Aplica a primeira etapa do visual premium na tela inicial com assets reais, card principal, atalhos em grid e busca renovada."
+  "sha256": "3103e44413a1d7a0c18befc1f1e26a02f877a07a7a1513cd03cc3dd0aaae6423",
+  "sizeBytes": 39421024,
+  "notes": "Remove a etapa visual premium da tela inicial e restaura o visual anterior."
 }

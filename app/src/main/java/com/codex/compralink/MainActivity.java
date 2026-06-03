@@ -59,7 +59,6 @@ import android.widget.ImageView;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.FrameLayout;
-import android.widget.GridLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ProgressBar;
@@ -357,7 +356,7 @@ public class MainActivity extends Activity {
         homeTab = selectedFromHistory ? 3 : 0;
         updateAutoLockedLists();
         buildRoot();
-        addPremiumHomeHeader();
+        addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
         addSearchBar("Pesquisar listas ou itens", homeSearch, value -> {
             homeSearch = value;
             showHomeScreen();
@@ -377,112 +376,6 @@ public class MainActivity extends Activity {
                     : infoCard("Nada encontrado", "Nenhuma lista ou item corresponde a pesquisa."), matchWrapWithTop(dp(10)));
         }
         setContentView(rootScroll());
-    }
-
-    private void addPremiumHomeHeader() {
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.HORIZONTAL);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        top.setPadding(dp(4), 0, dp(4), dp(12));
-        root.addView(top, matchWrap());
-
-        ImageView mark = new ImageView(this);
-        mark.setImageResource(R.drawable.cm_logo_mark);
-        mark.setAdjustViewBounds(true);
-        mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        mark.setOnClickListener(v -> {
-            blinkBrandLogo(mark);
-            registerSecretLogoTap();
-        });
-        top.addView(mark, new LinearLayout.LayoutParams(dp(64), dp(64)));
-
-        TextView brand = CheckMercadoUi.label(this, "Check Mercado", 28,
-                isDarkTheme() ? CheckMercadoUi.TEXT : primaryText(), Typeface.BOLD);
-        brand.setPadding(dp(10), 0, 0, 0);
-        top.addView(brand, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-
-        int iconColor = isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE;
-        LinearLayout right = new LinearLayout(this);
-        right.setOrientation(LinearLayout.VERTICAL);
-        right.setGravity(Gravity.CENTER_HORIZONTAL);
-        top.addView(right, new LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        ImageButton menu = homeImageIconButton(R.drawable.ic_menu, menuButtonBg(), iconColor);
-        menu.setPadding(dp(13), dp(13), dp(13), dp(13));
-        menu.setOnClickListener(this::showHomeMenu);
-        right.addView(menu, new LinearLayout.LayoutParams(dp(56), dp(56)));
-
-        ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), iconColor);
-        qr.setPadding(dp(13), dp(13), dp(13), dp(13));
-        qr.setOnClickListener(v -> startFiscalQrScan());
-        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(dp(56), dp(56));
-        qrParams.setMargins(0, dp(8), 0, 0);
-        right.addView(qr, qrParams);
-
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(22), dp(20), dp(22), dp(22));
-        card.setBackgroundResource(isDarkTheme() ? R.drawable.cm_card_glass : 0);
-        if (!isDarkTheme()) card.setBackground(glassPanelBg());
-        elevate(card, 9);
-        root.addView(card, matchWrapWithTop(dp(4)));
-
-        TextView title = CheckMercadoUi.label(this, "Suas listas", 32,
-                isDarkTheme() ? CheckMercadoUi.TEXT : primaryText(), Typeface.BOLD);
-        card.addView(title);
-
-        TextView subtitle = CheckMercadoUi.label(this, "Crie listas e compare precos salvos.", 16,
-                isDarkTheme() ? CheckMercadoUi.MUTED : mutedText(), Typeface.NORMAL);
-        subtitle.setPadding(0, dp(5), 0, 0);
-        card.addView(subtitle);
-
-        GridLayout grid = new GridLayout(this);
-        grid.setColumnCount(2);
-        grid.setUseDefaultMargins(false);
-        card.addView(grid, matchWrapWithTop(dp(18)));
-
-        addHomeShortcut(grid, "Listas", R.drawable.ic_cart, true, () -> promptNewList(), 0);
-        addHomeShortcut(grid, "Estoque", R.drawable.ic_box, false, () -> showStockWindow(false), 1);
-        addHomeShortcut(grid, "Historico", R.drawable.ic_history, false, () -> showHistoryScreen(), 2);
-        addHomeShortcut(grid, "Gastos", R.drawable.ic_report, false, () -> showStockWindow(true), 3);
-    }
-
-    private void addHomeShortcut(GridLayout grid, String label, int icon, boolean primary, Runnable action, int index) {
-        LinearLayout button = new LinearLayout(this);
-        button.setOrientation(LinearLayout.HORIZONTAL);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(dp(10), 0, dp(10), 0);
-        button.setBackgroundResource(primary ? R.drawable.cm_button_primary : R.drawable.cm_button_blue);
-        button.setClickable(true);
-        button.setFocusable(true);
-        button.setOnClickListener(v -> action.run());
-        if ("Estoque".equals(label)) {
-            button.setOnLongClickListener(v -> {
-                if (secretLogoTaps >= 3) {
-                    showMarketGame();
-                    return true;
-                }
-                return false;
-            });
-        }
-        elevate(button, 7);
-
-        ImageView image = new ImageView(this);
-        image.setImageResource(icon);
-        image.setColorFilter(Color.WHITE);
-        button.addView(image, new LinearLayout.LayoutParams(dp(24), dp(24)));
-
-        TextView text = CheckMercadoUi.label(this, label, 14, Color.WHITE, Typeface.BOLD);
-        text.setPadding(dp(8), 0, 0, 0);
-        button.addView(text);
-
-        GridLayout.LayoutParams params = new GridLayout.LayoutParams();
-        params.width = 0;
-        params.height = dp(58);
-        params.columnSpec = GridLayout.spec(index % 2, 1f);
-        params.rowSpec = GridLayout.spec(index / 2);
-        params.setMargins((index % 2 == 0) ? 0 : dp(8), index < 2 ? 0 : dp(8), (index % 2 == 0) ? dp(8) : 0, 0);
-        grid.addView(button, params);
     }
 
     private void showHistoryScreen() {
@@ -602,22 +495,11 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
-        if (selectedIndex < 0 && homeTab == 0) {
-            ImageButton add = imageIconButton(R.drawable.ic_plus, CheckMercadoUi.GREEN, Color.WHITE);
-            add.setBackgroundResource(R.drawable.cm_button_primary);
-            add.setPadding(dp(15), dp(15), dp(15), dp(15));
-            add.setOnClickListener(v -> promptNewList());
-            FrameLayout.LayoutParams addParams = new FrameLayout.LayoutParams(dp(64), dp(64),
-                    Gravity.BOTTOM | Gravity.RIGHT);
-            addParams.setMargins(0, 0, dp(22), dp(22));
-            shell.addView(add, addParams);
-        }
         return shell;
     }
 
     private int backgroundForCurrentScreen() {
         boolean dark = isDarkTheme();
-        if (homeTab == 0 && selectedIndex < 0 && dark) return R.drawable.cm_bg_dark_home;
         if (selectedIndex >= 0 || homeTab == 5) return dark ? R.drawable.bg_list_dark : R.drawable.bg_list_light;
         if (homeTab == 1 || homeTab == 6) return dark ? R.drawable.bg_stock_dark : R.drawable.bg_stock_light;
         if (homeTab == 2) return dark ? R.drawable.bg_spending_dark : R.drawable.bg_spending_light;
@@ -1107,13 +989,9 @@ public class MainActivity extends Activity {
         ShoppingList list = lists.get(index);
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(16), dp(18), dp(16));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
         int listColor = list.displayColor();
-        if (homeTab == 0 && isDarkTheme()) {
-            card.setBackgroundResource(R.drawable.cm_card_green);
-        } else {
-            card.setBackground(glassCardBg(listColor));
-        }
+        card.setBackground(glassCardBg(listColor));
         elevate(card, 7);
         if (list.id != null && list.id.equals(flashImportedListId)) {
             flashImportedListId = "";
@@ -1136,11 +1014,9 @@ public class MainActivity extends Activity {
 
         TextView name = new TextView(this);
         name.setText(list.name);
-        name.setTextSize(homeTab == 0 ? 22 : 19);
+        name.setTextSize(19);
         name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setTextColor(homeTab == 0 && isDarkTheme()
-                ? CheckMercadoUi.TEXT
-                : (listColor == 0 ? primaryText() : readableOnTint(listColor)));
+        name.setTextColor(listColor == 0 ? primaryText() : readableOnTint(listColor));
         titleRow.addView(name, weighted());
 
         ImageButton lock = imageIconButton(list.locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open,
@@ -1154,60 +1030,13 @@ public class MainActivity extends Activity {
         lock.setAlpha(list.archived && list.locked ? 0.45f : 1.0f);
         titleRow.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        if (homeTab == 0) {
-            int done = completedCount(list);
-            double total = totalOfList(list);
-            LinearLayout chips = new LinearLayout(this);
-            chips.setOrientation(LinearLayout.HORIZONTAL);
-            chips.setGravity(Gravity.LEFT);
-            chips.setPadding(0, dp(10), 0, 0);
-            card.addView(chips, matchWrap());
-            addHomeListChip(chips, formatShortDate(list.createdAt));
-            addHomeListChip(chips, list.items.size() + " itens");
-            addHomeListChip(chips, done + " conclu\u00eddos");
-
-            TextView totalView = CheckMercadoUi.label(this, "total " + money.format(total), 17,
-                    isDarkTheme() ? CheckMercadoUi.GREEN : readableOnTint(listColor), Typeface.BOLD);
-            totalView.setPadding(0, dp(10), 0, 0);
-            card.addView(totalView);
-        } else {
-            TextView meta = new TextView(this);
-            meta.setText(listSubtitle(list));
-            meta.setTextSize(14);
-            meta.setTextColor(mutedText());
-            meta.setPadding(0, dp(5), 0, 0);
-            card.addView(meta);
-        }
+        TextView meta = new TextView(this);
+        meta.setText(listSubtitle(list));
+        meta.setTextSize(14);
+        meta.setTextColor(mutedText());
+        meta.setPadding(0, dp(5), 0, 0);
+        card.addView(meta);
         return card;
-    }
-
-    private void addHomeListChip(LinearLayout row, String text) {
-        TextView chip = CheckMercadoUi.label(this, text, 12,
-                isDarkTheme() ? CheckMercadoUi.TEXT : primaryText(), Typeface.BOLD);
-        chip.setGravity(Gravity.CENTER);
-        chip.setBackgroundResource(isDarkTheme() ? R.drawable.cm_chip : 0);
-        if (!isDarkTheme()) chip.setBackground(round(inputBg(), dp(12), stroke(), 1));
-        chip.setPadding(dp(9), dp(4), dp(9), dp(4));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(30));
-        params.setMargins(0, 0, dp(7), 0);
-        row.addView(chip, params);
-    }
-
-    private int completedCount(ShoppingList list) {
-        int done = 0;
-        for (ShoppingItem item : list.items) {
-            if (item.checked) done++;
-        }
-        return done;
-    }
-
-    private double totalOfList(ShoppingList list) {
-        double total = 0;
-        for (ShoppingItem item : list.items) {
-            if (item.price > 0) total += item.price * quantityOf(item);
-        }
-        return total;
     }
 
     private void flashImportedListCard(View target, int listColor) {
@@ -3031,11 +2860,7 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
         box.setPadding(dp(12), 0, dp(4), 0);
-        if (selectedIndex < 0 && homeTab == 0 && isDarkTheme()) {
-            box.setBackgroundResource(R.drawable.cm_search_box);
-        } else {
-            box.setBackground(inputPanelBg(filterActiveForCurrentScreen()));
-        }
+        box.setBackground(inputPanelBg(filterActiveForCurrentScreen()));
         row.addView(box, new LinearLayout.LayoutParams(0, dp(52), 1));
 
         EditText search = new EditText(this);

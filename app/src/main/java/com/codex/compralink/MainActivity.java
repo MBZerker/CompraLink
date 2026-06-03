@@ -135,6 +135,8 @@ public class MainActivity extends Activity {
     private static final String KEY_ACCENT = "accent_color";
     private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
     private static final String KEY_MONTHLY_GOAL = "monthly_goal";
+    private static final String KEY_MONTHLY_BUDGET_LIMIT = "monthly_budget_limit";
+    private static final String KEY_MONTHLY_BUDGET_ENTRIES = "monthly_budget_entries";
     private static final String KEY_SPENDING_RANGE = "spending_range_months";
     private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
     private static final String KEY_STOCK_HISTORY_SORT_DESC = "stock_history_sort_desc";
@@ -177,6 +179,7 @@ public class MainActivity extends Activity {
     private final List<StockEntry> stock = new ArrayList<>();
     private final List<StockEntry> stockHistory = new ArrayList<>();
     private final List<SpendingRecord> spendingHistory = new ArrayList<>();
+    private final List<MonthlyBudgetEntry> monthlyBudgetEntries = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
     private AutoCompleteTextView itemInput;
@@ -186,6 +189,7 @@ public class MainActivity extends Activity {
     private int homeTab = 0;
     private int spendingRangeMonths = 6;
     private double monthlyGoal;
+    private double monthlyBudgetLimit;
     private boolean shellReady;
     private boolean pendingIntentHandled;
     private boolean selectedFromHistory;
@@ -223,6 +227,7 @@ public class MainActivity extends Activity {
         themeMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_THEME, THEME_SYSTEM);
         accentColor = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_ACCENT, Color.rgb(15, 118, 110));
         monthlyGoal = Double.longBitsToDouble(getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(0)));
+        monthlyBudgetLimit = Double.longBitsToDouble(getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_MONTHLY_BUDGET_LIMIT, Double.doubleToLongBits(0)));
         spendingRangeMonths = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SPENDING_RANGE, 6);
         stockHistoryPending = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_PENDING, false);
         stockHistorySortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_SORT_DESC, true);
@@ -231,6 +236,7 @@ public class MainActivity extends Activity {
         loadStock();
         loadStockHistory();
         loadSpendingHistory();
+        loadMonthlyBudget();
         ensureSpendingRecordsForClosedLists();
         showSplash();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -443,6 +449,374 @@ public class MainActivity extends Activity {
         setContentView(rootScroll());
     }
 
+    private void showMonthlyBudgetScreen() {
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 9;
+        buildRoot();
+        addTopHeader("Or\u00e7amento mensal", "Planeje contas, vencimentos e limites do m\u00eas.", false);
+        addMonthlyBudgetSummary();
+        addMonthlyBudgetActions();
+        addMonthlyBudgetEntries();
+        setContentView(rootScroll());
+    }
+
+    private void addMonthlyBudgetSummary() {
+        double planned = monthlyBudgetPlanned();
+        double paid = monthlyBudgetPaid();
+        double pending = Math.max(0, planned - paid);
+        double available = monthlyBudgetLimit <= 0 ? -planned : monthlyBudgetLimit - planned;
+        int statusColor = monthlyBudgetLimit <= 0
+                ? accent()
+                : (available >= 0 ? Color.rgb(22, 163, 74) : Color.rgb(225, 29, 72));
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(glassCardBg(statusColor));
+        elevate(card, 5);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(top, matchWrap());
+
+        FrameLayout iconFrame = new FrameLayout(this);
+        iconFrame.setBackground(softPillBg(statusColor));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_budget_chart);
+        icon.setColorFilter(statusColor);
+        iconFrame.addView(icon, new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(52), dp(52));
+        iconParams.setMargins(0, 0, dp(12), 0);
+        top.addView(iconFrame, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        top.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        texts.addView(label("Resumo do m\u00eas", 18, true, primaryText()));
+        String limitText = monthlyBudgetLimit <= 0
+                ? "Defina um limite para acompanhar o teto de gastos."
+                : "Limite " + money.format(monthlyBudgetLimit) + " \u00b7 dispon\u00edvel " + money.format(available);
+        TextView subtitle = label(limitText, 13, false, mutedText());
+        subtitle.setPadding(0, dp(4), 0, 0);
+        texts.addView(subtitle);
+
+        TextView status = label(monthlyBudgetLimit <= 0 ? "Sem limite" : (available >= 0 ? "Dentro" : "Acima"), 13, true, statusColor);
+        status.setPadding(dp(10), dp(4), dp(10), dp(4));
+        status.setBackground(softPillBg(statusColor));
+        top.addView(status);
+
+        if (monthlyBudgetLimit > 0) {
+            card.addView(progressBarView(planned / monthlyBudgetLimit, statusColor), matchHeightWithTop(dp(10), dp(12)));
+        }
+        root.addView(card, matchWrapWithTop(dp(10)));
+
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(row1, matchWrapWithTop(dp(8)));
+        row1.addView(metricCard("Previsto", money.format(planned), primaryText(), R.drawable.ic_report, Color.rgb(57, 229, 108)), weighted());
+        LinearLayout.LayoutParams right = weighted();
+        right.setMargins(dp(8), 0, 0, 0);
+        row1.addView(metricCard("Pago", money.format(paid), Color.rgb(22, 163, 74), R.drawable.ic_money_circle, Color.rgb(22, 163, 74)), right);
+
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        root.addView(row2, matchWrapWithTop(dp(8)));
+        row2.addView(metricCard("Pendente", money.format(pending), pending > 0 ? Color.rgb(234, 179, 8) : Color.rgb(22, 163, 74), R.drawable.ic_calendar_tiny, Color.rgb(234, 179, 8)), weighted());
+        LinearLayout.LayoutParams right2 = weighted();
+        right2.setMargins(dp(8), 0, 0, 0);
+        row2.addView(metricCard("Saldo", monthlyBudgetLimit <= 0 ? "Sem limite" : money.format(available), statusColor, R.drawable.ic_target, statusColor), right2);
+    }
+
+    private void addMonthlyBudgetActions() {
+        LinearLayout tools = iconStrip();
+        addWeightedStripIcon(tools, R.drawable.ic_target, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> promptMonthlyBudgetLimit());
+        addWeightedStripIcon(tools, R.drawable.ic_plus, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> promptMonthlyBudgetEntry(null));
+        root.addView(tools, matchHeightWithTop(dp(54), dp(10)));
+    }
+
+    private void addMonthlyBudgetEntries() {
+        if (monthlyBudgetEntries.isEmpty()) {
+            root.addView(infoCard("Sem despesas mensais", "Toque em + para registrar contas, parcelas, vencimentos e categorias."), matchWrapWithTop(dp(10)));
+            return;
+        }
+        List<MonthlyBudgetEntry> rows = new ArrayList<>(monthlyBudgetEntries);
+        Collections.sort(rows, (a, b) -> {
+            if (a.paid != b.paid) return a.paid ? 1 : -1;
+            int due = Integer.compare(normalizedDueDay(a.dueDay), normalizedDueDay(b.dueDay));
+            if (due != 0) return due;
+            return normalize(a.description).compareTo(normalize(b.description));
+        });
+        root.addView(label("Despesas do m\u00eas", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        for (MonthlyBudgetEntry entry : rows) {
+            root.addView(monthlyBudgetEntryCard(entry), matchWrapWithTop(dp(10)));
+        }
+    }
+
+    private View monthlyBudgetEntryCard(MonthlyBudgetEntry entry) {
+        int color = budgetCategoryColor(entry.category);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(12), dp(14));
+        card.setBackground(glassCardBg(color));
+        elevate(card, 4);
+        card.setOnClickListener(v -> showMonthlyBudgetEntryOptions(entry));
+        card.setOnLongClickListener(v -> {
+            showMonthlyBudgetEntryOptions(entry);
+            return true;
+        });
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(top, matchWrap());
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        top.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView title = label(isBlank(entry.description) ? "Despesa" : entry.description, 18, true, primaryText());
+        texts.addView(title);
+        TextView meta = label("Vencimento " + currentMonthDueLabel(entry.dueDay) + " \u00b7 " + dueStatus(entry.dueDay), 13, false, mutedText());
+        meta.setPadding(0, dp(4), 0, 0);
+        texts.addView(meta);
+
+        TextView amount = label(money.format(entry.amount), 14, true, entry.paid ? Color.rgb(22, 163, 74) : color);
+        amount.setPadding(dp(10), dp(4), dp(10), dp(4));
+        amount.setBackground(softPillBg(entry.paid ? Color.rgb(22, 163, 74) : color));
+        top.addView(amount);
+
+        ImageButton more = moreMenuButton(mutedText());
+        more.setOnClickListener(v -> showMonthlyBudgetEntryOptions(entry));
+        top.addView(more, new LinearLayout.LayoutParams(dp(46), dp(42)));
+
+        LinearLayout detail = new LinearLayout(this);
+        detail.setOrientation(LinearLayout.VERTICAL);
+        detail.setPadding(0, dp(8), 0, 0);
+        card.addView(detail);
+
+        detail.addView(iconText(R.drawable.ic_calendar_tiny, "Dias para vencer: " + daysUntilDueLabel(entry.dueDay), 13, false, mutedText(), mutedText()));
+        if (!isBlank(entry.installment)) {
+            TextView parcel = label("Qtde/parcela: " + entry.installment, 13, false, mutedText());
+            parcel.setPadding(0, dp(4), 0, 0);
+            detail.addView(parcel);
+        }
+        if (entry.paid) {
+            String paidAt = isBlank(entry.paidAt) ? "Hoje" : entry.paidAt;
+            TextView paid = label("Pago em: " + paidAt, 13, true, Color.rgb(22, 163, 74));
+            paid.setPadding(0, dp(4), 0, 0);
+            detail.addView(paid);
+        }
+        if (!isBlank(entry.paymentMethod)) {
+            TextView payment = label("Forma de pagamento: " + entry.paymentMethod, 13, false, mutedText());
+            payment.setPadding(0, dp(4), 0, 0);
+            detail.addView(payment);
+        }
+        LinearLayout category = iconText(R.drawable.ic_tag_tiny, "Categoria: " + (isBlank(entry.category) ? "Sem categoria" : entry.category), 13, false, mutedText(), color);
+        category.setPadding(0, dp(4), 0, 0);
+        detail.addView(category);
+        TextView percent = label("Participa\u00e7\u00e3o no m\u00eas: " + monthlyBudgetPercent(entry), 13, true, color);
+        percent.setPadding(0, dp(4), 0, 0);
+        detail.addView(percent);
+        return card;
+    }
+
+    private void showMonthlyBudgetEntryOptions(MonthlyBudgetEntry entry) {
+        String paidOption = entry.paid ? "Marcar como pendente" : "Marcar como pago";
+        dialog()
+                .setTitle(isBlank(entry.description) ? "Despesa" : entry.description)
+                .setItems(new String[]{paidOption, "Editar", "Remover"}, (dialog, which) -> {
+                    if (which == 0) {
+                        entry.paid = !entry.paid;
+                        entry.paidAt = entry.paid && isBlank(entry.paidAt) ? formatDayMonth(System.currentTimeMillis()) : entry.paidAt;
+                        entry.updatedAt = System.currentTimeMillis();
+                        saveMonthlyBudget();
+                        showMonthlyBudgetScreen();
+                    } else if (which == 1) {
+                        promptMonthlyBudgetEntry(entry);
+                    } else {
+                        confirmRemoveMonthlyBudgetEntry(entry);
+                    }
+                })
+                .show();
+    }
+
+    private void confirmRemoveMonthlyBudgetEntry(MonthlyBudgetEntry entry) {
+        dialog()
+                .setTitle("Remover despesa?")
+                .setMessage(isBlank(entry.description) ? "Despesa" : entry.description)
+                .setPositiveButton("Remover", (dialog, which) -> {
+                    monthlyBudgetEntries.remove(entry);
+                    saveMonthlyBudget();
+                    showMonthlyBudgetScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptMonthlyBudgetLimit() {
+        EditText limit = dialogInput("Limite mensal", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(limit);
+        configureSelectAll(limit);
+        if (monthlyBudgetLimit > 0) limit.setText(formatPriceInput(monthlyBudgetLimit));
+        dialog()
+                .setTitle("Limite mensal")
+                .setMessage("Defina o teto de gastos planejado para o m\u00eas.")
+                .setView(limit)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    monthlyBudgetLimit = parsePrice(limit.getText().toString());
+                    saveMonthlyBudget();
+                    showMonthlyBudgetScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptMonthlyBudgetEntry(MonthlyBudgetEntry entry) {
+        boolean editing = entry != null;
+        MonthlyBudgetEntry target = editing ? entry : new MonthlyBudgetEntry();
+        LinearLayout form = dialogForm();
+
+        EditText description = dialogInput("Descri\u00e7\u00e3o", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        description.setText(target.description);
+        configureSelectAll(description);
+        form.addView(description, matchHeightWithTop(dp(54), 0));
+
+        EditText amount = dialogInput("Valor", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(amount);
+        configureSelectAll(amount);
+        if (target.amount > 0) amount.setText(formatPriceInput(target.amount));
+        form.addView(amount, matchHeightWithTop(dp(54), dp(8)));
+
+        EditText dueDay = dialogInput("Vencimento: dia do m\u00eas", InputType.TYPE_CLASS_NUMBER);
+        dueDay.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
+        dueDay.setText(target.dueDay > 0 ? String.valueOf(target.dueDay) : "5");
+        configureSelectAll(dueDay);
+        form.addView(dueDay, matchHeightWithTop(dp(54), dp(8)));
+
+        EditText installment = dialogInput("Qtde/parcela (ex.: 6/12)", InputType.TYPE_CLASS_TEXT);
+        installment.setText(target.installment);
+        form.addView(installment, matchHeightWithTop(dp(54), dp(8)));
+
+        EditText payment = dialogInput("Forma de pagamento", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        payment.setText(target.paymentMethod);
+        form.addView(payment, matchHeightWithTop(dp(54), dp(8)));
+
+        EditText category = dialogInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        category.setText(target.category);
+        form.addView(category, matchHeightWithTop(dp(54), dp(8)));
+
+        CheckBox paid = new CheckBox(this);
+        paid.setText("Despesa paga");
+        paid.setChecked(target.paid);
+        tintCheckBox(paid);
+        form.addView(paid, matchWrapWithTop(dp(8)));
+
+        EditText paidAt = dialogInput("Pago em (DD/MM)", InputType.TYPE_CLASS_TEXT);
+        paidAt.setText(target.paidAt);
+        form.addView(paidAt, matchHeightWithTop(dp(54), dp(8)));
+
+        dialog()
+                .setTitle(editing ? "Editar despesa" : "Nova despesa mensal")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    target.description = description.getText().toString().trim();
+                    if (isBlank(target.description)) target.description = "Despesa";
+                    target.amount = parsePrice(amount.getText().toString());
+                    target.dueDay = parseDueDay(dueDay.getText().toString());
+                    target.installment = installment.getText().toString().trim();
+                    target.paymentMethod = payment.getText().toString().trim();
+                    target.category = category.getText().toString().trim();
+                    target.paid = paid.isChecked();
+                    target.paidAt = target.paid
+                            ? (isBlank(paidAt.getText().toString()) ? formatDayMonth(System.currentTimeMillis()) : paidAt.getText().toString().trim())
+                            : "";
+                    target.updatedAt = System.currentTimeMillis();
+                    if (!editing) monthlyBudgetEntries.add(0, target);
+                    saveMonthlyBudget();
+                    showMonthlyBudgetScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private double monthlyBudgetPlanned() {
+        double total = 0;
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) total += entry.amount;
+        return total;
+    }
+
+    private double monthlyBudgetPaid() {
+        double total = 0;
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
+            if (entry.paid) total += entry.amount;
+        }
+        return total;
+    }
+
+    private int budgetCategoryColor(String category) {
+        if (isBlank(category)) return accent();
+        return categoryColor(category);
+    }
+
+    private String monthlyBudgetPercent(MonthlyBudgetEntry entry) {
+        double total = monthlyBudgetPlanned();
+        if (total <= 0 || entry == null) return "0%";
+        return String.format(Locale.ROOT, "%.0f%%", (entry.amount / total) * 100.0);
+    }
+
+    private int parseDueDay(String raw) {
+        try {
+            int value = Integer.parseInt(raw == null ? "" : raw.trim());
+            return Math.max(1, Math.min(31, value));
+        } catch (NumberFormatException e) {
+            return 5;
+        }
+    }
+
+    private int normalizedDueDay(int day) {
+        return Math.max(1, Math.min(31, day <= 0 ? 5 : day));
+    }
+
+    private String currentMonthDueLabel(int dueDay) {
+        Calendar cal = Calendar.getInstance();
+        int day = Math.min(normalizedDueDay(dueDay), cal.getActualMaximum(Calendar.DAY_OF_MONTH));
+        return String.format(Locale.ROOT, "%02d/%02d", day, cal.get(Calendar.MONTH) + 1);
+    }
+
+    private String formatDayMonth(long when) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        return String.format(Locale.ROOT, "%02d/%02d", date.get(Calendar.DAY_OF_MONTH), date.get(Calendar.MONTH) + 1);
+    }
+
+    private long daysUntilDue(int dueDay) {
+        Calendar today = Calendar.getInstance();
+        today.set(Calendar.HOUR_OF_DAY, 0);
+        today.set(Calendar.MINUTE, 0);
+        today.set(Calendar.SECOND, 0);
+        today.set(Calendar.MILLISECOND, 0);
+        Calendar due = (Calendar) today.clone();
+        int day = Math.min(normalizedDueDay(dueDay), due.getActualMaximum(Calendar.DAY_OF_MONTH));
+        due.set(Calendar.DAY_OF_MONTH, day);
+        return (due.getTimeInMillis() - today.getTimeInMillis()) / 86400000L;
+    }
+
+    private String daysUntilDueLabel(int dueDay) {
+        long days = daysUntilDue(dueDay);
+        if (days == 0) return "hoje";
+        if (days > 0) return days + (days == 1 ? " dia" : " dias");
+        long late = Math.abs(days);
+        return "atrasado h\u00e1 " + late + (late == 1 ? " dia" : " dias");
+    }
+
+    private String dueStatus(int dueDay) {
+        long days = daysUntilDue(dueDay);
+        if (days == 0) return "vence hoje";
+        if (days > 0) return "faltam " + days + (days == 1 ? " dia" : " dias");
+        long late = Math.abs(days);
+        return "atrasado h\u00e1 " + late + (late == 1 ? " dia" : " dias");
+    }
     private void showListScreen() {
         if (selectedIndex >= 0 && selectedIndex < lists.size()) {
             updateAutoLockedList(lists.get(selectedIndex));
@@ -457,6 +831,7 @@ public class MainActivity extends Activity {
                     : "Desbloqueie pelo cadeado para editar esta lista.";
             root.addView(infoCard("Lista protegida", message), matchWrapWithTop(dp(10)));
         }
+        if (list.budget > 0) addListBudgetCard(list);
 
         addSearchBar("Pesquisar itens da lista", listSearch, value -> {
             listSearch = value;
@@ -504,7 +879,7 @@ public class MainActivity extends Activity {
         boolean dark = isDarkTheme();
         if (selectedIndex >= 0 || homeTab == 5) return dark ? R.drawable.bg_list_dark : R.drawable.bg_list_light;
         if (homeTab == 1 || homeTab == 6) return dark ? R.drawable.bg_stock_dark : R.drawable.bg_stock_light;
-        if (homeTab == 2) return dark ? R.drawable.bg_spending_dark : R.drawable.bg_spending_light;
+        if (homeTab == 2 || homeTab == 9) return dark ? R.drawable.bg_spending_dark : R.drawable.bg_spending_light;
         if (homeTab == 3) return dark ? R.drawable.bg_history_dark : R.drawable.bg_history_light;
         return dark ? R.drawable.bg_home_dark : R.drawable.bg_home_light;
     }
@@ -629,7 +1004,7 @@ public class MainActivity extends Activity {
             } else {
                 actions.setOrientation(LinearLayout.VERTICAL);
                 actions.setGravity(Gravity.CENTER_HORIZONTAL);
-                int mainActionSize = homeMainActionSize(3);
+                int mainActionSize = homeMainActionSize(4);
                 LinearLayout mainActions = iconStrip();
                 actions.addView(mainActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, mainActionSize + dp(10)));
 
@@ -647,6 +1022,7 @@ public class MainActivity extends Activity {
                 });
 
                 addStripIcon(mainActions, R.drawable.ic_history, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, mainActionSize, v -> showHistoryScreen());
+                addStripIcon(mainActions, R.drawable.ic_budget_chart, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, mainActionSize, v -> showMonthlyBudgetScreen());
             }
 
         }
@@ -1041,6 +1417,14 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams totalParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         totalParams.setMargins(0, dp(7), 0, 0);
         content.addView(total, totalParams);
+        if (list.budget > 0) {
+            TextView budget = label("Dispon\u00edvel " + money.format(list.budget - totalOfList(list)), 12, true, budgetStatusColor(list));
+            budget.setPadding(dp(10), dp(4), dp(10), dp(4));
+            budget.setBackground(softPillBg(budgetStatusColor(list)));
+            LinearLayout.LayoutParams budgetParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            budgetParams.setMargins(0, dp(5), 0, 0);
+            content.addView(budget, budgetParams);
+        }
 
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
@@ -1091,6 +1475,60 @@ public class MainActivity extends Activity {
         }
         String status = list.locked ? " - protegida" : "";
         return formatShortDate(list.createdAt) + " - " + list.items.size() + " itens, " + done + " concluidos, total " + money.format(total) + status;
+    }
+
+    private int budgetStatusColor(ShoppingList list) {
+        if (list == null || list.budget <= 0) return accent();
+        double used = totalOfList(list);
+        double ratio = used / list.budget;
+        if (ratio >= 1.0) return Color.rgb(225, 29, 72);
+        if (ratio >= 0.85) return Color.rgb(234, 179, 8);
+        return Color.rgb(22, 163, 74);
+    }
+
+    private void addListBudgetCard(ShoppingList list) {
+        double used = totalOfList(list);
+        double available = list.budget - used;
+        int color = budgetStatusColor(list);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(glassCardBg(0));
+        elevate(card, 4);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(top, matchWrap());
+        top.addView(label("Or\u00e7amento da lista", 18, true, primaryText()), weighted());
+        TextView status = label(available >= 0 ? "Dentro do limite" : "Ultrapassado", 13, true, color);
+        status.setPadding(dp(10), dp(4), dp(10), dp(4));
+        status.setBackground(softPillBg(color));
+        top.addView(status);
+
+        TextView line = label("Or\u00e7amento: " + money.format(list.budget)
+                + "\nGasto: " + money.format(used)
+                + "\nDispon\u00edvel: " + money.format(available), 14, true, mutedText());
+        line.setPadding(0, dp(8), 0, 0);
+        card.addView(line);
+        card.addView(progressBarView(list.budget <= 0 ? 0 : used / list.budget, color), matchHeightWithTop(dp(10), dp(10)));
+
+        root.addView(card, matchWrapWithTop(dp(10)));
+    }
+
+    private View progressBarView(double ratio, int color) {
+        FrameLayout frame = new FrameLayout(this);
+        frame.setBackground(round(isDarkTheme() ? Color.argb(92, 15, 23, 42) : Color.argb(120, 226, 232, 240), dp(8), stroke(), 1));
+        View fill = new View(this);
+        fill.setBackground(round(color, dp(8), Color.TRANSPARENT, 0));
+        frame.post(() -> {
+            int width = frame.getWidth();
+            int fillWidth = Math.max(dp(4), (int) (width * Math.min(1.0, Math.max(0.0, ratio))));
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(fillWidth, ViewGroup.LayoutParams.MATCH_PARENT);
+            frame.updateViewLayout(fill, params);
+        });
+        frame.addView(fill, new FrameLayout.LayoutParams(dp(4), ViewGroup.LayoutParams.MATCH_PARENT));
+        return frame;
     }
 
     private void addNeonChip(LinearLayout row, String text, int color) {
@@ -2519,6 +2957,10 @@ public class MainActivity extends Activity {
 
         JSONArray spendingArray = new JSONArray();
         for (SpendingRecord entry : spendingHistory) spendingArray.put(entry.toJson());
+        JSONArray monthlyBudgetArray = new JSONArray();
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) monthlyBudgetArray.put(entry.toJson());
+        json.put("monthlyBudgetEntries", monthlyBudgetArray);
+
         json.put("spendingHistory", spendingArray);
 
         JSONObject settings = new JSONObject();
@@ -2526,6 +2968,7 @@ public class MainActivity extends Activity {
         settings.put("accentColor", accentColor);
         settings.put("spendingRangeMonths", spendingRangeMonths);
         settings.put("monthlyGoal", monthlyGoal);
+        settings.put("monthlyBudgetLimit", monthlyBudgetLimit);
         settings.put("gameBest", getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BEST, ""));
         json.put("settings", settings);
         return json;
@@ -4022,6 +4465,9 @@ public class MainActivity extends Activity {
         AutoCompleteTextView input = dialogAutoCompleteInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         setupListNameSuggestions(input);
         form.addView(input, matchHeight(dp(54)));
+        EditText budget = dialogInput("Or\u00e7amento", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(budget);
+        form.addView(budget, matchHeightWithTop(dp(54), dp(8)));
         CheckBox saveToStock = new CheckBox(this);
         saveToStock.setText("Salvar itens marcados no estoque");
         saveToStock.setTextColor(primaryText());
@@ -4037,6 +4483,7 @@ public class MainActivity extends Activity {
                     if (name.isEmpty()) name = "Nova lista";
                     ShoppingList list = new ShoppingList(name);
                     list.color = randomListColor();
+                    list.budget = parsePrice(budget.getText().toString());
                     list.saveCheckedToStock = saveToStock.isChecked();
                     lists.add(0, list);
                     save();
@@ -4100,15 +4547,25 @@ public class MainActivity extends Activity {
     private void promptEditList(int index) {
         ShoppingList list = lists.get(index);
         if (list.locked) return;
+        LinearLayout form = dialogForm();
         EditText input = dialogInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         input.setText(list.name);
         input.setSelection(input.getText().length());
+        form.addView(input, matchHeight(dp(54)));
+        EditText budget = dialogInput("Or\u00e7amento", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(budget);
+        if (list.budget > 0) {
+            budget.setText(formatPriceInput(list.budget));
+            budget.setSelection(budget.getText().length());
+        }
+        form.addView(budget, matchHeightWithTop(dp(54), dp(8)));
         dialog()
                 .setTitle("Editar lista")
-                .setView(input)
+                .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     String name = input.getText().toString().trim();
                     if (!name.isEmpty()) list.name = name;
+                    list.budget = parsePrice(budget.getText().toString());
                     save();
                     if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
                 })
@@ -4775,6 +5232,14 @@ public class MainActivity extends Activity {
     }
 
     private boolean saveImportedList(ShoppingList imported) {
+        if (imported == null) return false;
+        String importedName = imported.name == null ? "" : imported.name.trim();
+        if (imported.items.isEmpty()
+                && (isBlank(importedName) || "Lista".equalsIgnoreCase(importedName) || "Nova lista".equalsIgnoreCase(importedName))) {
+            Toast.makeText(this, "Lista compartilhada vazia ignorada.", Toast.LENGTH_SHORT).show();
+            return false;
+        }
+
         if (imported.id == null || imported.id.trim().isEmpty()) {
             imported.id = UUID.randomUUID().toString();
         }
@@ -4835,11 +5300,13 @@ public class MainActivity extends Activity {
         for (String key : currentItems.keySet()) {
             if (!incomingItems.containsKey(key)) removed++;
         }
-        if (added == 0 && removed == 0 && changed == 0 && stringEquals(current.name, incoming.name)) {
+        boolean budgetChanged = Math.abs(current.budget - incoming.budget) > 0.009;
+        if (added == 0 && removed == 0 && changed == 0 && stringEquals(current.name, incoming.name) && !budgetChanged) {
             return "A lista compartilhada esta igual a lista salva.";
         }
         StringBuilder message = new StringBuilder("Esta lista compartilhada ja existe, mas ha alteracoes.");
         if (!stringEquals(current.name, incoming.name)) message.append("\nNome atualizado.");
+        if (budgetChanged) message.append("\nOr\u00e7amento atualizado.");
         if (added > 0) message.append("\n").append(added).append(added == 1 ? " item novo." : " itens novos.");
         if (removed > 0) message.append("\n").append(removed).append(removed == 1 ? " item removido." : " itens removidos.");
         if (changed > 0) message.append("\n").append(changed).append(changed == 1 ? " item com valor, unidade, nota ou status atualizado." : " itens com valor, unidade, nota ou status atualizados.");
@@ -5089,6 +5556,13 @@ public class MainActivity extends Activity {
             for (int i = 0; i < spendingArray.length(); i++) spendingHistory.add(SpendingRecord.fromJson(spendingArray.getJSONObject(i)));
             saveSpendingHistory();
         }
+        JSONArray monthlyBudgetArray = backup.optJSONArray("monthlyBudgetEntries");
+        if (monthlyBudgetArray != null) {
+            monthlyBudgetEntries.clear();
+            for (int i = 0; i < monthlyBudgetArray.length(); i++) monthlyBudgetEntries.add(MonthlyBudgetEntry.fromJson(monthlyBudgetArray.getJSONObject(i)));
+            saveMonthlyBudget();
+        }
+
 
         JSONObject settings = backup.optJSONObject("settings");
         if (settings != null) {
@@ -5096,11 +5570,13 @@ public class MainActivity extends Activity {
             accentColor = settings.optInt("accentColor", accentColor);
             spendingRangeMonths = settings.optInt("spendingRangeMonths", spendingRangeMonths);
             monthlyGoal = settings.optDouble("monthlyGoal", monthlyGoal);
+            monthlyBudgetLimit = settings.optDouble("monthlyBudgetLimit", monthlyBudgetLimit);
             getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                     .putInt(KEY_THEME, themeMode)
                     .putInt(KEY_ACCENT, accentColor)
                     .putInt(KEY_SPENDING_RANGE, spendingRangeMonths)
                     .putLong(KEY_MONTHLY_GOAL, Double.doubleToLongBits(monthlyGoal))
+                    .putLong(KEY_MONTHLY_BUDGET_LIMIT, Double.doubleToLongBits(monthlyBudgetLimit))
                     .apply();
         }
     }
@@ -5131,6 +5607,32 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void loadMonthlyBudget() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_MONTHLY_BUDGET_ENTRIES, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            monthlyBudgetEntries.clear();
+            for (int i = 0; i < array.length(); i++) {
+                monthlyBudgetEntries.add(MonthlyBudgetEntry.fromJson(array.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            monthlyBudgetEntries.clear();
+        }
+    }
+
+    private void saveMonthlyBudget() {
+        JSONArray array = new JSONArray();
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
+            try {
+                array.put(entry.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(KEY_MONTHLY_BUDGET_ENTRIES, array.toString())
+                .putLong(KEY_MONTHLY_BUDGET_LIMIT, Double.doubleToLongBits(monthlyBudgetLimit))
+                .apply();
+    }
     private void save() {
         JSONArray array = new JSONArray();
         for (ShoppingList list : lists) {
@@ -5519,6 +6021,8 @@ public class MainActivity extends Activity {
             showStockHistoryWindow();
         } else if (homeTab == 7) {
             showCompraInvaders();
+        } else if (homeTab == 9) {
+            showMonthlyBudgetScreen();
         } else {
             showHomeScreen();
         }
@@ -6044,6 +6548,7 @@ public class MainActivity extends Activity {
         String id = UUID.randomUUID().toString();
         String name;
         int color;
+        double budget;
         long createdAt = System.currentTimeMillis();
         long lockedAt;
         boolean saveCheckedToStock = true;
@@ -6062,6 +6567,7 @@ public class MainActivity extends Activity {
             json.put("id", id);
             json.put("name", name);
             json.put("color", color);
+            json.put("budget", budget);
             json.put("createdAt", createdAt);
             json.put("lockedAt", lockedAt);
             json.put("saveCheckedToStock", saveCheckedToStock);
@@ -6079,6 +6585,7 @@ public class MainActivity extends Activity {
             ShoppingList list = new ShoppingList(json.optString("name", "Lista"));
             list.id = json.optString("id", UUID.randomUUID().toString());
             list.color = json.optInt("color", 0);
+            list.budget = json.optDouble("budget", 0);
             list.createdAt = json.optLong("createdAt", System.currentTimeMillis());
             list.lockedAt = json.optLong("lockedAt", 0);
             list.saveCheckedToStock = json.optBoolean("saveCheckedToStock", true);
@@ -7324,6 +7831,51 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static class MonthlyBudgetEntry {
+        String id = UUID.randomUUID().toString();
+        String description = "";
+        String installment = "";
+        double amount;
+        int dueDay = 5;
+        boolean paid;
+        String paidAt = "";
+        String paymentMethod = "";
+        String category = "";
+        long createdAt = System.currentTimeMillis();
+        long updatedAt = createdAt;
+
+        JSONObject toJson() throws JSONException {
+            JSONObject json = new JSONObject();
+            json.put("id", id);
+            json.put("description", description);
+            json.put("installment", installment);
+            json.put("amount", amount);
+            json.put("dueDay", dueDay);
+            json.put("paid", paid);
+            json.put("paidAt", paidAt);
+            json.put("paymentMethod", paymentMethod);
+            json.put("category", category);
+            json.put("createdAt", createdAt);
+            json.put("updatedAt", updatedAt);
+            return json;
+        }
+
+        static MonthlyBudgetEntry fromJson(JSONObject json) {
+            MonthlyBudgetEntry entry = new MonthlyBudgetEntry();
+            entry.id = json.optString("id", UUID.randomUUID().toString());
+            entry.description = json.optString("description", "Despesa");
+            entry.installment = json.optString("installment", "");
+            entry.amount = json.optDouble("amount", 0);
+            entry.dueDay = json.optInt("dueDay", 5);
+            entry.paid = json.optBoolean("paid", false);
+            entry.paidAt = json.optString("paidAt", "");
+            entry.paymentMethod = json.optString("paymentMethod", "");
+            entry.category = json.optString("category", "");
+            entry.createdAt = json.optLong("createdAt", System.currentTimeMillis());
+            entry.updatedAt = json.optLong("updatedAt", entry.createdAt);
+            return entry;
+        }
+    }
     private static class StockEntry {
         String id = UUID.randomUUID().toString();
         String name;

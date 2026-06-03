@@ -204,6 +204,11 @@ public class MainActivity extends Activity {
     private int stockSortMode = STOCK_SORT_DATE;
     private final LinkedHashSet<String> selectedStockIds = new LinkedHashSet<>();
     private TextView stockSelectionStatus;
+    private int homeListFilter;
+    private int historyListFilter;
+    private int listItemFilter;
+    private String stockCategoryFilter = "";
+    private String stockHistoryCategoryFilter = "";
     private int themeMode = THEME_SYSTEM;
     private int accentColor = Color.rgb(15, 118, 110);
     private int secretLogoTaps;
@@ -360,6 +365,7 @@ public class MainActivity extends Activity {
         boolean shown = false;
         for (int i = 0; i < lists.size(); i++) {
             if (lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
+            if (!matchesHomeListFilter(lists.get(i))) continue;
             if (!matchesListSearch(lists.get(i), homeSearch)) continue;
             shown = true;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
@@ -388,6 +394,7 @@ public class MainActivity extends Activity {
         boolean shown = false;
         for (int i = 0; i < lists.size(); i++) {
             if (!lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
+            if (!matchesHistoryListFilter(lists.get(i))) continue;
             if (!matchesListSearch(lists.get(i), historySearch)) continue;
             shown = true;
             root.addView(listCard(i), matchWrapWithTop(dp(10)));
@@ -643,10 +650,11 @@ public class MainActivity extends Activity {
                 mainActions.setOrientation(LinearLayout.HORIZONTAL);
                 mainActions.setGravity(Gravity.CENTER_HORIZONTAL);
                 actions.addView(mainActions, matchWrap());
+                int mainActionSize = homeMainActionSize(4);
 
                 ImageButton newList = homeImageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 newList.setOnClickListener(v -> promptNewList());
-                mainActions.addView(newList, new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize()));
+                mainActions.addView(newList, new LinearLayout.LayoutParams(mainActionSize, mainActionSize));
 
                 ImageButton stockButton = homeImageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
@@ -657,15 +665,21 @@ public class MainActivity extends Activity {
                     }
                     return false;
                 });
-                LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
+                LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
                 stockParams.setMargins(dp(8), 0, 0, 0);
                 mainActions.addView(stockButton, stockParams);
 
                 ImageButton history = homeImageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
                 history.setOnClickListener(v -> showHistoryScreen());
-                LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(homeButtonSize(), homeButtonSize());
+                LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
                 historyParams.setMargins(dp(8), 0, 0, 0);
                 mainActions.addView(history, historyParams);
+
+                ImageButton spending = homeImageIconButton(R.drawable.ic_report, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                spending.setOnClickListener(v -> showStockWindow(true));
+                LinearLayout.LayoutParams spendingParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
+                spendingParams.setMargins(dp(8), 0, 0, 0);
+                mainActions.addView(spending, spendingParams);
             }
 
         }
@@ -1431,7 +1445,7 @@ public class MainActivity extends Activity {
         root.addView(stockSelectionCard(), matchWrapWithTop(dp(10)));
         List<StockEntry> rows = new ArrayList<>(stock);
         for (int i = rows.size() - 1; i >= 0; i--) {
-            if (!matchesStockSearch(rows.get(i), stockSearch)) rows.remove(i);
+            if (!matchesStockSearch(rows.get(i), stockSearch) || !matchesStockCategoryFilter(rows.get(i), false)) rows.remove(i);
         }
         sortStockRows(rows);
         if (rows.isEmpty()) {
@@ -2337,7 +2351,7 @@ public class MainActivity extends Activity {
         }
         List<StockEntry> rows = new ArrayList<>(stockHistory);
         for (int i = rows.size() - 1; i >= 0; i--) {
-            if (!matchesStockSearch(rows.get(i), stockHistorySearch)) rows.remove(i);
+            if (!matchesStockSearch(rows.get(i), stockHistorySearch) || !matchesStockCategoryFilter(rows.get(i), true)) rows.remove(i);
         }
         Collections.sort(rows, (a, b) -> Double.compare(stockDurationDays(a), stockDurationDays(b)));
         if (stockHistorySortDesc) Collections.reverse(rows);
@@ -2853,11 +2867,16 @@ public class MainActivity extends Activity {
     }
 
     private void addSearchBar(String hint, String value, SearchCallback callback) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
         box.setPadding(dp(12), 0, dp(4), 0);
-        box.setBackground(round(inputBg(), dp(16), stroke(), 1));
+        box.setBackground(round(inputBg(), dp(16), filterActiveForCurrentScreen() ? accent() : stroke(), 1));
+        row.addView(box, new LinearLayout.LayoutParams(0, dp(52), 1));
 
         EditText search = new EditText(this);
         search.setSingleLine(true);
@@ -2903,8 +2922,113 @@ public class MainActivity extends Activity {
                 }, 180);
             }
         });
-        root.addView(box, matchHeightWithTop(dp(52), dp(10)));
+        ImageButton filter = imageIconButton(R.drawable.ic_filter_sliders,
+                filterActiveForCurrentScreen() ? accent() : inputBg(),
+                filterActiveForCurrentScreen()
+                        ? (isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE)
+                        : accent());
+        filter.setPadding(dp(13), dp(13), dp(13), dp(13));
+        filter.setOnClickListener(v -> showSearchFilter());
+        LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(dp(52), dp(52));
+        filterParams.setMargins(dp(10), 0, 0, 0);
+        row.addView(filter, filterParams);
+
+        root.addView(row, matchHeightWithTop(dp(52), dp(10)));
         if (value != null && !value.isEmpty()) search.requestFocus();
+    }
+
+    private boolean filterActiveForCurrentScreen() {
+        if (selectedIndex >= 0) return listItemFilter != 0;
+        if (homeTab == 0) return homeListFilter != 0;
+        if (homeTab == 3) return historyListFilter != 0;
+        if (homeTab == 1) return stockCategoryFilter != null && !stockCategoryFilter.trim().isEmpty();
+        if (homeTab == 6) return stockHistoryCategoryFilter != null && !stockHistoryCategoryFilter.trim().isEmpty();
+        return false;
+    }
+
+    private void showSearchFilter() {
+        if (selectedIndex >= 0) {
+            String[] options = {"Todos", "Pendentes", "Concluidos", "Com preco", "Sem preco"};
+            dialog()
+                    .setTitle("Filtrar itens")
+                    .setSingleChoiceItems(options, listItemFilter, (dialog, which) -> {
+                        listItemFilter = which;
+                        dialog.dismiss();
+                        showListScreen();
+                    })
+                    .show();
+            return;
+        }
+        if (homeTab == 0) {
+            String[] options = {"Todas", "Abertas", "Protegidas", "Com itens", "Vazias"};
+            dialog()
+                    .setTitle("Filtrar listas")
+                    .setSingleChoiceItems(options, homeListFilter, (dialog, which) -> {
+                        homeListFilter = which;
+                        dialog.dismiss();
+                        showHomeScreen();
+                    })
+                    .show();
+            return;
+        }
+        if (homeTab == 3) {
+            String[] options = {"Todas", "Com itens", "Vazias"};
+            dialog()
+                    .setTitle("Filtrar historico")
+                    .setSingleChoiceItems(options, historyListFilter, (dialog, which) -> {
+                        historyListFilter = which;
+                        dialog.dismiss();
+                        showHistoryScreen();
+                    })
+                    .show();
+            return;
+        }
+        if (homeTab == 1) {
+            showCategoryFilter(false);
+            return;
+        }
+        if (homeTab == 6) showCategoryFilter(true);
+    }
+
+    private void showCategoryFilter(boolean history) {
+        List<String> categories = new ArrayList<>();
+        categories.add("Todas as categorias");
+        List<StockEntry> source = history ? stockHistory : stock;
+        for (StockEntry entry : source) {
+            String category = categoryOf(entry);
+            boolean exists = false;
+            for (String current : categories) {
+                if (current.equalsIgnoreCase(category)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) categories.add(category);
+        }
+        String currentFilter = history ? stockHistoryCategoryFilter : stockCategoryFilter;
+        int checked = 0;
+        for (int i = 1; i < categories.size(); i++) {
+            if (categories.get(i).equalsIgnoreCase(currentFilter)) {
+                checked = i;
+                break;
+            }
+        }
+        String[] options = categories.toArray(new String[0]);
+        dialog()
+                .setTitle("Filtrar categoria")
+                .setSingleChoiceItems(options, checked, (dialog, which) -> {
+                    String selected = which == 0 ? "" : options[which];
+                    if (history) {
+                        stockHistoryCategoryFilter = selected;
+                        dialog.dismiss();
+                        showStockHistoryWindow();
+                    } else {
+                        stockCategoryFilter = selected;
+                        dialog.dismiss();
+                        showStockWindow(false);
+                    }
+                })
+                .show();
     }
 
     private boolean matchesListSearch(ShoppingList list, String query) {
@@ -2918,14 +3042,41 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private boolean matchesHomeListFilter(ShoppingList list) {
+        if (homeListFilter == 1) return !list.locked && !list.archived;
+        if (homeListFilter == 2) return list.locked;
+        if (homeListFilter == 3) return !list.items.isEmpty();
+        if (homeListFilter == 4) return list.items.isEmpty();
+        return true;
+    }
+
+    private boolean matchesHistoryListFilter(ShoppingList list) {
+        if (historyListFilter == 1) return !list.items.isEmpty();
+        if (historyListFilter == 2) return list.items.isEmpty();
+        return true;
+    }
+
     private boolean matchesItemSearch(ShoppingItem item, String query) {
         String key = normalize(query);
         return key.isEmpty() || normalize(item.name).contains(key) || normalize(item.note).contains(key);
     }
 
+    private boolean matchesItemFilter(ShoppingItem item) {
+        if (listItemFilter == 1) return !item.checked;
+        if (listItemFilter == 2) return item.checked;
+        if (listItemFilter == 3) return item.price > 0;
+        if (listItemFilter == 4) return item.price <= 0;
+        return true;
+    }
+
     private boolean matchesStockSearch(StockEntry entry, String query) {
         String key = normalize(query);
         return key.isEmpty() || normalize(entry.name).contains(key) || normalize(categoryOf(entry)).contains(key);
+    }
+
+    private boolean matchesStockCategoryFilter(StockEntry entry, boolean history) {
+        String filter = history ? stockHistoryCategoryFilter : stockCategoryFilter;
+        return filter == null || filter.trim().isEmpty() || categoryOf(entry).equalsIgnoreCase(filter.trim());
     }
 
     private void addInputCard() {
@@ -3158,7 +3309,7 @@ public class MainActivity extends Activity {
         ShoppingList current = lists.get(selectedIndex);
         boolean any = false;
         for (ShoppingItem item : current.items) {
-            if (matchesItemSearch(item, listSearch)) {
+            if (matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
                 any = true;
                 break;
             }
@@ -3172,7 +3323,7 @@ public class MainActivity extends Activity {
             addItemsByCheckedState(false);
         } else if (current.sortMode == SORT_KEEP_POSITION) {
             for (int i = 0; i < current.items.size(); i++) {
-                if (matchesItemSearch(current.items.get(i), listSearch)) {
+                if (matchesItemSearch(current.items.get(i), listSearch) && matchesItemFilter(current.items.get(i))) {
                     root.addView(itemRow(current.items.get(i), i), matchWrapWithTop(dp(8)));
                 }
             }
@@ -3186,7 +3337,7 @@ public class MainActivity extends Activity {
         ShoppingList current = lists.get(selectedIndex);
         for (int i = 0; i < current.items.size(); i++) {
             ShoppingItem item = current.items.get(i);
-            if (item.checked == checked && matchesItemSearch(item, listSearch)) {
+            if (item.checked == checked && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
                 root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
             }
         }
@@ -5188,23 +5339,25 @@ public class MainActivity extends Activity {
     }
 
     private int cardBg() {
-        return isDarkTheme() ? Color.rgb(15, 23, 42) : Color.WHITE;
+        return isDarkTheme() ? Color.argb(210, 8, 18, 38) : Color.argb(238, 255, 255, 255);
     }
 
     private int checkedBg() {
-        return isDarkTheme() ? Color.rgb(30, 41, 59) : Color.rgb(241, 245, 249);
+        return isDarkTheme() ? Color.argb(205, 30, 41, 59) : Color.argb(230, 241, 245, 249);
     }
 
     private int inputBg() {
-        return isDarkTheme() ? Color.rgb(30, 41, 59) : Color.rgb(248, 250, 252);
+        return isDarkTheme() ? Color.argb(178, 15, 23, 42) : Color.argb(232, 248, 250, 252);
     }
 
     private int softButtonBg() {
-        return isDarkTheme() ? Color.rgb(51, 65, 85) : Color.rgb(226, 232, 240);
+        return isDarkTheme() ? Color.argb(190, 30, 41, 59) : Color.argb(232, 226, 232, 240);
     }
 
     private int stroke() {
-        return isDarkTheme() ? Color.rgb(51, 65, 85) : Color.rgb(226, 232, 240);
+        return isDarkTheme()
+                ? blend(accent(), Color.rgb(59, 130, 246), 0.36f)
+                : blend(accent(), Color.rgb(148, 163, 184), 0.18f);
     }
 
     private int primaryText() {
@@ -5411,6 +5564,13 @@ public class MainActivity extends Activity {
 
     private int homeButtonSize() {
         return dp(72);
+    }
+
+    private int homeMainActionSize(int count) {
+        int available = getResources().getDisplayMetrics().widthPixels - dp(96);
+        int totalMargins = dp(8) * Math.max(0, count - 1);
+        int fitted = (available - totalMargins) / Math.max(1, count);
+        return Math.max(dp(54), Math.min(homeButtonSize(), fitted));
     }
 
     private int listActionButtonSize(boolean locked) {

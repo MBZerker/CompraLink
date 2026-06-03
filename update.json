@@ -1,9 +1,9 @@
 {
-  "versionCode": 87,
-  "versionName": "4.56",
+  "versionCode": 88,
+  "versionName": "4.57",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "e371d9f471a386a24a1cf72b085ef1dfdab40020f14b0d14e0462b3454317f03",
-  "sizeBytes": 39421020,
-  "notes": "Suaviza o neon, remove Gastos da tela inicial, refina filtro/abas e corrige cores do menu escuro."
+  "sha256": "4a9d9e59f84f3c8b758f0ba656ba64a84e1fb593cd94b20e4bb8aefeed249873",
+  "sizeBytes": 39422317,
+  "notes": "Aplica o novo estilo visual com barras segmentadas, cards com menu de tres pontos, abas de estoque mais largas e menus/dropdowns ajustados aos temas."
 }

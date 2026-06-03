@@ -525,13 +525,24 @@ public class MainActivity extends Activity {
         topLine.setGravity(homeHeader ? Gravity.TOP : Gravity.CENTER_VERTICAL);
         header.addView(topLine, matchWrap());
 
+        int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);
+        int iconColor = isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE;
+
+        if (homeHeader) {
+            ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), iconColor);
+            if (neonHome()) applyNeonIconButton(qr, CheckMercadoNeonUi.GREEN);
+            qr.setPadding(dp(14), dp(14), dp(14), dp(14));
+            qr.setOnClickListener(v -> startFiscalQrScan());
+            topLine.addView(qr, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
+        }
+
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
         titleBlock.setGravity(homeHeader ? Gravity.TOP : Gravity.CENTER_VERTICAL);
         titleBlock.setPadding(0, 0, dp(10), 0);
-        topLine.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-
-        int sideButtonSize = homeHeader ? homeButtonSize() : dp(48);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        if (homeHeader) titleParams.setMargins(dp(12), 0, dp(10), 0);
+        topLine.addView(titleBlock, titleParams);
 
         LinearLayout sideControls = new LinearLayout(this);
         sideControls.setOrientation(LinearLayout.VERTICAL);
@@ -539,20 +550,11 @@ public class MainActivity extends Activity {
         sideControls.setPadding(0, dp(6), 0, 0);
 
         if (homeHeader) {
-            int iconColor = isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE;
             ImageButton menu = homeImageIconButton(R.drawable.ic_menu, menuButtonBg(), iconColor);
             if (neonHome()) applyNeonIconButton(menu, CheckMercadoNeonUi.BLUE);
             menu.setPadding(dp(14), dp(14), dp(14), dp(14));
             menu.setOnClickListener(this::showHomeMenu);
             sideControls.addView(menu, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
-
-            ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), iconColor);
-            if (neonHome()) applyNeonIconButton(qr, CheckMercadoNeonUi.GREEN);
-            qr.setPadding(dp(14), dp(14), dp(14), dp(14));
-            qr.setOnClickListener(v -> startFiscalQrScan());
-            LinearLayout.LayoutParams qrTopParams = new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize);
-            qrTopParams.setMargins(0, dp(8), 0, 0);
-            sideControls.addView(qr, qrTopParams);
         } else {
             ImageButton themeTop = imageIconButton(isDarkTheme() ? R.drawable.ic_sun : R.drawable.ic_moon,
                     isDarkTheme() ? Color.WHITE : Color.BLACK,
@@ -585,8 +587,10 @@ public class MainActivity extends Activity {
         if (listOpen) {
             ShoppingList current = lists.get(selectedIndex);
             int listActionSize = listActionButtonSize(current.locked);
-            ImageButton back = imageIconButton(R.drawable.ic_back, softButtonBg(), primaryText());
-            back.setOnClickListener(v -> {
+            LinearLayout strip = iconStrip();
+            actions.addView(strip, matchHeight(listActionSize + dp(10)));
+
+            addWeightedStripIcon(strip, R.drawable.ic_back, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, v -> {
                 selectedIndex = -1;
                 if (selectedFromHistory) {
                     selectedFromHistory = false;
@@ -595,74 +599,44 @@ public class MainActivity extends Activity {
                     showHomeScreen();
                 }
             });
-            actions.addView(back, new LinearLayout.LayoutParams(listActionSize, listActionSize));
 
             if (!current.locked) {
-                ImageButton add = imageIconButton(R.drawable.ic_plus, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                add.setOnClickListener(v -> promptAddItem());
-                LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
-                addParams.setMargins(dp(8), 0, 0, 0);
-                actions.addView(add, addParams);
+                addWeightedStripIcon(strip, R.drawable.ic_plus, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> promptAddItem());
             }
 
-            ImageButton share = imageIconButton(R.drawable.ic_share_nodes, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
             boolean canShare = selectedIndex >= 0 && !lists.get(selectedIndex).items.isEmpty();
-            share.setEnabled(canShare);
-            share.setAlpha(canShare ? 1.0f : 0.38f);
-            share.setOnClickListener(v -> {
+            addWeightedStripIcon(strip, R.drawable.ic_share_nodes, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), canShare, v -> {
                 if (canShare) shareSelectedList();
             });
-            LinearLayout.LayoutParams shareParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
-            shareParams.setMargins(dp(8), 0, 0, 0);
-            actions.addView(share, shareParams);
 
-            ImageButton print = imageIconButton(R.drawable.ic_print, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-            print.setOnClickListener(v -> showPrintPreview());
-            LinearLayout.LayoutParams printParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
-            printParams.setMargins(dp(8), 0, 0, 0);
-            actions.addView(print, printParams);
+            addWeightedStripIcon(strip, R.drawable.ic_print, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, v -> showPrintPreview());
 
-            ImageButton sort = imageIconButton(sortIcon(current.sortMode), softButtonBg(), primaryText());
-            sort.setEnabled(!current.locked);
-            sort.setAlpha(current.locked ? 0.38f : 1.0f);
-            sort.setOnClickListener(v -> {
+            addWeightedStripIcon(strip, sortIcon(current.sortMode), isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), !current.locked, v -> {
                 if (current.locked) return;
                 current.sortMode = (current.sortMode + 1) % 3;
                 save();
                 showListScreen();
             });
-            LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(listActionSize, listActionSize);
-            sortParams.setMargins(dp(8), 0, 0, 0);
-            actions.addView(sort, sortParams);
 
         } else {
             if (homeTab != 0) {
-                Button back = button("Voltar", softButtonBg(), primaryText());
-                back.setOnClickListener(v -> showHomeScreen());
-                actions.addView(back, weighted());
+                LinearLayout strip = iconStrip();
+                actions.addView(strip, new LinearLayout.LayoutParams(0, dp(54), 1));
+                addWeightedStripIcon(strip, R.drawable.ic_back, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, v -> showHomeScreen());
                 if (homeTab == 1) {
-                    ImageButton sort = imageIconButton(R.drawable.ic_sort_keep_position, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                    sort.setOnClickListener(v -> promptStockSort());
-                    LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-                    sortParams.setMargins(dp(8), 0, 0, 0);
-                    actions.addView(sort, sortParams);
+                    addWeightedStripIcon(strip, R.drawable.ic_sort_keep_position, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> promptStockSort());
                 }
             } else {
                 actions.setOrientation(LinearLayout.VERTICAL);
                 actions.setGravity(Gravity.CENTER_HORIZONTAL);
-                LinearLayout mainActions = new LinearLayout(this);
-                mainActions.setOrientation(LinearLayout.HORIZONTAL);
-                mainActions.setGravity(Gravity.CENTER_HORIZONTAL);
-                actions.addView(mainActions, matchWrap());
                 int mainActionSize = homeMainActionSize(3);
+                LinearLayout mainActions = iconStrip();
+                actions.addView(mainActions, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, mainActionSize + dp(10)));
 
-                ImageButton newList = homeImageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                if (neonHome()) applyNeonIconButton(newList, CheckMercadoNeonUi.GREEN);
+                ImageButton newList = addStripIcon(mainActions, R.drawable.ic_cart, neonHome() ? CheckMercadoNeonUi.GREEN : iconColor, true, mainActionSize, v -> promptNewList());
                 newList.setOnClickListener(v -> promptNewList());
-                mainActions.addView(newList, new LinearLayout.LayoutParams(mainActionSize, mainActionSize));
 
-                ImageButton stockButton = homeImageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                if (neonHome()) applyNeonIconButton(stockButton, CheckMercadoNeonUi.BLUE);
+                ImageButton stockButton = addStripIcon(mainActions, R.drawable.ic_box, neonHome() ? CheckMercadoNeonUi.TEXT : iconColor, true, mainActionSize, v -> showStockWindow(false));
                 stockButton.setOnClickListener(v -> showStockWindow(false));
                 stockButton.setOnLongClickListener(v -> {
                     if (secretLogoTaps >= 3) {
@@ -671,16 +645,8 @@ public class MainActivity extends Activity {
                     }
                     return false;
                 });
-                LinearLayout.LayoutParams stockParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
-                stockParams.setMargins(dp(8), 0, 0, 0);
-                mainActions.addView(stockButton, stockParams);
 
-                ImageButton history = homeImageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
-                if (neonHome()) applyNeonIconButton(history, CheckMercadoNeonUi.BLUE);
-                history.setOnClickListener(v -> showHistoryScreen());
-                LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
-                historyParams.setMargins(dp(8), 0, 0, 0);
-                mainActions.addView(history, historyParams);
+                addStripIcon(mainActions, R.drawable.ic_history, neonHome() ? CheckMercadoNeonUi.TEXT : iconColor, true, mainActionSize, v -> showHistoryScreen());
             }
 
         }
@@ -788,18 +754,12 @@ public class MainActivity extends Activity {
     }
 
     private void addStockTabs() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(0, dp(12), 0, 0);
-        root.addView(row, matchWrap());
-
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setGravity(Gravity.CENTER_VERTICAL);
         tabs.setPadding(dp(4), dp(4), dp(4), dp(4));
         tabs.setBackground(isDarkTheme() ? CheckMercadoNeonUi.panel(this) : round(inputBg(), dp(14), stroke(), 1));
-        row.addView(tabs, new LinearLayout.LayoutParams(0, dp(58), 1));
+        root.addView(tabs, matchHeightWithTop(dp(64), dp(12)));
 
         addStockTabButton(tabs, "Estoque", R.drawable.ic_box, 1, () -> showStockWindow(false));
         addStockTabDivider(tabs);
@@ -808,14 +768,12 @@ public class MainActivity extends Activity {
         View history = addStockTabButton(tabs, "Historico", R.drawable.ic_history, 6, this::showStockHistoryWindow);
         if (stockHistoryPending && homeTab != 6) startStockHistoryBlink(history);
 
-        ImageButton undo = imageIconButton(R.drawable.ic_undo, stockUndoStockJson == null ? softButtonBg() : accent(), stockUndoStockJson == null ? primaryText() : Color.WHITE);
-        if (isDarkTheme()) applyNeonIconButton(undo, stockUndoStockJson == null ? CheckMercadoNeonUi.BLUE : CheckMercadoNeonUi.GREEN);
-        undo.setEnabled(stockUndoStockJson != null);
-        undo.setAlpha(stockUndoStockJson == null ? 0.45f : 1.0f);
-        undo.setOnClickListener(v -> undoStockAction());
-        LinearLayout.LayoutParams undoParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        undoParams.setMargins(dp(6), 0, 0, 0);
-        row.addView(undo, undoParams);
+        LinearLayout tools = iconStrip();
+        addWeightedStripIcon(tools, R.drawable.ic_undo,
+                stockUndoStockJson == null ? mutedText() : (isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent()),
+                stockUndoStockJson != null,
+                v -> undoStockAction());
+        root.addView(tools, matchHeightWithTop(dp(50), dp(8)));
     }
 
     private View addStockTabButton(LinearLayout tabs, String label, int iconRes, int tab, Runnable action) {
@@ -842,6 +800,8 @@ public class MainActivity extends Activity {
         tabView.addView(icon, new LinearLayout.LayoutParams(dp(21), dp(21)));
 
         TextView text = label(label, 12, true, color);
+        text.setSingleLine(true);
+        text.setIncludeFontPadding(false);
         text.setPadding(dp(6), 0, 0, 0);
         tabView.addView(text);
 
@@ -1023,11 +983,13 @@ public class MainActivity extends Activity {
     private View listCard(int index) {
         ShoppingList list = lists.get(index);
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(12), dp(12));
         int listColor = list.displayColor();
-        boolean neon = neonHome();
-        card.setBackground(neon ? CheckMercadoNeonUi.card(this, CheckMercadoNeonUi.GREEN) : glassCardBg(listColor));
+        boolean neon = isDarkTheme();
+        int accentColor = listColor == 0 ? accent() : listColor;
+        card.setBackground(neon ? CheckMercadoNeonUi.card(this, accentColor) : glassCardBg(listColor));
         elevate(card, 7);
         if (list.id != null && list.id.equals(flashImportedListId)) {
             flashImportedListId = "";
@@ -1043,17 +1005,50 @@ public class MainActivity extends Activity {
             return true;
         });
 
-        LinearLayout titleRow = new LinearLayout(this);
-        titleRow.setOrientation(LinearLayout.HORIZONTAL);
-        titleRow.setGravity(Gravity.CENTER_VERTICAL);
-        card.addView(titleRow, matchWrap());
+        FrameLayout iconFrame = new FrameLayout(this);
+        iconFrame.setBackground(isDarkTheme()
+                ? CheckMercadoNeonUi.chip(this, CheckMercadoNeonUi.GREEN)
+                : round(withAlpha(accentColor, 24), dp(16), withAlpha(accentColor, 165), 1));
+        ImageView listIcon = new ImageView(this);
+        listIcon.setImageResource(R.drawable.ic_clipboard_list);
+        listIcon.setColorFilter(isDarkTheme() ? CheckMercadoNeonUi.GREEN : accentColor);
+        iconFrame.addView(listIcon, new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(58), dp(58));
+        iconParams.setMargins(0, 0, dp(12), 0);
+        card.addView(iconFrame, iconParams);
+
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(content, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         TextView name = new TextView(this);
         name.setText(list.name);
         name.setTextSize(19);
         name.setTypeface(Typeface.DEFAULT_BOLD);
+        name.setMaxLines(2);
         name.setTextColor(neon ? CheckMercadoNeonUi.TEXT : (listColor == 0 ? primaryText() : readableOnTint(listColor)));
-        titleRow.addView(name, weighted());
+        content.addView(name, matchWrap());
+
+        TextView meta = label(formatShortDate(list.createdAt) + " - " + list.items.size() + " itens - " + completedCount(list) + " concluidos",
+                13, false, neon ? CheckMercadoNeonUi.MUTED : mutedText());
+        meta.setPadding(0, dp(5), 0, 0);
+        content.addView(meta, matchWrap());
+
+        TextView total = label("Total " + money.format(totalOfList(list)), 13, true,
+                neon ? CheckMercadoNeonUi.GREEN : readableOnTint(accentColor));
+        total.setPadding(dp(10), dp(4), dp(10), dp(4));
+        total.setBackground(softPillBg(neon ? CheckMercadoNeonUi.GREEN : accentColor));
+        LinearLayout.LayoutParams totalParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        totalParams.setMargins(0, dp(7), 0, 0);
+        content.addView(total, totalParams);
+
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        right.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rightParams = new LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.WRAP_CONTENT);
+        rightParams.setMargins(dp(8), 0, 0, 0);
+        card.addView(right, rightParams);
 
         ImageButton lock = imageIconButton(list.locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open,
                 list.locked ? Color.rgb(225, 29, 72) : Color.rgb(22, 163, 74),
@@ -1065,33 +1060,13 @@ public class MainActivity extends Activity {
         });
         lock.setEnabled(!(list.archived && list.locked));
         lock.setAlpha(list.archived && list.locked ? 0.45f : 1.0f);
-        titleRow.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        right.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        if (neon) {
-            LinearLayout chips = new LinearLayout(this);
-            chips.setOrientation(LinearLayout.HORIZONTAL);
-            chips.setGravity(Gravity.LEFT);
-            chips.setPadding(0, dp(9), 0, 0);
-            card.addView(chips, matchWrap());
-            addNeonChip(chips, formatShortDate(list.createdAt), CheckMercadoNeonUi.BLUE);
-            addNeonChip(chips, list.items.size() + " itens", CheckMercadoNeonUi.CYAN);
-            addNeonChip(chips, completedCount(list) + " concluidos", CheckMercadoNeonUi.GREEN);
-
-            TextView total = new TextView(this);
-            total.setText("total " + money.format(totalOfList(list)));
-            total.setTextSize(16);
-            total.setTypeface(Typeface.DEFAULT_BOLD);
-            total.setTextColor(CheckMercadoNeonUi.GREEN);
-            total.setPadding(0, dp(9), 0, 0);
-            card.addView(total);
-        } else {
-            TextView meta = new TextView(this);
-            meta.setText(listSubtitle(list));
-            meta.setTextSize(14);
-            meta.setTextColor(mutedText());
-            meta.setPadding(0, dp(5), 0, 0);
-            card.addView(meta);
-        }
+        ImageButton more = plainIconButton(R.drawable.ic_more_vertical, neon ? CheckMercadoNeonUi.MUTED : mutedText(), dp(8));
+        more.setOnClickListener(v -> showListOptions(index));
+        LinearLayout.LayoutParams moreParams = new LinearLayout.LayoutParams(dp(42), dp(34));
+        moreParams.setMargins(0, dp(5), 0, 0);
+        right.addView(more, moreParams);
         return card;
     }
 
@@ -1102,7 +1077,9 @@ public class MainActivity extends Activity {
             final int step = i;
             handler.postDelayed(() -> target.setBackground(glassCardBg(colors[step % colors.length])), step * 250L);
         }
-        handler.postDelayed(() -> target.setBackground(glassCardBg(listColor)), 15 * 250L);
+        handler.postDelayed(() -> target.setBackground(isDarkTheme()
+                ? CheckMercadoNeonUi.card(this, listColor == 0 ? accent() : listColor)
+                : glassCardBg(listColor)), 15 * 250L);
     }
 
     private String listSubtitle(ShoppingList list) {
@@ -1547,8 +1524,18 @@ public class MainActivity extends Activity {
                 showStockOptions(entry);
                 return true;
             });
+            LinearLayout top = new LinearLayout(this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            card.addView(top, matchWrap());
+
             TextView name = label(entry.name, 18, true, primaryText());
-            card.addView(name);
+            top.addView(name, weighted());
+
+            ImageButton more = plainIconButton(R.drawable.ic_more_vertical, mutedText(), dp(8));
+            more.setOnClickListener(v -> showStockOptions(entry));
+            top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(34)));
+
             TextView marker = label(selected ? "Selecionado" : "", 13, true, accent());
             marker.setPadding(0, selected ? dp(3) : 0, 0, 0);
             card.addView(marker);
@@ -1764,7 +1751,32 @@ public class MainActivity extends Activity {
         Spinner range = new Spinner(this);
         String[] labels = new String[]{"Mes atual", "Ultimos 3 meses", "Ultimos 6 meses", "Ultimos 12 meses", "Tudo"};
         int[] values = new int[]{1, 3, 6, 12, 0};
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, labels) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                if (view instanceof TextView) {
+                    TextView text = (TextView) view;
+                    text.setTextColor(primaryText());
+                    text.setTextSize(14);
+                    text.setTypeface(Typeface.DEFAULT_BOLD);
+                }
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                View view = super.getDropDownView(position, convertView, parent);
+                view.setBackgroundColor(cardBg());
+                view.setPadding(dp(12), dp(10), dp(12), dp(10));
+                if (view instanceof TextView) {
+                    TextView text = (TextView) view;
+                    text.setTextColor(primaryText());
+                    text.setTextSize(16);
+                }
+                return view;
+            }
+        };
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         range.setAdapter(adapter);
         range.setSelection(spendingRangeIndex(values));
@@ -1794,23 +1806,15 @@ public class MainActivity extends Activity {
         });
         card.addView(range, new LinearLayout.LayoutParams(0, dp(48), 1));
 
-        ImageButton goal = imageIconButton(R.drawable.ic_target, monthlyGoal > 0 ? Color.rgb(22, 163, 74) : softButtonBg(), monthlyGoal > 0 ? Color.WHITE : primaryText());
-        goal.setOnClickListener(v -> promptMonthlyGoal());
-        LinearLayout.LayoutParams goalParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        goalParams.setMargins(dp(8), 0, 0, 0);
-        card.addView(goal, goalParams);
-
-        ImageButton report = imageIconButton(R.drawable.ic_report, Color.rgb(51, 65, 85), Color.WHITE);
-        report.setOnClickListener(v -> showSpendingReportPreview());
-        LinearLayout.LayoutParams reportParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        reportParams.setMargins(dp(8), 0, 0, 0);
-        card.addView(report, reportParams);
-
-        ImageButton clear = imageIconButton(R.drawable.ic_trash, Color.rgb(225, 29, 72), Color.WHITE);
-        clear.setOnClickListener(v -> confirmClearSpendingHistory());
-        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(48), dp(48));
-        clearParams.setMargins(dp(8), 0, 0, 0);
-        card.addView(clear, clearParams);
+        LinearLayout tools = iconStrip();
+        addStripIcon(tools, R.drawable.ic_target,
+                monthlyGoal > 0 ? (isDarkTheme() ? CheckMercadoNeonUi.GREEN : Color.rgb(22, 163, 74)) : mutedText(),
+                true, dp(44), v -> promptMonthlyGoal());
+        addStripIcon(tools, R.drawable.ic_report, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, dp(44), v -> showSpendingReportPreview());
+        addStripIcon(tools, R.drawable.ic_trash, isDarkTheme() ? CheckMercadoNeonUi.DANGER : Color.rgb(225, 29, 72), true, dp(44), v -> confirmClearSpendingHistory());
+        LinearLayout.LayoutParams toolParams = new LinearLayout.LayoutParams(dp(154), dp(48));
+        toolParams.setMargins(dp(8), 0, 0, 0);
+        card.addView(tools, toolParams);
     }
 
     private int spendingRangeIndex(int[] values) {
@@ -2394,26 +2398,17 @@ public class MainActivity extends Activity {
     }
 
     private void addStockHistoryScreen() {
-        LinearLayout actions = new LinearLayout(this);
-        actions.setGravity(Gravity.CENTER_HORIZONTAL);
-        ImageButton sort = imageIconButton(stockHistorySortDesc ? R.drawable.ic_sort_checked_bottom : R.drawable.ic_sort_checked_top, accent(), Color.WHITE);
-        sort.setEnabled(!stockHistory.isEmpty());
-        sort.setAlpha(stockHistory.isEmpty() ? 0.45f : 1.0f);
-        sort.setOnClickListener(v -> {
+        LinearLayout actions = iconStrip();
+        addWeightedStripIcon(actions, stockHistorySortDesc ? R.drawable.ic_sort_checked_bottom : R.drawable.ic_sort_checked_top,
+                isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(),
+                !stockHistory.isEmpty(), v -> {
             stockHistorySortDesc = !stockHistorySortDesc;
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_STOCK_HISTORY_SORT_DESC, stockHistorySortDesc).apply();
             showStockHistoryWindow();
         });
-        actions.addView(sort, new LinearLayout.LayoutParams(dp(54), dp(54)));
-
-        ImageButton clear = imageIconButton(R.drawable.ic_trash, Color.rgb(225, 29, 72), Color.WHITE);
-        clear.setEnabled(!stockHistory.isEmpty());
-        clear.setAlpha(stockHistory.isEmpty() ? 0.45f : 1.0f);
-        clear.setOnClickListener(v -> confirmClearStockHistory());
-        LinearLayout.LayoutParams clearParams = new LinearLayout.LayoutParams(dp(54), dp(54));
-        clearParams.setMargins(dp(8), 0, 0, 0);
-        actions.addView(clear, clearParams);
-        root.addView(actions, matchWrapWithTop(dp(10)));
+        addWeightedStripIcon(actions, R.drawable.ic_trash, isDarkTheme() ? CheckMercadoNeonUi.DANGER : Color.rgb(225, 29, 72),
+                !stockHistory.isEmpty(), v -> confirmClearStockHistory());
+        root.addView(actions, matchHeightWithTop(dp(54), dp(10)));
 
         if (stockHistory.isEmpty()) {
             root.addView(infoCard("Hist\u00f3rico vazio", "Itens baixados do estoque aparecem aqui."), matchWrapWithTop(dp(10)));
@@ -2438,10 +2433,17 @@ public class MainActivity extends Activity {
             card.setBackground(glassCardBg(0));
             elevate(card, 5);
             card.setOnLongClickListener(v -> {
-                confirmDeleteStockHistoryEntry(entry);
+                showStockHistoryOptions(entry);
                 return true;
             });
-            card.addView(label(entry.name, 18, true, primaryText()));
+            LinearLayout top = new LinearLayout(this);
+            top.setOrientation(LinearLayout.HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            card.addView(top, matchWrap());
+            top.addView(label(entry.name, 18, true, primaryText()), weighted());
+            ImageButton more = plainIconButton(R.drawable.ic_more_vertical, mutedText(), dp(8));
+            more.setOnClickListener(v -> showStockHistoryOptions(entry));
+            top.addView(more, new LinearLayout.LayoutParams(dp(38), dp(34)));
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
             String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
             TextView meta = label(formatStockQuantity(entry) + " x " + price + " (" + total + ")", 14, true, mutedText());
@@ -2455,6 +2457,13 @@ public class MainActivity extends Activity {
             card.addView(dates);
             root.addView(card, matchWrapWithTop(dp(10)));
         }
+    }
+
+    private void showStockHistoryOptions(StockEntry entry) {
+        dialog()
+                .setTitle(entry.name)
+                .setItems(new String[]{"Remover permanentemente"}, (dialog, which) -> confirmDeleteStockHistoryEntry(entry))
+                .show();
     }
 
     private void confirmDeleteStockHistoryEntry(StockEntry entry) {
@@ -3438,7 +3447,7 @@ public class MainActivity extends Activity {
         elevate(row, item.checked ? 2 : 5);
         row.setOnLongClickListener(v -> {
             if (current.locked) return true;
-            promptEditItem(item);
+            showItemOptions(item, index);
             return true;
         });
 
@@ -3446,8 +3455,8 @@ public class MainActivity extends Activity {
         box.setChecked(item.checked);
         box.setEnabled(!current.locked);
         box.setAlpha(current.locked ? 0.55f : 1.0f);
-        box.setScaleX(1.28f);
-        box.setScaleY(1.28f);
+        box.setScaleX(1.45f);
+        box.setScaleY(1.45f);
         tintCheckBox(box);
         box.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (current.locked) return;
@@ -3465,7 +3474,7 @@ public class MainActivity extends Activity {
                 animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             }
         });
-        row.addView(box, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        row.addView(box, new LinearLayout.LayoutParams(dp(62), dp(62)));
 
         TextView name = new TextView(this);
         name.setText(item.name);
@@ -3483,7 +3492,7 @@ public class MainActivity extends Activity {
         name.setOnClickListener(v -> showPriceComparison(item));
         name.setOnLongClickListener(v -> {
             if (current.locked) return true;
-            promptEditItem(item);
+            showItemOptions(item, index);
             return true;
         });
 
@@ -3499,9 +3508,11 @@ public class MainActivity extends Activity {
         price.setTypeface(Typeface.DEFAULT_BOLD);
         price.setSingleLine(false);
         price.setTextColor(item.checked ? disabledText() : accent());
+        price.setPadding(dp(10), dp(4), dp(10), dp(4));
+        price.setBackground(softPillBg(item.checked ? disabledText() : accent()));
         price.setOnLongClickListener(v -> {
             if (current.locked) return true;
-            promptEditItem(item);
+            showItemOptions(item, index);
             return true;
         });
         if (priceBelow) {
@@ -3520,16 +3531,44 @@ public class MainActivity extends Activity {
         }
 
         if (!current.locked) {
-            Button remove = button("x", Color.rgb(254, 226, 226), Color.rgb(153, 27, 27));
-            remove.setTextSize(18);
-            remove.setOnClickListener(v -> {
-                lists.get(selectedIndex).items.remove(index);
-                save();
-                showListScreen();
-            });
-            row.addView(remove, new LinearLayout.LayoutParams(dp(42), dp(42)));
+            LinearLayout itemActions = new LinearLayout(this);
+            itemActions.setOrientation(LinearLayout.VERTICAL);
+            itemActions.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.WRAP_CONTENT);
+            actionParams.setMargins(dp(7), 0, 0, 0);
+            row.addView(itemActions, actionParams);
+
+            ImageButton more = plainIconButton(R.drawable.ic_more_vertical, mutedText(), dp(8));
+            more.setOnClickListener(v -> showItemOptions(item, index));
+            itemActions.addView(more, new LinearLayout.LayoutParams(dp(40), dp(32)));
+
+            ImageButton remove = plainIconButton(R.drawable.ic_trash, isDarkTheme() ? CheckMercadoNeonUi.DANGER : Color.rgb(153, 27, 27), dp(7));
+            remove.setOnClickListener(v -> removeListItem(index));
+            LinearLayout.LayoutParams removeParams = new LinearLayout.LayoutParams(dp(40), dp(38));
+            removeParams.setMargins(0, dp(4), 0, 0);
+            itemActions.addView(remove, removeParams);
         }
         return row;
+    }
+
+    private void showItemOptions(ShoppingItem item, int index) {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        dialog()
+                .setTitle(item.name)
+                .setItems(new String[]{"Editar item", "Remover"}, (dialog, which) -> {
+                    if (which == 0) promptEditItem(item);
+                    else removeListItem(index);
+                })
+                .show();
+    }
+
+    private void removeListItem(int index) {
+        if (selectedIndex < 0 || selectedIndex >= lists.size()) return;
+        ShoppingList list = lists.get(selectedIndex);
+        if (list.locked || index < 0 || index >= list.items.size()) return;
+        list.items.remove(index);
+        save();
+        showListScreen();
     }
 
     private void addItem() {
@@ -5179,8 +5218,19 @@ public class MainActivity extends Activity {
         ListView list = dialog.getListView();
         if (list != null) {
             list.setBackgroundColor(cardBg());
-            list.setDivider(null);
-            list.setPadding(dp(4), dp(4), dp(4), dp(4));
+            GradientDrawable divider = new GradientDrawable();
+            divider.setColor(softDividerColor());
+            list.setDivider(divider);
+            list.setDividerHeight(dp(1));
+            list.setPadding(dp(6), dp(6), dp(6), dp(6));
+        }
+        int titleId = getResources().getIdentifier("alertTitle", "id", "android");
+        TextView title = titleId == 0 ? null : dialog.findViewById(titleId);
+        if (title != null) {
+            title.setTextColor(isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText());
+            title.setTextSize(20);
+            title.setTypeface(Typeface.DEFAULT_BOLD);
+            title.setPadding(title.getPaddingLeft(), title.getPaddingTop(), title.getPaddingRight(), dp(12));
         }
         styleDialogButton(dialog, AlertDialog.BUTTON_POSITIVE, accent());
         styleDialogButton(dialog, AlertDialog.BUTTON_NEGATIVE, mutedText());
@@ -5426,6 +5476,64 @@ public class MainActivity extends Activity {
         button.setBackground(CheckMercadoNeonUi.iconButton(this, color));
         button.setColorFilter(CheckMercadoNeonUi.TEXT);
         elevate(button, 7);
+    }
+
+    private LinearLayout iconStrip() {
+        LinearLayout strip = new LinearLayout(this);
+        strip.setOrientation(LinearLayout.HORIZONTAL);
+        strip.setGravity(Gravity.CENTER);
+        strip.setPadding(dp(5), dp(5), dp(5), dp(5));
+        strip.setBackground(isDarkTheme()
+                ? CheckMercadoNeonUi.panel(this)
+                : round(inputBg(), dp(18), stroke(), 1));
+        elevate(strip, 5);
+        return strip;
+    }
+
+    private ImageButton addStripIcon(LinearLayout strip, int drawable, int color, boolean enabled, int width, View.OnClickListener listener) {
+        if (strip.getChildCount() > 0) addStripDivider(strip);
+        ImageButton button = plainIconButton(drawable, enabled ? color : disabledText(), dp(9));
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1.0f : 0.38f);
+        if (listener != null) button.setOnClickListener(listener);
+        strip.addView(button, new LinearLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT));
+        return button;
+    }
+
+    private ImageButton addWeightedStripIcon(LinearLayout strip, int drawable, int color, boolean enabled, View.OnClickListener listener) {
+        if (strip.getChildCount() > 0) addStripDivider(strip);
+        ImageButton button = plainIconButton(drawable, enabled ? color : disabledText(), dp(9));
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1.0f : 0.38f);
+        if (listener != null) button.setOnClickListener(listener);
+        strip.addView(button, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1));
+        return button;
+    }
+
+    private void addStripDivider(LinearLayout strip) {
+        View divider = new View(this);
+        divider.setBackgroundColor(softDividerColor());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(1), ViewGroup.LayoutParams.MATCH_PARENT);
+        params.setMargins(dp(3), dp(10), dp(3), dp(10));
+        strip.addView(divider, params);
+    }
+
+    private ImageButton plainIconButton(int drawable, int fg, int padding) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(drawable);
+        button.setColorFilter(fg);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setPadding(padding, padding, padding, padding);
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        return button;
+    }
+
+    private int softDividerColor() {
+        return isDarkTheme() ? Color.argb(86, 76, 201, 240) : Color.argb(115, 148, 163, 184);
+    }
+
+    private GradientDrawable softPillBg(int color) {
+        return round(isDarkTheme() ? withAlpha(color, 36) : withAlpha(color, 28), dp(10), Color.TRANSPARENT, 0);
     }
 
     private int screenBg() {
@@ -7021,9 +7129,9 @@ public class MainActivity extends Activity {
                     view.setPadding(dp(10), dp(6), dp(10), dp(6));
                     if (view instanceof TextView) {
                         TextView text = (TextView) view;
-                        text.setTextColor(primaryText());
+                        text.setTextColor(isDarkTheme() ? Color.rgb(226, 232, 240) : primaryText());
                         text.setTextSize(16);
-                        text.setTypeface(Typeface.DEFAULT_BOLD);
+                        text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
                     }
                     return view;
                 }
@@ -7046,7 +7154,9 @@ public class MainActivity extends Activity {
                     view.setPadding(dp(10), dp(7), dp(10), dp(7));
                     if (view instanceof TextView) {
                         TextView text = (TextView) view;
-                        text.setTextColor(position == checkedItem ? accent() : primaryText());
+                        text.setTextColor(position == checkedItem
+                                ? (isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent())
+                                : (isDarkTheme() ? Color.rgb(226, 232, 240) : primaryText()));
                         text.setTextSize(16);
                         text.setTypeface(Typeface.DEFAULT, position == checkedItem ? Typeface.BOLD : Typeface.NORMAL);
                     }

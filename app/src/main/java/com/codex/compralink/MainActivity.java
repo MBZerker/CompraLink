@@ -514,7 +514,7 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.setPadding(dp(22), homeHeader ? dp(16) : dp(18), dp(22), dp(18));
-        header.setBackground(glassPanelBg());
+        header.setBackground(neonHome() ? CheckMercadoNeonUi.panel(this) : glassPanelBg());
         elevate(header, 8);
         root.addView(header, matchWrap());
 
@@ -539,11 +539,13 @@ public class MainActivity extends Activity {
         if (homeHeader) {
             int iconColor = isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE;
             ImageButton menu = homeImageIconButton(R.drawable.ic_menu, menuButtonBg(), iconColor);
+            if (neonHome()) applyNeonIconButton(menu, CheckMercadoNeonUi.BLUE);
             menu.setPadding(dp(14), dp(14), dp(14), dp(14));
             menu.setOnClickListener(this::showHomeMenu);
             sideControls.addView(menu, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
 
             ImageButton qr = homeImageIconButton(R.drawable.ic_qr_scan, accent(), iconColor);
+            if (neonHome()) applyNeonIconButton(qr, CheckMercadoNeonUi.GREEN);
             qr.setPadding(dp(14), dp(14), dp(14), dp(14));
             qr.setOnClickListener(v -> startFiscalQrScan());
             LinearLayout.LayoutParams qrTopParams = new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize);
@@ -561,7 +563,7 @@ public class MainActivity extends Activity {
 
         TextView title = new TextView(this);
         title.setText(heading);
-        title.setTextColor(primaryText());
+        title.setTextColor(neonHome() ? CheckMercadoNeonUi.TEXT : primaryText());
         title.setTextSize(homeHeader ? 30 : 28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, 0, 0, 0);
@@ -569,7 +571,7 @@ public class MainActivity extends Activity {
 
         TextView subtitle = new TextView(this);
         subtitle.setText(subheading);
-        subtitle.setTextColor(mutedText());
+        subtitle.setTextColor(neonHome() ? CheckMercadoNeonUi.MUTED : mutedText());
         subtitle.setTextSize(14);
         subtitle.setPadding(0, dp(4), 0, 0);
         titleBlock.addView(subtitle);
@@ -653,10 +655,12 @@ public class MainActivity extends Activity {
                 int mainActionSize = homeMainActionSize(4);
 
                 ImageButton newList = homeImageIconButton(R.drawable.ic_cart, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                if (neonHome()) applyNeonIconButton(newList, CheckMercadoNeonUi.GREEN);
                 newList.setOnClickListener(v -> promptNewList());
                 mainActions.addView(newList, new LinearLayout.LayoutParams(mainActionSize, mainActionSize));
 
                 ImageButton stockButton = homeImageIconButton(R.drawable.ic_box, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                if (neonHome()) applyNeonIconButton(stockButton, CheckMercadoNeonUi.BLUE);
                 stockButton.setOnClickListener(v -> showStockWindow(false));
                 stockButton.setOnLongClickListener(v -> {
                     if (secretLogoTaps >= 3) {
@@ -670,12 +674,14 @@ public class MainActivity extends Activity {
                 mainActions.addView(stockButton, stockParams);
 
                 ImageButton history = homeImageIconButton(R.drawable.ic_history, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                if (neonHome()) applyNeonIconButton(history, CheckMercadoNeonUi.BLUE);
                 history.setOnClickListener(v -> showHistoryScreen());
                 LinearLayout.LayoutParams historyParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
                 historyParams.setMargins(dp(8), 0, 0, 0);
                 mainActions.addView(history, historyParams);
 
                 ImageButton spending = homeImageIconButton(R.drawable.ic_report, accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+                if (neonHome()) applyNeonIconButton(spending, CheckMercadoNeonUi.CYAN);
                 spending.setOnClickListener(v -> showStockWindow(true));
                 LinearLayout.LayoutParams spendingParams = new LinearLayout.LayoutParams(mainActionSize, mainActionSize);
                 spendingParams.setMargins(dp(8), 0, 0, 0);
@@ -991,7 +997,8 @@ public class MainActivity extends Activity {
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
         int listColor = list.displayColor();
-        card.setBackground(glassCardBg(listColor));
+        boolean neon = neonHome();
+        card.setBackground(neon ? CheckMercadoNeonUi.card(this, CheckMercadoNeonUi.GREEN) : glassCardBg(listColor));
         elevate(card, 7);
         if (list.id != null && list.id.equals(flashImportedListId)) {
             flashImportedListId = "";
@@ -1016,12 +1023,13 @@ public class MainActivity extends Activity {
         name.setText(list.name);
         name.setTextSize(19);
         name.setTypeface(Typeface.DEFAULT_BOLD);
-        name.setTextColor(listColor == 0 ? primaryText() : readableOnTint(listColor));
+        name.setTextColor(neon ? CheckMercadoNeonUi.TEXT : (listColor == 0 ? primaryText() : readableOnTint(listColor)));
         titleRow.addView(name, weighted());
 
         ImageButton lock = imageIconButton(list.locked ? R.drawable.ic_lock_closed : R.drawable.ic_lock_open,
                 list.locked ? Color.rgb(225, 29, 72) : Color.rgb(22, 163, 74),
                 Color.WHITE);
+        if (neon) applyNeonIconButton(lock, list.locked ? CheckMercadoNeonUi.DANGER : CheckMercadoNeonUi.GREEN);
         lock.setOnClickListener(v -> {
             toggleListLock(list);
             if (!list.locked) showHomeTab();
@@ -1030,12 +1038,31 @@ public class MainActivity extends Activity {
         lock.setAlpha(list.archived && list.locked ? 0.45f : 1.0f);
         titleRow.addView(lock, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        TextView meta = new TextView(this);
-        meta.setText(listSubtitle(list));
-        meta.setTextSize(14);
-        meta.setTextColor(mutedText());
-        meta.setPadding(0, dp(5), 0, 0);
-        card.addView(meta);
+        if (neon) {
+            LinearLayout chips = new LinearLayout(this);
+            chips.setOrientation(LinearLayout.HORIZONTAL);
+            chips.setGravity(Gravity.LEFT);
+            chips.setPadding(0, dp(9), 0, 0);
+            card.addView(chips, matchWrap());
+            addNeonChip(chips, formatShortDate(list.createdAt), CheckMercadoNeonUi.BLUE);
+            addNeonChip(chips, list.items.size() + " itens", CheckMercadoNeonUi.CYAN);
+            addNeonChip(chips, completedCount(list) + " concluidos", CheckMercadoNeonUi.GREEN);
+
+            TextView total = new TextView(this);
+            total.setText("total " + money.format(totalOfList(list)));
+            total.setTextSize(16);
+            total.setTypeface(Typeface.DEFAULT_BOLD);
+            total.setTextColor(CheckMercadoNeonUi.GREEN);
+            total.setPadding(0, dp(9), 0, 0);
+            card.addView(total);
+        } else {
+            TextView meta = new TextView(this);
+            meta.setText(listSubtitle(list));
+            meta.setTextSize(14);
+            meta.setTextColor(mutedText());
+            meta.setPadding(0, dp(5), 0, 0);
+            card.addView(meta);
+        }
         return card;
     }
 
@@ -1058,6 +1085,37 @@ public class MainActivity extends Activity {
         }
         String status = list.locked ? " - protegida" : "";
         return formatShortDate(list.createdAt) + " - " + list.items.size() + " itens, " + done + " concluidos, total " + money.format(total) + status;
+    }
+
+    private void addNeonChip(LinearLayout row, String text, int color) {
+        TextView chip = new TextView(this);
+        chip.setText(text);
+        chip.setTextSize(12);
+        chip.setTypeface(Typeface.DEFAULT_BOLD);
+        chip.setTextColor(CheckMercadoNeonUi.TEXT);
+        chip.setGravity(Gravity.CENTER);
+        chip.setPadding(dp(10), 0, dp(10), 0);
+        chip.setBackground(CheckMercadoNeonUi.chip(this, color));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(30));
+        params.setMargins(0, 0, dp(7), 0);
+        row.addView(chip, params);
+    }
+
+    private int completedCount(ShoppingList list) {
+        int done = 0;
+        for (ShoppingItem item : list.items) {
+            if (item.checked) done++;
+        }
+        return done;
+    }
+
+    private double totalOfList(ShoppingList list) {
+        double total = 0;
+        for (ShoppingItem item : list.items) {
+            if (item.price > 0) total += item.price * quantityOf(item);
+        }
+        return total;
     }
 
     private void showHomeTab() {
@@ -2841,11 +2899,11 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(16), dp(14), dp(16), dp(14));
-        card.setBackground(glassCardBg(0));
+        card.setBackground(neonHome() ? CheckMercadoNeonUi.card(this, CheckMercadoNeonUi.BLUE) : glassCardBg(0));
         elevate(card, 5);
         elevate(card, 2);
-        card.addView(label(title, 18, true, primaryText()));
-        TextView b = label(body, 14, false, mutedText());
+        card.addView(label(title, 18, true, neonHome() ? CheckMercadoNeonUi.TEXT : primaryText()));
+        TextView b = label(body, 14, false, neonHome() ? CheckMercadoNeonUi.MUTED : mutedText());
         b.setPadding(0, dp(5), 0, 0);
         card.addView(b);
         return card;
@@ -2860,7 +2918,9 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.HORIZONTAL);
         box.setGravity(Gravity.CENTER_VERTICAL);
         box.setPadding(dp(12), 0, dp(4), 0);
-        box.setBackground(inputPanelBg(filterActiveForCurrentScreen()));
+        box.setBackground(neonHome()
+                ? CheckMercadoNeonUi.input(this, filterActiveForCurrentScreen())
+                : inputPanelBg(filterActiveForCurrentScreen()));
         row.addView(box, new LinearLayout.LayoutParams(0, dp(52), 1));
 
         EditText search = new EditText(this);
@@ -2868,8 +2928,8 @@ public class MainActivity extends Activity {
         search.setHint(hint);
         search.setText(value == null ? "" : value);
         search.setSelection(search.getText().length());
-        search.setTextColor(primaryText());
-        search.setHintTextColor(mutedText());
+        search.setTextColor(neonHome() ? CheckMercadoNeonUi.TEXT : primaryText());
+        search.setHintTextColor(neonHome() ? CheckMercadoNeonUi.MUTED : mutedText());
         search.setTextSize(15);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         search.setBackgroundColor(Color.TRANSPARENT);
@@ -2881,12 +2941,12 @@ public class MainActivity extends Activity {
         clear.setGravity(Gravity.CENTER);
         clear.setTextSize(16);
         clear.setTypeface(Typeface.DEFAULT_BOLD);
-        clear.setTextColor(mutedText());
+        clear.setTextColor(neonHome() ? CheckMercadoNeonUi.MUTED : mutedText());
         box.addView(clear, new LinearLayout.LayoutParams(dp(38), ViewGroup.LayoutParams.MATCH_PARENT));
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(R.drawable.ic_search);
-        icon.setColorFilter(mutedText());
+        icon.setColorFilter(neonHome() ? CheckMercadoNeonUi.GREEN : mutedText());
         LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(22), dp(22));
         iconParams.setMargins(0, 0, dp(8), 0);
         box.addView(icon, iconParams);
@@ -2912,6 +2972,9 @@ public class MainActivity extends Activity {
                 filterActiveForCurrentScreen()
                         ? (isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE)
                         : accent());
+        if (neonHome()) {
+            applyNeonIconButton(filter, filterActiveForCurrentScreen() ? CheckMercadoNeonUi.GREEN : CheckMercadoNeonUi.BLUE);
+        }
         filter.setPadding(dp(13), dp(13), dp(13), dp(13));
         filter.setOnClickListener(v -> showSearchFilter());
         LinearLayout.LayoutParams filterParams = new LinearLayout.LayoutParams(dp(52), dp(52));
@@ -5318,6 +5381,16 @@ public class MainActivity extends Activity {
         if (themeMode == THEME_LIGHT) return false;
         int mask = getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
         return mask == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    private boolean neonHome() {
+        return isDarkTheme() && selectedIndex < 0 && homeTab == 0;
+    }
+
+    private void applyNeonIconButton(ImageButton button, int color) {
+        button.setBackground(CheckMercadoNeonUi.iconButton(this, color));
+        button.setColorFilter(CheckMercadoNeonUi.TEXT);
+        elevate(button, 7);
     }
 
     private int screenBg() {

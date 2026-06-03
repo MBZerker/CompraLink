@@ -1,9 +1,9 @@
 {
-  "versionCode": 85,
-  "versionName": "4.54",
+  "versionCode": 86,
+  "versionName": "4.55",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "3103e44413a1d7a0c18befc1f1e26a02f877a07a7a1513cd03cc3dd0aaae6423",
-  "sizeBytes": 39421024,
-  "notes": "Remove a etapa visual premium da tela inicial e restaura o visual anterior."
+  "sha256": "ba8dd831fb86e3128bdc0c271bb3c41c6dee626e372fd0c8650f9dc04a9c30bd",
+  "sizeBytes": 39421008,
+  "notes": "Aplica contornos neon nativos e reutilizaveis na tela inicial, mantendo a logica existente."
 }

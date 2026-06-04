@@ -202,6 +202,7 @@ public class MainActivity extends Activity {
     private String stockSearch = "";
     private String stockHistorySearch = "";
     private int searchToken;
+    private boolean restoringSearchFocus;
     private String flashImportedListId = "";
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
@@ -3911,8 +3912,10 @@ public class MainActivity extends Activity {
                 clear.setAlpha(next.isEmpty() ? 0.45f : 1.0f);
                 int token = ++searchToken;
                 search.postDelayed(() -> {
-                    if (token == searchToken) callback.onSearchChanged(next);
-                }, 180);
+                    if (token != searchToken) return;
+                    restoringSearchFocus = true;
+                    callback.onSearchChanged(next);
+                }, 360);
             }
         });
         View divider = new View(this);
@@ -3933,7 +3936,15 @@ public class MainActivity extends Activity {
         box.addView(filter, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
 
         root.addView(row, matchHeightWithTop(dp(52), dp(10)));
-        if (value != null && !value.isEmpty()) search.requestFocus();
+        if (restoringSearchFocus && value != null && !value.isEmpty()) {
+            search.postDelayed(() -> {
+                search.requestFocus();
+                search.setSelection(search.getText().length());
+                restoringSearchFocus = false;
+            }, 120);
+        } else {
+            restoringSearchFocus = false;
+        }
     }
 
     private boolean filterActiveForCurrentScreen() {

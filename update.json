@@ -1,9 +1,9 @@
 {
-  "versionCode": 93,
-  "versionName": "4.62",
+  "versionCode": 94,
+  "versionName": "4.63",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "392139c11bb6d1e852b0a9f1cc96443c519b6ee093325918268f731fe6bcd7bf",
-  "sizeBytes": 39445176,
-  "notes": "Corrige a rolagem com teclado virtual: campos focados passam a ganhar folga dinâmica pela altura real do teclado e rolam para ficar totalmente visíveis."
+  "sha256": "587cd4044940c4daefff3e46b127a585bca90ae27b929cb972c100d6209ed5ec",
+  "sizeBytes": 39445191,
+  "notes": "Preserva a posição de rolagem nas telas com lista, adiciona botões flutuantes para ir ao topo/fim em listas grandes e corrige o botão X da comparação no tema claro."
 }

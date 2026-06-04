@@ -210,6 +210,7 @@ public class MainActivity extends Activity {
     private boolean stockHistorySortDesc = true;
     private int stockSortMode = STOCK_SORT_DATE;
     private final LinkedHashSet<String> selectedStockIds = new LinkedHashSet<>();
+    private final Map<String, Integer> scrollPositions = new HashMap<>();
     private TextView stockSelectionStatus;
     private int homeListFilter;
     private int historyListFilter;
@@ -1088,7 +1089,11 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
+        String scrollKey = currentScrollKey();
+        int savedScrollY = scrollPositions.containsKey(scrollKey) ? scrollPositions.get(scrollKey) : 0;
         configureKeyboardAwareScroll(shell, scrollView);
+        addGlobalScrollJumpButtons(shell, scrollView, scrollKey);
+        restoreScrollPosition(scrollView, savedScrollY);
         return shell;
     }
 
@@ -1166,6 +1171,106 @@ public class MainActivity extends Activity {
             current = (View) next;
         }
         return false;
+    }
+
+    private String currentScrollKey() {
+        if (homeTab == 5) return "comparison:" + currentListIdForKey();
+        if (homeTab == 6) return "stock-history";
+        if (homeTab == 9) return "budget:" + selectedBudgetMonthKey();
+        if (homeTab == 3) return "history";
+        if (homeTab == 2) return "spending:" + spendingRangeMonths;
+        if (homeTab == 1) return "stock";
+        if (selectedIndex >= 0) return "list:" + currentListIdForKey();
+        return "home";
+    }
+
+    private String currentListIdForKey() {
+        if (selectedIndex >= 0 && selectedIndex < lists.size()) {
+            ShoppingList list = lists.get(selectedIndex);
+            return isBlank(list.id) ? String.valueOf(selectedIndex) : list.id;
+        }
+        return "none";
+    }
+
+    private void restoreScrollPosition(ScrollView scrollView, int savedScrollY) {
+        if (savedScrollY <= 0) return;
+        scrollView.post(() -> scrollToSavedPosition(scrollView, savedScrollY, false));
+        scrollView.postDelayed(() -> scrollToSavedPosition(scrollView, savedScrollY, false), 180);
+    }
+
+    private void scrollToSavedPosition(ScrollView scrollView, int savedScrollY, boolean smooth) {
+        int maxScroll = maxScrollY(scrollView);
+        int target = Math.max(0, Math.min(savedScrollY, maxScroll));
+        if (smooth) scrollView.smoothScrollTo(0, target);
+        else scrollView.scrollTo(0, target);
+    }
+
+    private void addGlobalScrollJumpButtons(FrameLayout shell, ScrollView scrollView, String scrollKey) {
+        LinearLayout controls = new LinearLayout(this);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setGravity(Gravity.CENTER);
+        controls.setVisibility(View.GONE);
+
+        ImageButton up = scrollJumpButton(R.drawable.ic_arrow_up);
+        ImageButton down = scrollJumpButton(R.drawable.ic_arrow_down);
+        up.setOnClickListener(v -> scrollView.smoothScrollTo(0, 0));
+        down.setOnClickListener(v -> scrollView.smoothScrollTo(0, maxScrollY(scrollView)));
+
+        controls.addView(up, new LinearLayout.LayoutParams(dp(50), dp(50)));
+        LinearLayout.LayoutParams downParams = new LinearLayout.LayoutParams(dp(50), dp(50));
+        downParams.setMargins(0, dp(8), 0, 0);
+        controls.addView(down, downParams);
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.END
+        );
+        params.setMargins(0, 0, dp(16), dp(28));
+        shell.addView(controls, params);
+
+        scrollView.setOnScrollChangeListener((v, scrollX, scrollY, oldScrollX, oldScrollY) -> {
+            scrollPositions.put(scrollKey, scrollY);
+            updateGlobalScrollJumpButtons(scrollView, controls, up, down);
+        });
+        scrollView.post(() -> updateGlobalScrollJumpButtons(scrollView, controls, up, down));
+        scrollView.postDelayed(() -> updateGlobalScrollJumpButtons(scrollView, controls, up, down), 240);
+    }
+
+    private ImageButton scrollJumpButton(int iconRes) {
+        int bg = isDarkTheme() ? Color.argb(224, 15, 23, 42) : Color.argb(235, 255, 255, 255);
+        int fg = isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText();
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(iconRes);
+        button.setColorFilter(fg);
+        button.setBackground(round(bg, dp(999), blend(accent(), stroke(), isDarkTheme() ? 0.72f : 0.35f), 1));
+        button.setPadding(dp(12), dp(12), dp(12), dp(12));
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setAlpha(0.92f);
+        elevate(button, 9);
+        return button;
+    }
+
+    private void updateGlobalScrollJumpButtons(ScrollView scrollView, LinearLayout controls, ImageButton up, ImageButton down) {
+        int maxScroll = maxScrollY(scrollView);
+        boolean hugeContent = maxScroll > Math.max(dp(520), scrollView.getHeight());
+        if (!hugeContent) {
+            controls.setVisibility(View.GONE);
+            return;
+        }
+        int y = scrollView.getScrollY();
+        boolean canUp = y > dp(96);
+        boolean canDown = y < maxScroll - dp(96);
+        up.setVisibility(canUp ? View.VISIBLE : View.GONE);
+        down.setVisibility(canDown ? View.VISIBLE : View.GONE);
+        controls.setVisibility((canUp || canDown) ? View.VISIBLE : View.GONE);
+    }
+
+    private int maxScrollY(ScrollView scrollView) {
+        if (scrollView.getChildCount() == 0) return 0;
+        View child = scrollView.getChildAt(0);
+        int visible = Math.max(1, scrollView.getHeight() - scrollView.getPaddingBottom());
+        return Math.max(0, child.getHeight() - visible);
     }
 
     private int backgroundForCurrentScreen() {
@@ -4697,7 +4802,7 @@ public class MainActivity extends Activity {
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER_VERTICAL);
-        Button close = iconButton("X", accent(), isLightColor(accent()) ? Color.rgb(15, 23, 42) : Color.WHITE);
+        Button close = iconButton("X", softButtonBg(), primaryText());
         close.setTextSize(18);
         close.setOnClickListener(v -> showListScreen());
         toolbar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));

@@ -1,9 +1,9 @@
 {
-  "versionCode": 92,
-  "versionName": "4.61",
+  "versionCode": 93,
+  "versionName": "4.62",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "7c0b1e681953aaccfc8f5a74abd8a25beea9aba8b0be006691b26296d38378d5",
-  "sizeBytes": 39445193,
-  "notes": "Organiza compara\u00e7\u00e3o de pre\u00e7os com data da compra, melhora or\u00e7amento mensal com entradas e meses futuros, ajusta teclado em pesquisas e abre captcha da SEFAZ quando houver bloqueio/certificado."
+  "sha256": "392139c11bb6d1e852b0a9f1cc96443c519b6ee093325918268f731fe6bcd7bf",
+  "sizeBytes": 39445176,
+  "notes": "Corrige a rolagem com teclado virtual: campos focados passam a ganhar folga dinâmica pela altura real do teclado e rolam para ficar totalmente visíveis."
 }

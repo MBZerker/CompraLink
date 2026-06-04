@@ -1078,7 +1078,7 @@ public class MainActivity extends Activity {
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.setClipToPadding(false);
-        scrollView.setPadding(0, 0, 0, dp(140));
+        scrollView.setPadding(0, 0, 0, keyboardAwareBottomPadding(0));
         scrollView.setBackgroundColor(Color.TRANSPARENT);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1088,7 +1088,84 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
+        configureKeyboardAwareScroll(shell, scrollView);
         return shell;
+    }
+
+    private void configureKeyboardAwareScroll(FrameLayout shell, ScrollView scrollView) {
+        final int[] lastBottomPadding = {-1};
+        applyKeyboardAwarePadding(scrollView, 0, lastBottomPadding);
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            shell.setOnApplyWindowInsetsListener((view, insets) -> {
+                android.graphics.Insets ime = insets.getInsets(WindowInsets.Type.ime());
+                applyKeyboardAwarePadding(scrollView, ime.bottom, lastBottomPadding);
+                if (ime.bottom > dp(120)) postScrollFocusedIntoView(scrollView);
+                return insets;
+            });
+        }
+
+        shell.getViewTreeObserver().addOnGlobalLayoutListener(() -> {
+            Rect visible = new Rect();
+            shell.getWindowVisibleDisplayFrame(visible);
+            int hiddenBottom = Math.max(0, shell.getRootView().getHeight() - visible.bottom);
+            int keyboardHeight = hiddenBottom > dp(120) ? hiddenBottom : 0;
+            applyKeyboardAwarePadding(scrollView, keyboardHeight, lastBottomPadding);
+            if (keyboardHeight > 0) postScrollFocusedIntoView(scrollView);
+        });
+
+        shell.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus, newFocus) -> {
+            if (newFocus instanceof EditText || newFocus instanceof AutoCompleteTextView) {
+                postScrollFocusedIntoView(scrollView);
+            }
+        });
+    }
+
+    private void applyKeyboardAwarePadding(ScrollView scrollView, int keyboardHeight, int[] lastBottomPadding) {
+        int bottom = keyboardAwareBottomPadding(keyboardHeight);
+        if (lastBottomPadding[0] == bottom) return;
+        lastBottomPadding[0] = bottom;
+        scrollView.setPadding(scrollView.getPaddingLeft(), scrollView.getPaddingTop(), scrollView.getPaddingRight(), bottom);
+    }
+
+    private int keyboardAwareBottomPadding(int keyboardHeight) {
+        return keyboardHeight > dp(120) ? keyboardHeight + dp(72) : dp(160);
+    }
+
+    private void postScrollFocusedIntoView(ScrollView scrollView) {
+        scrollView.postDelayed(() -> scrollFocusedIntoView(scrollView), 80);
+        scrollView.postDelayed(() -> scrollFocusedIntoView(scrollView), 240);
+    }
+
+    private void scrollFocusedIntoView(ScrollView scrollView) {
+        View focused = getCurrentFocus();
+        if (focused == null || !isDescendantOf(focused, scrollView)) return;
+
+        Rect rect = new Rect();
+        focused.getDrawingRect(rect);
+        scrollView.offsetDescendantRectToMyCoords(focused, rect);
+
+        int extra = dp(24);
+        int visibleHeight = Math.max(dp(90), scrollView.getHeight() - scrollView.getPaddingBottom() - extra);
+        int currentY = scrollView.getScrollY();
+        int wantedY = currentY;
+        if (rect.bottom + extra > currentY + visibleHeight) {
+            wantedY = rect.bottom + extra - visibleHeight;
+        } else if (rect.top - extra < currentY) {
+            wantedY = rect.top - extra;
+        }
+        scrollView.smoothScrollTo(0, Math.max(0, wantedY));
+    }
+
+    private boolean isDescendantOf(View child, ViewGroup parent) {
+        View current = child;
+        while (current != null) {
+            if (current == parent) return true;
+            android.view.ViewParent next = current.getParent();
+            if (!(next instanceof View)) return false;
+            current = (View) next;
+        }
+        return false;
     }
 
     private int backgroundForCurrentScreen() {
@@ -6075,6 +6152,7 @@ public class MainActivity extends Activity {
         if (window != null) {
             window.setBackgroundDrawable(round(cardBg(), dp(22), stroke(), 1));
             window.setDimAmount(isDarkTheme() ? 0.72f : 0.42f);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
         View decor = window == null ? null : window.getDecorView();
         if (decor != null) {

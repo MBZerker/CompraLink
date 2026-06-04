@@ -136,6 +136,7 @@ public class MainActivity extends Activity {
     private static final String KEY_LAST_CLIPBOARD_PAYLOAD = "last_clipboard_payload";
     private static final String KEY_MONTHLY_GOAL = "monthly_goal";
     private static final String KEY_MONTHLY_BUDGET_LIMIT = "monthly_budget_limit";
+    private static final String KEY_MONTHLY_BUDGET_INCOMES = "monthly_budget_incomes";
     private static final String KEY_MONTHLY_BUDGET_ENTRIES = "monthly_budget_entries";
     private static final String KEY_SPENDING_RANGE = "spending_range_months";
     private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
@@ -180,6 +181,7 @@ public class MainActivity extends Activity {
     private final List<StockEntry> stockHistory = new ArrayList<>();
     private final List<SpendingRecord> spendingHistory = new ArrayList<>();
     private final List<MonthlyBudgetEntry> monthlyBudgetEntries = new ArrayList<>();
+    private final List<MonthlyBudgetIncome> monthlyBudgetIncomes = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
     private AutoCompleteTextView itemInput;
@@ -190,6 +192,7 @@ public class MainActivity extends Activity {
     private int spendingRangeMonths = 6;
     private double monthlyGoal;
     private double monthlyBudgetLimit;
+    private int budgetMonthOffset;
     private boolean shellReady;
     private boolean pendingIntentHandled;
     private boolean selectedFromHistory;
@@ -235,6 +238,7 @@ public class MainActivity extends Activity {
         load();
         loadStock();
         loadStockHistory();
+        loadMonthlyBudgetIncomes();
         loadSpendingHistory();
         loadMonthlyBudget();
         ensureSpendingRecordsForClosedLists();
@@ -454,19 +458,24 @@ public class MainActivity extends Activity {
         selectedFromHistory = false;
         homeTab = 9;
         buildRoot();
-        addTopHeader("Or\u00e7amento mensal", "Planeje contas, vencimentos e limites do m\u00eas.", false);
+        String monthKey = selectedBudgetMonthKey();
+        addTopHeader("Or\u00e7amento mensal", "Planejamento de " + budgetMonthTitle(monthKey) + ".", false);
         addMonthlyBudgetSummary();
         addMonthlyBudgetActions();
+        addMonthlyBudgetIncomeList();
         addMonthlyBudgetEntries();
         setContentView(rootScroll());
     }
 
     private void addMonthlyBudgetSummary() {
-        double planned = monthlyBudgetPlanned();
-        double paid = monthlyBudgetPaid();
+        String monthKey = selectedBudgetMonthKey();
+        double planned = monthlyBudgetPlanned(monthKey);
+        double paid = monthlyBudgetPaid(monthKey);
         double pending = Math.max(0, planned - paid);
-        double available = monthlyBudgetLimit <= 0 ? -planned : monthlyBudgetLimit - planned;
-        int statusColor = monthlyBudgetLimit <= 0
+        double income = monthlyBudgetIncomeTotal(monthKey);
+        double ceiling = monthlyBudgetLimit + income;
+        double available = ceiling <= 0 ? -planned : ceiling - planned;
+        int statusColor = ceiling <= 0
                 ? accent()
                 : (available >= 0 ? Color.rgb(22, 163, 74) : Color.rgb(225, 29, 72));
 
@@ -494,61 +503,166 @@ public class MainActivity extends Activity {
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
         top.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        texts.addView(label("Resumo do m\u00eas", 18, true, primaryText()));
-        String limitText = monthlyBudgetLimit <= 0
-                ? "Defina um limite para acompanhar o teto de gastos."
-                : "Limite " + money.format(monthlyBudgetLimit) + " \u00b7 dispon\u00edvel " + money.format(available);
+        texts.addView(label("Resumo de " + budgetMonthTitle(monthKey), 18, true, primaryText()));
+        String limitText = ceiling <= 0
+                ? "Defina um teto ou registre entradas para acompanhar o m\u00eas."
+                : "Teto " + money.format(monthlyBudgetLimit) + " + entradas " + money.format(income);
         TextView subtitle = label(limitText, 13, false, mutedText());
         subtitle.setPadding(0, dp(4), 0, 0);
         texts.addView(subtitle);
 
-        TextView status = label(monthlyBudgetLimit <= 0 ? "Sem limite" : (available >= 0 ? "Dentro" : "Acima"), 13, true, statusColor);
+        TextView status = label(ceiling <= 0 ? "Sem limite" : (available >= 0 ? "Dentro" : "Acima"), 13, true, statusColor);
         status.setPadding(dp(10), dp(4), dp(10), dp(4));
         status.setBackground(softPillBg(statusColor));
         top.addView(status);
 
-        if (monthlyBudgetLimit > 0) {
-            card.addView(progressBarView(planned / monthlyBudgetLimit, statusColor), matchHeightWithTop(dp(10), dp(12)));
+        if (ceiling > 0) {
+            card.addView(progressBarView(planned / ceiling, statusColor), matchHeightWithTop(dp(10), dp(12)));
         }
         root.addView(card, matchWrapWithTop(dp(10)));
 
-        LinearLayout row1 = new LinearLayout(this);
-        row1.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(row1, matchWrapWithTop(dp(8)));
-        row1.addView(metricCard("Previsto", money.format(planned), primaryText(), R.drawable.ic_report, Color.rgb(57, 229, 108)), weighted());
-        LinearLayout.LayoutParams right = weighted();
-        right.setMargins(dp(8), 0, 0, 0);
-        row1.addView(metricCard("Pago", money.format(paid), Color.rgb(22, 163, 74), R.drawable.ic_money_circle, Color.rgb(22, 163, 74)), right);
-
-        LinearLayout row2 = new LinearLayout(this);
-        row2.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(row2, matchWrapWithTop(dp(8)));
-        row2.addView(metricCard("Pendente", money.format(pending), pending > 0 ? Color.rgb(234, 179, 8) : Color.rgb(22, 163, 74), R.drawable.ic_calendar_tiny, Color.rgb(234, 179, 8)), weighted());
-        LinearLayout.LayoutParams right2 = weighted();
-        right2.setMargins(dp(8), 0, 0, 0);
-        row2.addView(metricCard("Saldo", monthlyBudgetLimit <= 0 ? "Sem limite" : money.format(available), statusColor, R.drawable.ic_target, statusColor), right2);
+        root.addView(metricCard("Previsto", money.format(planned), primaryText(), R.drawable.ic_report, Color.rgb(57, 229, 108)), matchWrapWithTop(dp(8)));
+        root.addView(metricCard("Pago", money.format(paid), Color.rgb(22, 163, 74), R.drawable.ic_money_circle, Color.rgb(22, 163, 74)), matchWrapWithTop(dp(8)));
+        root.addView(metricCard("Pendente", money.format(pending), pending > 0 ? Color.rgb(234, 179, 8) : Color.rgb(22, 163, 74), R.drawable.ic_calendar_tiny, Color.rgb(234, 179, 8)), matchWrapWithTop(dp(8)));
+        root.addView(metricCard("Saldo", ceiling <= 0 ? "Sem limite" : money.format(available), statusColor, R.drawable.ic_target, statusColor), matchWrapWithTop(dp(8)));
     }
 
     private void addMonthlyBudgetActions() {
+        LinearLayout monthTools = iconStrip();
+        addWeightedStripIcon(monthTools, R.drawable.ic_back, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, v -> {
+            budgetMonthOffset--;
+            showMonthlyBudgetScreen();
+        });
+        addWeightedStripIcon(monthTools, R.drawable.ic_calendar_tiny, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> {
+            budgetMonthOffset = 0;
+            showMonthlyBudgetScreen();
+        });
+        addWeightedStripIcon(monthTools, R.drawable.ic_arrow_right, isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText(), true, v -> {
+            budgetMonthOffset++;
+            showMonthlyBudgetScreen();
+        });
+        root.addView(monthTools, matchHeightWithTop(dp(50), dp(10)));
+
         LinearLayout tools = iconStrip();
         addWeightedStripIcon(tools, R.drawable.ic_target, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> promptMonthlyBudgetLimit());
+        addWeightedStripIcon(tools, R.drawable.ic_money_circle, Color.rgb(22, 163, 74), true, v -> promptMonthlyBudgetIncome(null));
         addWeightedStripIcon(tools, R.drawable.ic_plus, isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent(), true, v -> promptMonthlyBudgetEntry(null));
         root.addView(tools, matchHeightWithTop(dp(54), dp(10)));
     }
 
-    private void addMonthlyBudgetEntries() {
-        if (monthlyBudgetEntries.isEmpty()) {
-            root.addView(infoCard("Sem despesas mensais", "Toque em + para registrar contas, parcelas, vencimentos e categorias."), matchWrapWithTop(dp(10)));
+    private void addMonthlyBudgetIncomeList() {
+        List<MonthlyBudgetIncome> rows = budgetIncomesForSelectedMonth();
+        if (rows.isEmpty()) {
+            root.addView(infoCard("Entradas", "Use o bot\u00e3o de dinheiro para registrar sal\u00e1rio, pagamentos recebidos, vendas ou qualquer entrada do m\u00eas."), matchWrapWithTop(dp(10)));
             return;
         }
-        List<MonthlyBudgetEntry> rows = new ArrayList<>(monthlyBudgetEntries);
+        root.addView(label("Entradas do m\u00eas", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        for (MonthlyBudgetIncome income : rows) {
+            root.addView(monthlyBudgetIncomeCard(income), matchWrapWithTop(dp(10)));
+        }
+    }
+
+    private View monthlyBudgetIncomeCard(MonthlyBudgetIncome income) {
+        int color = Color.rgb(22, 163, 74);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(16), dp(12), dp(12), dp(12));
+        card.setBackground(glassCardBg(color));
+        elevate(card, 3);
+        card.setOnClickListener(v -> showMonthlyBudgetIncomeOptions(income));
+        card.setOnLongClickListener(v -> {
+            showMonthlyBudgetIncomeOptions(income);
+            return true;
+        });
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        texts.addView(label(isBlank(income.description) ? "Entrada" : income.description, 16, true, primaryText()));
+        TextView value = label(money.format(income.amount), 15, true, color);
+        value.setPadding(0, dp(4), 0, 0);
+        texts.addView(value);
+
+        ImageButton more = moreMenuButton(mutedText());
+        more.setOnClickListener(v -> showMonthlyBudgetIncomeOptions(income));
+        card.addView(more, new LinearLayout.LayoutParams(dp(46), dp(42)));
+        return card;
+    }
+
+    private void showMonthlyBudgetIncomeOptions(MonthlyBudgetIncome income) {
+        dialog()
+                .setTitle(isBlank(income.description) ? "Entrada" : income.description)
+                .setItems(new String[]{"Editar", "Remover"}, (dialog, which) -> {
+                    if (which == 0) {
+                        promptMonthlyBudgetIncome(income);
+                    } else {
+                        confirmRemoveMonthlyBudgetIncome(income);
+                    }
+                })
+                .show();
+    }
+
+    private void confirmRemoveMonthlyBudgetIncome(MonthlyBudgetIncome income) {
+        dialog()
+                .setTitle("Remover entrada?")
+                .setMessage(isBlank(income.description) ? "Entrada" : income.description)
+                .setPositiveButton("Remover", (dialog, which) -> {
+                    monthlyBudgetIncomes.remove(income);
+                    saveMonthlyBudgetIncomes();
+                    showMonthlyBudgetScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void promptMonthlyBudgetIncome(MonthlyBudgetIncome income) {
+        boolean editing = income != null;
+        MonthlyBudgetIncome target = editing ? income : new MonthlyBudgetIncome();
+        LinearLayout form = dialogForm();
+
+        EditText description = dialogInput("Descri\u00e7\u00e3o da entrada", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        description.setText(target.description);
+        configureSelectAll(description);
+        form.addView(description, matchHeightWithTop(dp(54), 0));
+
+        EditText amount = dialogInput("Valor recebido", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(amount);
+        configureSelectAll(amount);
+        if (target.amount > 0) amount.setText(formatPriceInput(target.amount));
+        form.addView(amount, matchHeightWithTop(dp(54), dp(8)));
+
+        dialog()
+                .setTitle(editing ? "Editar entrada" : "Nova entrada")
+                .setMessage("Esta entrada soma ao teto de " + budgetMonthTitle(selectedBudgetMonthKey()) + ".")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    target.description = description.getText().toString().trim();
+                    if (isBlank(target.description)) target.description = "Entrada";
+                    target.amount = parsePrice(amount.getText().toString());
+                    if (isBlank(target.monthKey)) target.monthKey = selectedBudgetMonthKey();
+                    target.updatedAt = System.currentTimeMillis();
+                    if (!editing) monthlyBudgetIncomes.add(0, target);
+                    saveMonthlyBudgetIncomes();
+                    showMonthlyBudgetScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void addMonthlyBudgetEntries() {
+        List<MonthlyBudgetEntry> rows = budgetEntriesForSelectedMonth();
+        if (rows.isEmpty()) {
+            root.addView(infoCard("Sem despesas em " + budgetMonthTitle(selectedBudgetMonthKey()), "Use + para registrar contas, parcelas, vencimentos e categorias deste m\u00eas."), matchWrapWithTop(dp(10)));
+            return;
+        }
         Collections.sort(rows, (a, b) -> {
             if (a.paid != b.paid) return a.paid ? 1 : -1;
             int due = Integer.compare(normalizedDueDay(a.dueDay), normalizedDueDay(b.dueDay));
             if (due != 0) return due;
             return normalize(a.description).compareTo(normalize(b.description));
         });
-        root.addView(label("Despesas do m\u00eas", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        root.addView(label("Despesas de " + budgetMonthTitle(selectedBudgetMonthKey()), 18, true, primaryText()), matchWrapWithTop(dp(16)));
         for (MonthlyBudgetEntry entry : rows) {
             root.addView(monthlyBudgetEntryCard(entry), matchWrapWithTop(dp(10)));
         }
@@ -577,7 +691,7 @@ public class MainActivity extends Activity {
         top.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView title = label(isBlank(entry.description) ? "Despesa" : entry.description, 18, true, primaryText());
         texts.addView(title);
-        TextView meta = label("Vencimento " + currentMonthDueLabel(entry.dueDay) + " \u00b7 " + dueStatus(entry.dueDay), 13, false, mutedText());
+        TextView meta = label("Vencimento " + budgetDueLabel(entry.dueDay, entry.monthKey) + " \u00b7 " + dueStatus(entry.dueDay, entry.monthKey), 13, false, mutedText());
         meta.setPadding(0, dp(4), 0, 0);
         texts.addView(meta);
 
@@ -595,7 +709,7 @@ public class MainActivity extends Activity {
         detail.setPadding(0, dp(8), 0, 0);
         card.addView(detail);
 
-        detail.addView(iconText(R.drawable.ic_calendar_tiny, "Dias para vencer: " + daysUntilDueLabel(entry.dueDay), 13, false, mutedText(), mutedText()));
+        detail.addView(iconText(R.drawable.ic_calendar_tiny, "Dias para vencer: " + daysUntilDueLabel(entry.dueDay, entry.monthKey), 13, false, mutedText(), mutedText()));
         if (!isBlank(entry.installment)) {
             TextView parcel = label("Qtde/parcela: " + entry.installment, 13, false, mutedText());
             parcel.setPadding(0, dp(4), 0, 0);
@@ -623,9 +737,10 @@ public class MainActivity extends Activity {
 
     private void showMonthlyBudgetEntryOptions(MonthlyBudgetEntry entry) {
         String paidOption = entry.paid ? "Marcar como pendente" : "Marcar como pago";
+        String copyOption = "Copiar para " + budgetMonthTitle(nextMonthKey(entry.monthKey));
         dialog()
                 .setTitle(isBlank(entry.description) ? "Despesa" : entry.description)
-                .setItems(new String[]{paidOption, "Editar", "Remover"}, (dialog, which) -> {
+                .setItems(new String[]{paidOption, copyOption, "Editar", "Remover"}, (dialog, which) -> {
                     if (which == 0) {
                         entry.paid = !entry.paid;
                         entry.paidAt = entry.paid && isBlank(entry.paidAt) ? formatDayMonth(System.currentTimeMillis()) : entry.paidAt;
@@ -633,12 +748,29 @@ public class MainActivity extends Activity {
                         saveMonthlyBudget();
                         showMonthlyBudgetScreen();
                     } else if (which == 1) {
+                        copyMonthlyBudgetEntryToNextMonth(entry);
+                    } else if (which == 2) {
                         promptMonthlyBudgetEntry(entry);
                     } else {
                         confirmRemoveMonthlyBudgetEntry(entry);
                     }
                 })
                 .show();
+    }
+
+    private void copyMonthlyBudgetEntryToNextMonth(MonthlyBudgetEntry source) {
+        MonthlyBudgetEntry copy = new MonthlyBudgetEntry();
+        copy.description = source.description;
+        copy.installment = source.installment;
+        copy.amount = source.amount;
+        copy.dueDay = source.dueDay;
+        copy.paymentMethod = source.paymentMethod;
+        copy.category = source.category;
+        copy.monthKey = nextMonthKey(source.monthKey);
+        monthlyBudgetEntries.add(0, copy);
+        saveMonthlyBudget();
+        budgetMonthOffset = monthOffsetFromNow(copy.monthKey);
+        showMonthlyBudgetScreen();
     }
 
     private void confirmRemoveMonthlyBudgetEntry(MonthlyBudgetEntry entry) {
@@ -655,13 +787,13 @@ public class MainActivity extends Activity {
     }
 
     private void promptMonthlyBudgetLimit() {
-        EditText limit = dialogInput("Limite mensal", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        EditText limit = dialogInput("Teto mensal", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         setDecimalInput(limit);
         configureSelectAll(limit);
         if (monthlyBudgetLimit > 0) limit.setText(formatPriceInput(monthlyBudgetLimit));
         dialog()
-                .setTitle("Limite mensal")
-                .setMessage("Defina o teto de gastos planejado para o m\u00eas.")
+                .setTitle("Teto mensal")
+                .setMessage("Defina o teto base de gastos. Entradas registradas no m\u00eas somam a esse teto.")
                 .setView(limit)
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     monthlyBudgetLimit = parsePrice(limit.getText().toString());
@@ -688,9 +820,9 @@ public class MainActivity extends Activity {
         if (target.amount > 0) amount.setText(formatPriceInput(target.amount));
         form.addView(amount, matchHeightWithTop(dp(54), dp(8)));
 
-        EditText dueDay = dialogInput("Vencimento: dia do m\u00eas", InputType.TYPE_CLASS_NUMBER);
+        EditText dueDay = dialogInput("Dia do vencimento (1 a 31)", InputType.TYPE_CLASS_NUMBER);
         dueDay.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
-        dueDay.setText(target.dueDay > 0 ? String.valueOf(target.dueDay) : "5");
+        if (editing && target.dueDay > 0) dueDay.setText(String.valueOf(target.dueDay));
         configureSelectAll(dueDay);
         form.addView(dueDay, matchHeightWithTop(dp(54), dp(8)));
 
@@ -718,6 +850,7 @@ public class MainActivity extends Activity {
 
         dialog()
                 .setTitle(editing ? "Editar despesa" : "Nova despesa mensal")
+                .setMessage("Vencimento \u00e9 o dia do m\u00eas. Ex.: 5 = dia 05 de " + budgetMonthTitle(selectedBudgetMonthKey()) + ".")
                 .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     target.description = description.getText().toString().trim();
@@ -731,6 +864,7 @@ public class MainActivity extends Activity {
                     target.paidAt = target.paid
                             ? (isBlank(paidAt.getText().toString()) ? formatDayMonth(System.currentTimeMillis()) : paidAt.getText().toString().trim())
                             : "";
+                    if (isBlank(target.monthKey)) target.monthKey = selectedBudgetMonthKey();
                     target.updatedAt = System.currentTimeMillis();
                     if (!editing) monthlyBudgetEntries.add(0, target);
                     saveMonthlyBudget();
@@ -740,16 +874,49 @@ public class MainActivity extends Activity {
                 .show();
     }
 
-    private double monthlyBudgetPlanned() {
+    private List<MonthlyBudgetEntry> budgetEntriesForSelectedMonth() {
+        String monthKey = selectedBudgetMonthKey();
+        List<MonthlyBudgetEntry> rows = new ArrayList<>();
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
+            if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
+            if (monthKey.equals(entry.monthKey)) rows.add(entry);
+        }
+        return rows;
+    }
+
+    private List<MonthlyBudgetIncome> budgetIncomesForSelectedMonth() {
+        String monthKey = selectedBudgetMonthKey();
+        List<MonthlyBudgetIncome> rows = new ArrayList<>();
+        for (MonthlyBudgetIncome income : monthlyBudgetIncomes) {
+            if (isBlank(income.monthKey)) income.monthKey = currentBudgetMonthKey();
+            if (monthKey.equals(income.monthKey)) rows.add(income);
+        }
+        return rows;
+    }
+
+    private double monthlyBudgetPlanned(String monthKey) {
         double total = 0;
-        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) total += entry.amount;
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
+            if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
+            if (monthKey.equals(entry.monthKey)) total += entry.amount;
+        }
         return total;
     }
 
-    private double monthlyBudgetPaid() {
+    private double monthlyBudgetPaid(String monthKey) {
         double total = 0;
         for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
-            if (entry.paid) total += entry.amount;
+            if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
+            if (monthKey.equals(entry.monthKey) && entry.paid) total += entry.amount;
+        }
+        return total;
+    }
+
+    private double monthlyBudgetIncomeTotal(String monthKey) {
+        double total = 0;
+        for (MonthlyBudgetIncome income : monthlyBudgetIncomes) {
+            if (isBlank(income.monthKey)) income.monthKey = currentBudgetMonthKey();
+            if (monthKey.equals(income.monthKey)) total += income.amount;
         }
         return total;
     }
@@ -760,7 +927,7 @@ public class MainActivity extends Activity {
     }
 
     private String monthlyBudgetPercent(MonthlyBudgetEntry entry) {
-        double total = monthlyBudgetPlanned();
+        double total = monthlyBudgetPlanned(isBlank(entry.monthKey) ? selectedBudgetMonthKey() : entry.monthKey);
         if (total <= 0 || entry == null) return "0%";
         return String.format(Locale.ROOT, "%.0f%%", (entry.amount / total) * 100.0);
     }
@@ -770,18 +937,65 @@ public class MainActivity extends Activity {
             int value = Integer.parseInt(raw == null ? "" : raw.trim());
             return Math.max(1, Math.min(31, value));
         } catch (NumberFormatException e) {
-            return 5;
+            Calendar now = Calendar.getInstance();
+            return now.get(Calendar.DAY_OF_MONTH);
         }
     }
 
     private int normalizedDueDay(int day) {
-        return Math.max(1, Math.min(31, day <= 0 ? 5 : day));
+        return Math.max(1, Math.min(31, day <= 0 ? 1 : day));
     }
 
-    private String currentMonthDueLabel(int dueDay) {
+    private String selectedBudgetMonthKey() {
         Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.MONTH, budgetMonthOffset);
+        return monthKey(cal);
+    }
+
+    private String currentBudgetMonthKey() {
+        return monthKey(Calendar.getInstance());
+    }
+
+    private Calendar calendarFromMonthKey(String key) {
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.DAY_OF_MONTH, 1);
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        try {
+            String[] parts = (key == null ? "" : key).split("/");
+            if (parts.length == 2) {
+                cal.set(Calendar.MONTH, Math.max(0, Math.min(11, Integer.parseInt(parts[0]) - 1)));
+                cal.set(Calendar.YEAR, Integer.parseInt(parts[1]));
+            }
+        } catch (Exception ignored) {
+        }
+        return cal;
+    }
+
+    private String budgetMonthTitle(String key) {
+        Calendar cal = calendarFromMonthKey(key);
+        String[] months = {"Janeiro", "Fevereiro", "Mar\u00e7o", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"};
+        return months[cal.get(Calendar.MONTH)] + "/" + cal.get(Calendar.YEAR);
+    }
+
+    private String budgetDueLabel(int dueDay, String monthKey) {
+        Calendar cal = calendarFromMonthKey(isBlank(monthKey) ? selectedBudgetMonthKey() : monthKey);
         int day = Math.min(normalizedDueDay(dueDay), cal.getActualMaximum(Calendar.DAY_OF_MONTH));
-        return String.format(Locale.ROOT, "%02d/%02d", day, cal.get(Calendar.MONTH) + 1);
+        return String.format(Locale.ROOT, "%02d/%02d/%04d", day, cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
+    }
+
+    private String nextMonthKey(String monthKey) {
+        Calendar cal = calendarFromMonthKey(isBlank(monthKey) ? selectedBudgetMonthKey() : monthKey);
+        cal.add(Calendar.MONTH, 1);
+        return monthKey(cal);
+    }
+
+    private int monthOffsetFromNow(String key) {
+        Calendar now = Calendar.getInstance();
+        Calendar target = calendarFromMonthKey(key);
+        return (target.get(Calendar.YEAR) - now.get(Calendar.YEAR)) * 12 + target.get(Calendar.MONTH) - now.get(Calendar.MONTH);
     }
 
     private String formatDayMonth(long when) {
@@ -790,28 +1004,28 @@ public class MainActivity extends Activity {
         return String.format(Locale.ROOT, "%02d/%02d", date.get(Calendar.DAY_OF_MONTH), date.get(Calendar.MONTH) + 1);
     }
 
-    private long daysUntilDue(int dueDay) {
+    private long daysUntilDue(int dueDay, String monthKey) {
         Calendar today = Calendar.getInstance();
         today.set(Calendar.HOUR_OF_DAY, 0);
         today.set(Calendar.MINUTE, 0);
         today.set(Calendar.SECOND, 0);
         today.set(Calendar.MILLISECOND, 0);
-        Calendar due = (Calendar) today.clone();
+        Calendar due = calendarFromMonthKey(isBlank(monthKey) ? selectedBudgetMonthKey() : monthKey);
         int day = Math.min(normalizedDueDay(dueDay), due.getActualMaximum(Calendar.DAY_OF_MONTH));
         due.set(Calendar.DAY_OF_MONTH, day);
         return (due.getTimeInMillis() - today.getTimeInMillis()) / 86400000L;
     }
 
-    private String daysUntilDueLabel(int dueDay) {
-        long days = daysUntilDue(dueDay);
+    private String daysUntilDueLabel(int dueDay, String monthKey) {
+        long days = daysUntilDue(dueDay, monthKey);
         if (days == 0) return "hoje";
         if (days > 0) return days + (days == 1 ? " dia" : " dias");
         long late = Math.abs(days);
         return "atrasado h\u00e1 " + late + (late == 1 ? " dia" : " dias");
     }
 
-    private String dueStatus(int dueDay) {
-        long days = daysUntilDue(dueDay);
+    private String dueStatus(int dueDay, String monthKey) {
+        long days = daysUntilDue(dueDay, monthKey);
         if (days == 0) return "vence hoje";
         if (days > 0) return "faltam " + days + (days == 1 ? " dia" : " dias");
         long late = Math.abs(days);
@@ -863,6 +1077,8 @@ public class MainActivity extends Activity {
 
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
+        scrollView.setClipToPadding(false);
+        scrollView.setPadding(0, 0, 0, dp(140));
         scrollView.setBackgroundColor(Color.TRANSPARENT);
         scrollView.addView(root, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2438,7 +2654,7 @@ public class MainActivity extends Activity {
                     lastError = e;
                 }
             }
-            if (blockedByCaptcha) {
+            if (blockedByCaptcha || isSslTrustError(lastError)) {
                 runOnUiThread(() -> showFiscalCaptchaScreen(url, accessKey));
                 return;
             }
@@ -2821,6 +3037,21 @@ public class MainActivity extends Activity {
         return e.getClass().getSimpleName() + ": " + message;
     }
 
+    private boolean isSslTrustError(Exception e) {
+        Throwable current = e;
+        while (current != null) {
+            String name = current.getClass().getName();
+            String message = current.getMessage();
+            if (name.contains("SSLHandshakeException")
+                    || name.contains("CertPathValidatorException")
+                    || (message != null && (message.contains("Trust anchor") || message.contains("certification path")))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private String previewErrorText(String text) {
         if (text == null) return "";
         String cleaned = text.replaceAll("\\s+", " ").trim();
@@ -2960,6 +3191,10 @@ public class MainActivity extends Activity {
         JSONArray monthlyBudgetArray = new JSONArray();
         for (MonthlyBudgetEntry entry : monthlyBudgetEntries) monthlyBudgetArray.put(entry.toJson());
         json.put("monthlyBudgetEntries", monthlyBudgetArray);
+        JSONArray monthlyIncomeArray = new JSONArray();
+        for (MonthlyBudgetIncome income : monthlyBudgetIncomes) monthlyIncomeArray.put(income.toJson());
+        json.put("monthlyBudgetIncomes", monthlyIncomeArray);
+
 
         json.put("spendingHistory", spendingArray);
 
@@ -4376,7 +4611,7 @@ public class MainActivity extends Activity {
     private void showPriceComparison(ShoppingItem item) {
         List<PriceHit> hits = findComparablePrices(item);
         if (hits.size() <= 1) {
-            Toast.makeText(this, "Sem historico para este produto.", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Sem hist\u00f3rico para este produto.", Toast.LENGTH_SHORT).show();
             return;
         }
         homeTab = 5;
@@ -4391,11 +4626,11 @@ public class MainActivity extends Activity {
         toolbar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
         root.addView(toolbar, matchWrap());
 
-        TextView title = label("Comparacao de precos", 22, true, primaryText());
+        TextView title = label("Compara\u00e7\u00e3o de pre\u00e7os", 22, true, primaryText());
         title.setGravity(Gravity.CENTER);
         root.addView(title, matchWrapWithTop(dp(14)));
 
-        TextView subtitle = label("Ordenado do maior para o menor preco unitario.", 14, false, mutedText());
+        TextView subtitle = label("Ordenado do maior para o menor pre\u00e7o unit\u00e1rio.", 14, false, mutedText());
         subtitle.setGravity(Gravity.CENTER);
         root.addView(subtitle, matchWrapWithTop(dp(4)));
 
@@ -4409,37 +4644,77 @@ public class MainActivity extends Activity {
     private View comparisonCard(PriceHit hit, double sourcePrice) {
         int trendColor;
         int trendIcon;
+        String trendText;
         if (sourcePrice > 0 && hit.price > sourcePrice + 0.000001) {
             trendColor = Color.rgb(220, 38, 38);
             trendIcon = R.drawable.ic_arrow_up;
+            trendText = "Mais caro";
         } else if (sourcePrice > 0 && hit.price < sourcePrice - 0.000001) {
             trendColor = Color.rgb(22, 163, 74);
             trendIcon = R.drawable.ic_arrow_down;
+            trendText = "Mais barato";
         } else {
             trendColor = Color.rgb(234, 88, 12);
             trendIcon = R.drawable.ic_minus;
+            trendText = "Mesmo pre\u00e7o";
         }
 
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackground(round(cardBg(), dp(16), blend(trendColor, stroke(), 0.45f), 1));
+        card.setBackground(round(cardBg(), dp(18), blend(trendColor, stroke(), 0.45f), 1));
         elevate(card, 3);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(top, matchWrap());
 
         ImageView icon = new ImageView(this);
         icon.setImageResource(trendIcon);
         icon.setColorFilter(trendColor);
-        card.addView(icon, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(28), dp(28));
+        iconParams.setMargins(0, 0, dp(10), 0);
+        top.addView(icon, iconParams);
 
-        TextView text = label(hit.listName + ": " + hit.itemName + ",", 15, true, primaryText());
-        text.setPadding(dp(12), 0, 0, 0);
-        card.addView(text, weighted());
+        TextView trend = label(trendText, 15, true, trendColor);
+        top.addView(trend, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        TextView price = label(money.format(hit.price), 15, true, trendColor);
+        TextView price = label(money.format(hit.price), 16, true, trendColor);
         price.setGravity(Gravity.END);
-        card.addView(price, new LinearLayout.LayoutParams(dp(96), ViewGroup.LayoutParams.WRAP_CONTENT));
+        price.setPadding(dp(10), dp(5), dp(10), dp(5));
+        price.setBackground(softPillBg(trendColor));
+        top.addView(price);
+
+        card.addView(comparisonDataRow(R.drawable.ic_clipboard_list, "Lista", hit.listName, primaryText()), matchWrapWithTop(dp(10)));
+        card.addView(comparisonDataRow(R.drawable.ic_cart, "Produto", hit.itemName, primaryText()), matchWrapWithTop(dp(8)));
+        card.addView(comparisonDataRow(R.drawable.ic_money_circle, "Pre\u00e7o unit\u00e1rio", money.format(hit.price), trendColor), matchWrapWithTop(dp(8)));
+        card.addView(comparisonDataRow(R.drawable.ic_calendar_tiny, "Data da compra", formatDateLabel(hit.purchaseAt), mutedText()), matchWrapWithTop(dp(8)));
         return card;
+    }
+
+    private View comparisonDataRow(int iconRes, String title, String value, int valueColor) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setBackground(round(inputBg(), dp(14), softDividerColor(), 1));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(mutedText());
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(18), dp(18));
+        iconParams.setMargins(0, 0, dp(10), 0);
+        row.addView(icon, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        texts.addView(label(title, 12, false, mutedText()));
+        TextView content = label(isBlank(value) ? "-" : value, 15, true, valueColor);
+        content.setPadding(0, dp(2), 0, 0);
+        texts.addView(content);
+        return row;
     }
 
     private boolean hasComparablePrices(ShoppingItem item) {
@@ -4453,7 +4728,8 @@ public class MainActivity extends Activity {
             for (ShoppingItem other : list.items) {
                 if (other.price <= 0) continue;
                 if (!normalize(other.name).equals(target)) continue;
-                hits.add(new PriceHit(list.name, other.name, other.price, other.updatedAt));
+                long purchaseAt = list.createdAt > 0 ? list.createdAt : other.updatedAt;
+                hits.add(new PriceHit(list.name, other.name, other.price, other.updatedAt, purchaseAt));
             }
         }
         Collections.sort(hits, (a, b) -> Double.compare(b.price, a.price));
@@ -5563,6 +5839,13 @@ public class MainActivity extends Activity {
             saveMonthlyBudget();
         }
 
+        JSONArray monthlyIncomeArray = backup.optJSONArray("monthlyBudgetIncomes");
+        if (monthlyIncomeArray != null) {
+            monthlyBudgetIncomes.clear();
+            for (int i = 0; i < monthlyIncomeArray.length(); i++) monthlyBudgetIncomes.add(MonthlyBudgetIncome.fromJson(monthlyIncomeArray.getJSONObject(i)));
+            saveMonthlyBudgetIncomes();
+        }
+
 
         JSONObject settings = backup.optJSONObject("settings");
         if (settings != null) {
@@ -5620,6 +5903,18 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void loadMonthlyBudgetIncomes() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_MONTHLY_BUDGET_INCOMES, "[]");
+        try {
+            JSONArray array = new JSONArray(raw);
+            monthlyBudgetIncomes.clear();
+            for (int i = 0; i < array.length(); i++) {
+                monthlyBudgetIncomes.add(MonthlyBudgetIncome.fromJson(array.getJSONObject(i)));
+            }
+        } catch (JSONException e) {
+            monthlyBudgetIncomes.clear();
+        }
+    }
     private void saveMonthlyBudget() {
         JSONArray array = new JSONArray();
         for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
@@ -5631,6 +5926,18 @@ public class MainActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                 .putString(KEY_MONTHLY_BUDGET_ENTRIES, array.toString())
                 .putLong(KEY_MONTHLY_BUDGET_LIMIT, Double.doubleToLongBits(monthlyBudgetLimit))
+                .apply();
+    }
+    private void saveMonthlyBudgetIncomes() {
+        JSONArray array = new JSONArray();
+        for (MonthlyBudgetIncome income : monthlyBudgetIncomes) {
+            try {
+                array.put(income.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putString(KEY_MONTHLY_BUDGET_INCOMES, array.toString())
                 .apply();
     }
     private void save() {
@@ -6481,12 +6788,14 @@ public class MainActivity extends Activity {
         final String itemName;
         final double price;
         final long updatedAt;
+        final long purchaseAt;
 
-        PriceHit(String listName, String itemName, double price, long updatedAt) {
+        PriceHit(String listName, String itemName, double price, long updatedAt, long purchaseAt) {
             this.listName = listName;
             this.itemName = itemName;
             this.price = price;
             this.updatedAt = updatedAt;
+            this.purchaseAt = purchaseAt;
         }
     }
 
@@ -7831,6 +8140,36 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static class MonthlyBudgetIncome {
+        String id = UUID.randomUUID().toString();
+        String description = "";
+        double amount;
+        String monthKey = "";
+        long createdAt = System.currentTimeMillis();
+        long updatedAt = createdAt;
+
+        JSONObject toJson() throws JSONException {
+            JSONObject json = new JSONObject();
+            json.put("id", id);
+            json.put("description", description);
+            json.put("amount", amount);
+            json.put("monthKey", monthKey);
+            json.put("createdAt", createdAt);
+            json.put("updatedAt", updatedAt);
+            return json;
+        }
+
+        static MonthlyBudgetIncome fromJson(JSONObject json) {
+            MonthlyBudgetIncome income = new MonthlyBudgetIncome();
+            income.id = json.optString("id", UUID.randomUUID().toString());
+            income.description = json.optString("description", "Entrada");
+            income.amount = json.optDouble("amount", 0);
+            income.monthKey = json.optString("monthKey", "");
+            income.createdAt = json.optLong("createdAt", System.currentTimeMillis());
+            income.updatedAt = json.optLong("updatedAt", income.createdAt);
+            return income;
+        }
+    }
     private static class MonthlyBudgetEntry {
         String id = UUID.randomUUID().toString();
         String description = "";
@@ -7838,6 +8177,7 @@ public class MainActivity extends Activity {
         double amount;
         int dueDay = 5;
         boolean paid;
+        String monthKey = "";
         String paidAt = "";
         String paymentMethod = "";
         String category = "";
@@ -7852,6 +8192,7 @@ public class MainActivity extends Activity {
             json.put("amount", amount);
             json.put("dueDay", dueDay);
             json.put("paid", paid);
+            json.put("monthKey", monthKey);
             json.put("paidAt", paidAt);
             json.put("paymentMethod", paymentMethod);
             json.put("category", category);
@@ -7868,6 +8209,7 @@ public class MainActivity extends Activity {
             entry.amount = json.optDouble("amount", 0);
             entry.dueDay = json.optInt("dueDay", 5);
             entry.paid = json.optBoolean("paid", false);
+            entry.monthKey = json.optString("monthKey", "");
             entry.paidAt = json.optString("paidAt", "");
             entry.paymentMethod = json.optString("paymentMethod", "");
             entry.category = json.optString("category", "");

@@ -1,5 +1,7 @@
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">nfe.sefaz.ba.gov.br</domain>
+        <domain includeSubdomains="true">hnfe.sefaz.ba.gov.br</domain>
+        <domain includeSubdomains="true">sefaz.ba.gov.br</domain>
     </domain-config>
 </network-security-config>

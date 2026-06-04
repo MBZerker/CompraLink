@@ -1,9 +1,9 @@
 {
-  "versionCode": 95,
-  "versionName": "4.64",
+  "versionCode": 96,
+  "versionName": "4.65",
   "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
   "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "3ce671ec0244ae5c92e348d6a97ee4ce2ed5f97792d791be27e491fd3c96aa59",
-  "sizeBytes": 39445184,
-  "notes": "Suaviza a pesquisa para evitar tremor ao digitar: aplica debounce maior e restaura o foco do campo somente após o layout estabilizar."
+  "sha256": "929aa0aa1b5cbb168b00a7bf0a396041adf4e79f05af0efa1367cbc03470fefb",
+  "sizeBytes": 39445185,
+  "notes": "Corrige o teclado da pesquisa: após a tela atualizar, o campo recupera foco e reabre o teclado automaticamente, evitando que ele suma durante a digitação."
 }

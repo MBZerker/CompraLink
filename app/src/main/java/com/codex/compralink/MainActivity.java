@@ -3915,7 +3915,7 @@ public class MainActivity extends Activity {
                     if (token != searchToken) return;
                     restoringSearchFocus = true;
                     callback.onSearchChanged(next);
-                }, 360);
+                }, 520);
             }
         });
         View divider = new View(this);
@@ -3936,15 +3936,22 @@ public class MainActivity extends Activity {
         box.addView(filter, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
 
         root.addView(row, matchHeightWithTop(dp(52), dp(10)));
-        if (restoringSearchFocus && value != null && !value.isEmpty()) {
-            search.postDelayed(() -> {
-                search.requestFocus();
-                search.setSelection(search.getText().length());
-                restoringSearchFocus = false;
-            }, 120);
+        if (restoringSearchFocus) {
+            restoreSearchKeyboard(search, 90);
+            restoreSearchKeyboard(search, 240);
         } else {
             restoringSearchFocus = false;
         }
+    }
+
+    private void restoreSearchKeyboard(EditText search, long delayMs) {
+        search.postDelayed(() -> {
+            search.requestFocus();
+            search.setSelection(search.getText().length());
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
+            restoringSearchFocus = false;
+        }, delayMs);
     }
 
     private boolean filterActiveForCurrentScreen() {

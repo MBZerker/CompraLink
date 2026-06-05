@@ -202,7 +202,7 @@ public class MainActivity extends Activity {
     private String stockSearch = "";
     private String stockHistorySearch = "";
     private int searchToken;
-    private boolean restoringSearchFocus;
+    private int searchResultsStartIndex = -1;
     private String flashImportedListId = "";
     private String stockUndoStockJson;
     private String stockUndoHistoryJson;
@@ -371,9 +371,13 @@ public class MainActivity extends Activity {
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
         addSearchBar("Pesquisar listas ou itens", homeSearch, value -> {
             homeSearch = value;
-            showHomeScreen();
+            refreshSearchResults(this::renderHomeResults);
         });
+        renderHomeResults();
+        setContentView(rootScroll());
+    }
 
+    private void renderHomeResults() {
         boolean shown = false;
         for (int i = 0; i < lists.size(); i++) {
             if (lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
@@ -387,7 +391,6 @@ public class MainActivity extends Activity {
                     ? infoCard("Nenhuma lista criada", "Toque no carrinho para criar sua primeira lista.")
                     : infoCard("Nada encontrado", "Nenhuma lista ou item corresponde a pesquisa."), matchWrapWithTop(dp(10)));
         }
-        setContentView(rootScroll());
     }
 
     private void showHistoryScreen() {
@@ -400,9 +403,13 @@ public class MainActivity extends Activity {
         addHistorySummary();
         addSearchBar("Pesquisar historico ou itens", historySearch, value -> {
             historySearch = value;
-            showHistoryScreen();
+            refreshSearchResults(this::renderHistoryResults);
         });
+        renderHistoryResults();
+        setContentView(rootScroll());
+    }
 
+    private void renderHistoryResults() {
         boolean shown = false;
         for (int i = 0; i < lists.size(); i++) {
             if (!lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
@@ -416,7 +423,6 @@ public class MainActivity extends Activity {
                     ? infoCard("Historico vazio", "Listas completas aparecem aqui depois de protegidas automaticamente.")
                     : infoCard("Nada encontrado", "Nenhuma lista do historico corresponde a pesquisa."), matchWrapWithTop(dp(10)));
         }
-        setContentView(rootScroll());
     }
 
     private void addHistorySummary() {
@@ -448,7 +454,7 @@ public class MainActivity extends Activity {
         } else {
             addSearchBar("Pesquisar itens do estoque", stockSearch, value -> {
                 stockSearch = value;
-                showStockWindow(false);
+                refreshSearchResults(this::addStockScreen);
             });
             addStockScreen();
         }
@@ -1051,7 +1057,7 @@ public class MainActivity extends Activity {
 
         addSearchBar("Pesquisar itens da lista", listSearch, value -> {
             listSearch = value;
-            showListScreen();
+            refreshSearchResults(this::addItems);
         });
         addItems();
         setContentView(rootScroll());
@@ -1747,7 +1753,7 @@ public class MainActivity extends Activity {
         addStockTabs();
         addSearchBar("Pesquisar historico do estoque", stockHistorySearch, value -> {
             stockHistorySearch = value;
-            showStockHistoryWindow();
+            refreshSearchResults(this::addStockHistoryScreen);
         });
         addStockHistoryScreen();
         setContentView(rootScroll());
@@ -3913,9 +3919,8 @@ public class MainActivity extends Activity {
                 int token = ++searchToken;
                 search.postDelayed(() -> {
                     if (token != searchToken) return;
-                    restoringSearchFocus = true;
                     callback.onSearchChanged(next);
-                }, 520);
+                }, 220);
             }
         });
         View divider = new View(this);
@@ -3936,22 +3941,15 @@ public class MainActivity extends Activity {
         box.addView(filter, new LinearLayout.LayoutParams(dp(42), ViewGroup.LayoutParams.MATCH_PARENT));
 
         root.addView(row, matchHeightWithTop(dp(52), dp(10)));
-        if (restoringSearchFocus) {
-            restoreSearchKeyboard(search, 90);
-            restoreSearchKeyboard(search, 240);
-        } else {
-            restoringSearchFocus = false;
-        }
+        searchResultsStartIndex = root.getChildCount();
     }
 
-    private void restoreSearchKeyboard(EditText search, long delayMs) {
-        search.postDelayed(() -> {
-            search.requestFocus();
-            search.setSelection(search.getText().length());
-            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
-            restoringSearchFocus = false;
-        }, delayMs);
+    private void refreshSearchResults(Runnable renderer) {
+        if (root == null || renderer == null || searchResultsStartIndex < 0) return;
+        while (root.getChildCount() > searchResultsStartIndex) {
+            root.removeViewAt(root.getChildCount() - 1);
+        }
+        renderer.run();
     }
 
     private boolean filterActiveForCurrentScreen() {

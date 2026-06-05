@@ -1,9 +1,9 @@
-{
-  "versionCode": 96,
-  "versionName": "4.65",
-  "apkUrl": "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
-  "releaseUrl": "https://github.com/MBZerker/CompraLink",
-  "sha256": "929aa0aa1b5cbb168b00a7bf0a396041adf4e79f05af0efa1367cbc03470fefb",
-  "sizeBytes": 39445185,
-  "notes": "Corrige o teclado da pesquisa: após a tela atualizar, o campo recupera foco e reabre o teclado automaticamente, evitando que ele suma durante a digitação."
+﻿{
+    "versionCode":  97,
+    "versionName":  "4.66",
+    "apkUrl":  "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
+    "releaseUrl":  "https://github.com/MBZerker/CompraLink",
+    "sha256":  "54381C506A66AAE482C4CE3543DC4389D6CB957E0E1F85F215A57BB2B46D0C3B",
+    "sizeBytes":  39445181,
+    "notes":  "Corrige a pesquisa para atualizar somente os resultados abaixo do campo, sem recriar a tela e sem fechar ou reabrir o teclado."
 }

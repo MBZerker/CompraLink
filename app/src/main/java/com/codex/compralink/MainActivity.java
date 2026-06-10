@@ -125,6 +125,12 @@ import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
 
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
+
 public class MainActivity extends Activity {
     private static final String PREFS = "compralink";
     private static final String KEY_LISTS = "lists";
@@ -155,6 +161,7 @@ public class MainActivity extends Activity {
     private static final String SHARE_BASE = "https://mbzerker.github.io/CompraLink/l/?payload=";
     private static final String BACKUP_BASE = "https://mbzerker.github.io/CompraLink/l/?backup=";
     private static final String SHORTENER_ENDPOINT = "https://nbtchat-store.nectof.workers.dev/shorten";
+    private static final String SYNC_WS_BASE = "wss://nbtchat-store.nectof.workers.dev/compralink-sync/";
     private static final String BACKUP_FILE_PREFIX = "CheckMercadoBackup:v2:";
     private static final String PAGES_HOST = "mbzerker.github.io";
     private static final String PAGES_PATH = "/CompraLink/l/";
@@ -225,6 +232,12 @@ public class MainActivity extends Activity {
     private int creditsSecretStep;
     private CompraInvadersView invadersView;
     private QrScannerView qrScannerView;
+    private final OkHttpClient syncHttpClient = new OkHttpClient();
+    private final String syncClientId = UUID.randomUUID().toString();
+    private WebSocket syncSocket;
+    private String syncListId = "";
+    private boolean syncOpen;
+    private boolean applyingRemoteSync;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -272,6 +285,13 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         UpdateManager.resumePendingInstall(this);
+        updateListSyncConnection();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        disconnectListSync();
     }
 
     @Override
@@ -363,6 +383,7 @@ public class MainActivity extends Activity {
     }
 
     private void showHomeScreen() {
+        disconnectListSync();
         selectedIndex = -1;
         selectedFromHistory = false;
         homeTab = selectedFromHistory ? 3 : 0;
@@ -1046,6 +1067,7 @@ public class MainActivity extends Activity {
         homeTab = 0;
         buildRoot();
         ShoppingList list = lists.get(selectedIndex);
+        updateListSyncConnection();
         addTopHeader(list.name, listSubtitle(list), true);
         if (list.locked) {
             String message = list.archived
@@ -1991,13 +2013,17 @@ public class MainActivity extends Activity {
             list.locked = false;
             list.archived = false;
             list.lockedAt = 0;
+            touchList(list);
         } else {
             list.locked = true;
             list.lockedAt = System.currentTimeMillis();
+            touchList(list);
             addSpendingRecordsForList(list);
+            sendListSyncSnapshot(list);
             if (isListFinished(list)) askArchiveLockedList(list);
         }
         save();
+        updateListSyncConnection();
     }
 
     private boolean isListFinished(ShoppingList list) {
@@ -2014,7 +2040,10 @@ public class MainActivity extends Activity {
                 .setMessage("A lista foi protegida. Deseja remove-la da tela principal e guardar no historico?")
                 .setPositiveButton("Sim", (dialog, which) -> {
                     list.archived = true;
+                    touchList(list);
+                    sendListSyncSnapshot(list);
                     save();
+                    updateListSyncConnection();
                     showHomeTab();
                 })
                 .setNegativeButton("Nao", (dialog, which) -> showHomeTab())
@@ -4390,15 +4419,21 @@ public class MainActivity extends Activity {
             if (current.locked) return;
             if (isChecked) {
                 item.checked = true;
+                item.updatedAt = System.currentTimeMillis();
                 if (lists.get(selectedIndex).saveCheckedToStock) {
                     addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
                 }
+                touchList(current);
                 save();
+                sendListSyncSnapshot(current);
                 animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             } else {
                 item.checked = false;
+                item.updatedAt = System.currentTimeMillis();
                 removeStockForItem(item);
+                touchList(current);
                 save();
+                sendListSyncSnapshot(current);
                 animateItemCheckMove(row, current, isChecked, () -> showListScreen());
             }
         });
@@ -4501,7 +4536,9 @@ public class MainActivity extends Activity {
         ShoppingList list = lists.get(selectedIndex);
         if (list.locked || index < 0 || index >= list.items.size()) return;
         list.items.remove(index);
+        touchList(list);
         save();
+        sendListSyncSnapshot(list);
         showListScreen();
     }
 
@@ -4511,8 +4548,11 @@ public class MainActivity extends Activity {
         if (text.isEmpty()) return;
         String unit = unitInput == null ? "" : unitInput.getText().toString().trim();
         if (unit.isEmpty()) unit = "1";
-        lists.get(selectedIndex).items.add(new ShoppingItem(text, parsePrice(priceInput.getText().toString()), unit));
+        ShoppingList list = lists.get(selectedIndex);
+        list.items.add(new ShoppingItem(text, parsePrice(priceInput.getText().toString()), unit));
+        touchList(list);
         save();
+        sendListSyncSnapshot(list);
         hideKeyboard();
         showListScreen();
     }
@@ -4546,8 +4586,11 @@ public class MainActivity extends Activity {
                     if (unitText.isEmpty()) unitText = "1";
                     ShoppingItem item = new ShoppingItem(text, parsePrice(price.getText().toString()), unitText);
                     item.note = note.getText().toString().trim();
-                    lists.get(selectedIndex).items.add(item);
+                    ShoppingList list = lists.get(selectedIndex);
+                    list.items.add(item);
+                    touchList(list);
                     save();
+                    sendListSyncSnapshot(list);
                     showListScreen();
                 })
                 .setNegativeButton("Cancelar", null)
@@ -4772,7 +4815,10 @@ public class MainActivity extends Activity {
                     if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
                         addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
                     }
+                    ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
+                    if (list != null) touchList(list);
                     save();
+                    if (list != null) sendListSyncSnapshot(list);
                     showListScreen();
                 })
                 .setNegativeButton("Cancelar", null)
@@ -4799,7 +4845,10 @@ public class MainActivity extends Activity {
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     item.price = parsePrice(input.getText().toString());
                     item.updatedAt = System.currentTimeMillis();
+                    ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
+                    if (list != null) touchList(list);
                     save();
+                    if (list != null) sendListSyncSnapshot(list);
                     showListScreen();
                 })
                 .setNegativeButton("Cancelar", null)
@@ -4998,6 +5047,7 @@ public class MainActivity extends Activity {
         for (ShoppingItem item : list.items) {
             if (item.checked) continue;
             item.checked = true;
+            item.updatedAt = System.currentTimeMillis();
             changed++;
             if (list.saveCheckedToStock) {
                 double quantity = quantityOf(item);
@@ -5005,7 +5055,9 @@ public class MainActivity extends Activity {
             }
         }
         if (changed > 0) {
+            touchList(list);
             save();
+            sendListSyncSnapshot(list);
             Toast.makeText(this, changed + " item(ns) concluido(s).", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "Lista ja estava concluida.", Toast.LENGTH_SHORT).show();
@@ -5040,7 +5092,9 @@ public class MainActivity extends Activity {
                     String name = input.getText().toString().trim();
                     if (!name.isEmpty()) list.name = name;
                     list.budget = parsePrice(budget.getText().toString());
+                    touchList(list);
                     save();
+                    sendListSyncSnapshot(list);
                     if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
                 })
                 .setNegativeButton("Cancelar", null)
@@ -5102,8 +5156,11 @@ public class MainActivity extends Activity {
                 .setTitle("Cor da lista")
                 .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> {
-                    lists.get(index).color = selected[0];
+                    ShoppingList list = lists.get(index);
+                    list.color = selected[0];
+                    touchList(list);
                     save();
+                    sendListSyncSnapshot(list);
                     showHomeTab();
                 })
                 .setNegativeButton("Cancelar", null)
@@ -5489,7 +5546,15 @@ public class MainActivity extends Activity {
 
     private void shareSelectedList(boolean privacyMode) {
         try {
-            String link = buildShareLink(lists.get(selectedIndex), privacyMode);
+            ShoppingList list = lists.get(selectedIndex);
+            if (!privacyMode) {
+                ensureSyncToken(list);
+                touchList(list);
+                save();
+                updateListSyncConnection();
+                sendListSyncSnapshot(list);
+            }
+            String link = buildShareLink(list, privacyMode);
             shareListUrl(link);
         } catch (Exception e) {
             Toast.makeText(this, "Nao foi possivel compartilhar esta lista.", Toast.LENGTH_SHORT).show();
@@ -5580,6 +5645,8 @@ public class MainActivity extends Activity {
         json.put("locked", false);
         json.put("archived", false);
         json.put("deletedFromHistory", false);
+        json.put("syncToken", "");
+        json.put("revision", 0);
         return json;
     }
 
@@ -5830,6 +5897,134 @@ public class MainActivity extends Activity {
             if (id.equals(item.id)) return item;
         }
         return null;
+    }
+
+    private void ensureSyncToken(ShoppingList list) {
+        if (list == null) return;
+        if (isBlank(list.syncToken)) {
+            list.syncToken = UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
+        }
+    }
+
+    private void touchList(ShoppingList list) {
+        if (list == null || applyingRemoteSync) return;
+        list.updatedAt = System.currentTimeMillis();
+        list.revision++;
+    }
+
+    private boolean canSyncList(ShoppingList list) {
+        return list != null
+                && !isBlank(list.id)
+                && !isBlank(list.syncToken)
+                && !list.locked
+                && !list.archived
+                && !list.deletedFromHistory;
+    }
+
+    private void updateListSyncConnection() {
+        if (selectedIndex < 0 || selectedIndex >= lists.size()) {
+            disconnectListSync();
+            return;
+        }
+        ShoppingList list = lists.get(selectedIndex);
+        if (!canSyncList(list)) {
+            disconnectListSync();
+            return;
+        }
+        if (syncSocket != null && syncOpen && list.id.equals(syncListId)) return;
+        disconnectListSync();
+        syncListId = list.id;
+        String url = SYNC_WS_BASE + Uri.encode(list.id) + "?token=" + Uri.encode(list.syncToken);
+        Request request = new Request.Builder().url(url).build();
+        syncSocket = syncHttpClient.newWebSocket(request, new WebSocketListener() {
+            @Override
+            public void onOpen(WebSocket webSocket, Response response) {
+                syncOpen = true;
+                sendListSyncHello(list);
+            }
+
+            @Override
+            public void onMessage(WebSocket webSocket, String text) {
+                handleListSyncMessage(text);
+            }
+
+            @Override
+            public void onClosed(WebSocket webSocket, int code, String reason) {
+                syncOpen = false;
+            }
+
+            @Override
+            public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+                syncOpen = false;
+            }
+        });
+    }
+
+    private void disconnectListSync() {
+        if (syncSocket != null) {
+            syncSocket.close(1000, "closed");
+            syncSocket = null;
+        }
+        syncOpen = false;
+        syncListId = "";
+    }
+
+    private void sendListSyncHello(ShoppingList list) {
+        sendListSyncMessage("hello", list);
+    }
+
+    private void sendListSyncSnapshot(ShoppingList list) {
+        if (applyingRemoteSync || !canSyncList(list) || syncSocket == null || !syncOpen) return;
+        sendListSyncMessage("snapshot", list);
+    }
+
+    private void sendListSyncMessage(String type, ShoppingList list) {
+        if (list == null || syncSocket == null) return;
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", type);
+            message.put("clientId", syncClientId);
+            message.put("listId", list.id);
+            message.put("token", list.syncToken);
+            message.put("sentAt", System.currentTimeMillis());
+            message.put("list", list.toJson());
+            syncSocket.send(message.toString());
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private void handleListSyncMessage(String text) {
+        try {
+            JSONObject message = new JSONObject(text);
+            if (syncClientId.equals(message.optString("clientId"))) return;
+            if (!"snapshot".equals(message.optString("type"))) return;
+            ShoppingList incoming = ShoppingList.fromJson(message.getJSONObject("list"));
+            if (isBlank(incoming.id) || isBlank(incoming.syncToken)) return;
+            runOnUiThread(() -> applyRemoteListSnapshot(incoming));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void applyRemoteListSnapshot(ShoppingList incoming) {
+        int index = findListIndexById(incoming.id);
+        if (index < 0) return;
+        ShoppingList local = lists.get(index);
+        if (!stringEquals(local.syncToken, incoming.syncToken)) return;
+        if (local.locked || local.archived || local.deletedFromHistory) {
+            disconnectListSync();
+            return;
+        }
+        if (incoming.revision < local.revision) return;
+        if (incoming.revision == local.revision && incoming.updatedAt <= local.updatedAt) return;
+        applyingRemoteSync = true;
+        preserveLocalStockLinks(local, incoming);
+        lists.set(index, incoming);
+        save();
+        applyingRemoteSync = false;
+        if (selectedIndex == index) {
+            Toast.makeText(this, "Lista sincronizada.", Toast.LENGTH_SHORT).show();
+            showListScreen();
+        }
     }
 
     private void clearImportedStockLinks(ShoppingList list) {
@@ -7054,10 +7249,13 @@ public class MainActivity extends Activity {
 
     private static class ShoppingList {
         String id = UUID.randomUUID().toString();
+        String syncToken = "";
         String name;
         int color;
         double budget;
         long createdAt = System.currentTimeMillis();
+        long updatedAt = createdAt;
+        long revision;
         long lockedAt;
         boolean saveCheckedToStock = true;
         boolean locked;
@@ -7073,10 +7271,13 @@ public class MainActivity extends Activity {
         JSONObject toJson() throws JSONException {
             JSONObject json = new JSONObject();
             json.put("id", id);
+            json.put("syncToken", syncToken);
             json.put("name", name);
             json.put("color", color);
             json.put("budget", budget);
             json.put("createdAt", createdAt);
+            json.put("updatedAt", updatedAt);
+            json.put("revision", revision);
             json.put("lockedAt", lockedAt);
             json.put("saveCheckedToStock", saveCheckedToStock);
             json.put("locked", locked);
@@ -7092,9 +7293,12 @@ public class MainActivity extends Activity {
         static ShoppingList fromJson(JSONObject json) throws JSONException {
             ShoppingList list = new ShoppingList(json.optString("name", "Lista"));
             list.id = json.optString("id", UUID.randomUUID().toString());
+            list.syncToken = json.optString("syncToken", "");
             list.color = json.optInt("color", 0);
             list.budget = json.optDouble("budget", 0);
             list.createdAt = json.optLong("createdAt", System.currentTimeMillis());
+            list.updatedAt = json.optLong("updatedAt", list.createdAt);
+            list.revision = json.optLong("revision", 0);
             list.lockedAt = json.optLong("lockedAt", 0);
             list.saveCheckedToStock = json.optBoolean("saveCheckedToStock", true);
             list.locked = json.optBoolean("locked", false);

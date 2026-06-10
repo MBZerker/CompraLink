@@ -1,9 +1,9 @@
 {
-    "versionCode":  97,
-    "versionName":  "4.66",
+    "versionCode":  98,
+    "versionName":  "4.67",
     "apkUrl":  "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
     "releaseUrl":  "https://github.com/MBZerker/CompraLink",
-    "sha256":  "54381C506A66AAE482C4CE3543DC4389D6CB957E0E1F85F215A57BB2B46D0C3B",
-    "sizeBytes":  39445181,
-    "notes":  "Corrige a pesquisa para atualizar somente os resultados abaixo do campo, sem recriar a tela e sem fechar ou reabrir o teclado."
+    "sha256":  "CF48C6B60402842BEB6C05A337BDB88247ECE19853BAC4E66C76758E0C6B0882",
+    "sizeBytes":  39897933,
+    "notes":  "Adiciona sincronizacao em tempo real para listas completas compartilhadas enquanto estiverem abertas, destrancadas e fora do historico."
 }

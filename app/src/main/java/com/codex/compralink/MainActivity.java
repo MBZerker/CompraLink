@@ -492,6 +492,7 @@ public class MainActivity extends Activity {
         addMonthlyBudgetSummary();
         addMonthlyBudgetActions();
         addMonthlyBudgetIncomeList();
+        addMonthlyBudgetMarketCard();
         addMonthlyBudgetEntries();
         setContentView(rootScroll());
     }
@@ -697,6 +698,47 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void addMonthlyBudgetMarketCard() {
+        String monthKey = selectedBudgetMonthKey();
+        double total = monthlyMarketSpending(monthKey);
+        if (total <= 0) return;
+        int color = Color.rgb(22, 163, 74);
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(glassCardBg(color));
+        elevate(card, 4);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        card.addView(top, matchWrap());
+
+        FrameLayout iconFrame = new FrameLayout(this);
+        iconFrame.setBackground(softPillBg(color));
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_cart);
+        icon.setColorFilter(color);
+        iconFrame.addView(icon, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(48), dp(48));
+        iconParams.setMargins(0, 0, dp(12), 0);
+        top.addView(iconFrame, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        top.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        texts.addView(label("Mercado", 18, true, primaryText()));
+        TextView subtitle = label("Calculado automaticamente pelas compras fechadas do mes.", 13, false, mutedText());
+        subtitle.setPadding(0, dp(4), 0, 0);
+        texts.addView(subtitle);
+
+        TextView value = label(money.format(total), 15, true, color);
+        value.setPadding(dp(10), dp(4), dp(10), dp(4));
+        value.setBackground(softPillBg(color));
+        top.addView(value);
+        root.addView(card, matchWrapWithTop(dp(10)));
+    }
+
     private View monthlyBudgetEntryCard(MonthlyBudgetEntry entry) {
         int color = budgetCategoryColor(entry.category);
         LinearLayout card = new LinearLayout(this);
@@ -744,6 +786,11 @@ public class MainActivity extends Activity {
             parcel.setPadding(0, dp(4), 0, 0);
             detail.addView(parcel);
         }
+        if (entry.recurring && !entry.detachedFromRecurring) {
+            TextView fixed = label("Despesa fixa mensal", 13, true, accent());
+            fixed.setPadding(0, dp(4), 0, 0);
+            detail.addView(fixed);
+        }
         if (entry.paid) {
             String paidAt = isBlank(entry.paidAt) ? "Hoje" : entry.paidAt;
             TextView paid = label("Pago em: " + paidAt, 13, true, Color.rgb(22, 163, 74));
@@ -771,15 +818,16 @@ public class MainActivity extends Activity {
                 .setTitle(isBlank(entry.description) ? "Despesa" : entry.description)
                 .setItems(new String[]{paidOption, copyOption, "Editar", "Remover"}, (dialog, which) -> {
                     if (which == 0) {
-                        entry.paid = !entry.paid;
-                        entry.paidAt = entry.paid && isBlank(entry.paidAt) ? formatDayMonth(System.currentTimeMillis()) : entry.paidAt;
-                        entry.updatedAt = System.currentTimeMillis();
+                        MonthlyBudgetEntry target = materializeMonthlyBudgetEntryForSelectedMonth(entry);
+                        target.paid = !target.paid;
+                        target.paidAt = target.paid && isBlank(target.paidAt) ? formatDayMonth(System.currentTimeMillis()) : target.paidAt;
+                        target.updatedAt = System.currentTimeMillis();
                         saveMonthlyBudget();
                         showMonthlyBudgetScreen();
                     } else if (which == 1) {
-                        copyMonthlyBudgetEntryToNextMonth(entry);
+                        copyMonthlyBudgetEntryToNextMonth(materializeMonthlyBudgetEntryForSelectedMonth(entry));
                     } else if (which == 2) {
-                        promptMonthlyBudgetEntry(entry);
+                        promptMonthlyBudgetEntry(materializeMonthlyBudgetEntryForSelectedMonth(entry));
                     } else {
                         confirmRemoveMonthlyBudgetEntry(entry);
                     }
@@ -788,13 +836,7 @@ public class MainActivity extends Activity {
     }
 
     private void copyMonthlyBudgetEntryToNextMonth(MonthlyBudgetEntry source) {
-        MonthlyBudgetEntry copy = new MonthlyBudgetEntry();
-        copy.description = source.description;
-        copy.installment = source.installment;
-        copy.amount = source.amount;
-        copy.dueDay = source.dueDay;
-        copy.paymentMethod = source.paymentMethod;
-        copy.category = source.category;
+        MonthlyBudgetEntry copy = copyMonthlyBudgetEntry(source);
         copy.monthKey = nextMonthKey(source.monthKey);
         monthlyBudgetEntries.add(0, copy);
         saveMonthlyBudget();
@@ -873,6 +915,12 @@ public class MainActivity extends Activity {
         tintCheckBox(paid);
         form.addView(paid, matchWrapWithTop(dp(8)));
 
+        CheckBox recurring = new CheckBox(this);
+        recurring.setText("Despesa fixa mensal");
+        recurring.setChecked(target.recurring);
+        tintCheckBox(recurring);
+        form.addView(recurring, matchWrapWithTop(dp(8)));
+
         EditText paidAt = dialogInput("Pago em (DD/MM)", InputType.TYPE_CLASS_TEXT);
         paidAt.setText(target.paidAt);
         form.addView(paidAt, matchHeightWithTop(dp(54), dp(8)));
@@ -890,10 +938,12 @@ public class MainActivity extends Activity {
                     target.paymentMethod = payment.getText().toString().trim();
                     target.category = category.getText().toString().trim();
                     target.paid = paid.isChecked();
+                    if (isBlank(target.monthKey)) target.monthKey = selectedBudgetMonthKey();
+                    target.recurring = recurring.isChecked();
+                    if (target.recurring && isBlank(target.startMonthKey)) target.startMonthKey = selectedBudgetMonthKey();
                     target.paidAt = target.paid
                             ? (isBlank(paidAt.getText().toString()) ? formatDayMonth(System.currentTimeMillis()) : paidAt.getText().toString().trim())
                             : "";
-                    if (isBlank(target.monthKey)) target.monthKey = selectedBudgetMonthKey();
                     target.updatedAt = System.currentTimeMillis();
                     if (!editing) monthlyBudgetEntries.add(0, target);
                     saveMonthlyBudget();
@@ -908,7 +958,7 @@ public class MainActivity extends Activity {
         List<MonthlyBudgetEntry> rows = new ArrayList<>();
         for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
             if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
-            if (monthKey.equals(entry.monthKey)) rows.add(entry);
+            if (budgetEntryAppliesToMonth(entry, monthKey)) rows.add(entry);
         }
         return rows;
     }
@@ -924,19 +974,89 @@ public class MainActivity extends Activity {
     }
 
     private double monthlyBudgetPlanned(String monthKey) {
-        double total = 0;
+        double total = monthlyMarketSpending(monthKey);
         for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
             if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
-            if (monthKey.equals(entry.monthKey)) total += entry.amount;
+            if (budgetEntryAppliesToMonth(entry, monthKey)) total += entry.amount;
         }
         return total;
     }
 
     private double monthlyBudgetPaid(String monthKey) {
-        double total = 0;
+        double total = monthlyMarketSpending(monthKey);
         for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
             if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
-            if (monthKey.equals(entry.monthKey) && entry.paid) total += entry.amount;
+            if (budgetEntryAppliesToMonth(entry, monthKey) && entry.paid) total += entry.amount;
+        }
+        return total;
+    }
+
+    private boolean budgetEntryAppliesToMonth(MonthlyBudgetEntry entry, String monthKey) {
+        if (entry == null || isBlank(monthKey)) return false;
+        if (isBlank(entry.monthKey)) entry.monthKey = currentBudgetMonthKey();
+        if (monthKey.equals(entry.monthKey)) return true;
+        return entry.recurring
+                && !entry.detachedFromRecurring
+                && !hasMonthlyBudgetOverride(entry.id, monthKey)
+                && monthKeyCompare(monthKey, isBlank(entry.startMonthKey) ? entry.monthKey : entry.startMonthKey) >= 0;
+    }
+
+    private MonthlyBudgetEntry materializeMonthlyBudgetEntryForSelectedMonth(MonthlyBudgetEntry entry) {
+        String monthKey = selectedBudgetMonthKey();
+        if (entry == null || monthKey.equals(entry.monthKey)) return entry;
+        if (!entry.recurring || entry.detachedFromRecurring) return entry;
+        MonthlyBudgetEntry copy = copyMonthlyBudgetEntry(entry);
+        copy.id = UUID.randomUUID().toString();
+        copy.monthKey = monthKey;
+        copy.recurring = false;
+        copy.detachedFromRecurring = true;
+        copy.recurringSourceId = entry.id;
+        copy.paid = false;
+        copy.paidAt = "";
+        copy.createdAt = System.currentTimeMillis();
+        copy.updatedAt = copy.createdAt;
+        monthlyBudgetEntries.add(0, copy);
+        return copy;
+    }
+
+    private boolean hasMonthlyBudgetOverride(String recurringId, String monthKey) {
+        if (isBlank(recurringId) || isBlank(monthKey)) return false;
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) {
+            if (entry.detachedFromRecurring
+                    && recurringId.equals(entry.recurringSourceId)
+                    && monthKey.equals(entry.monthKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private MonthlyBudgetEntry copyMonthlyBudgetEntry(MonthlyBudgetEntry source) {
+        MonthlyBudgetEntry copy = new MonthlyBudgetEntry();
+        copy.description = source.description;
+        copy.installment = source.installment;
+        copy.amount = source.amount;
+        copy.dueDay = source.dueDay;
+        copy.paymentMethod = source.paymentMethod;
+        copy.category = source.category;
+        copy.startMonthKey = source.startMonthKey;
+        return copy;
+    }
+
+    private int monthKeyCompare(String a, String b) {
+        Calendar ca = calendarFromMonthKey(a);
+        Calendar cb = calendarFromMonthKey(b);
+        int ay = ca.get(Calendar.YEAR) * 12 + ca.get(Calendar.MONTH);
+        int by = cb.get(Calendar.YEAR) * 12 + cb.get(Calendar.MONTH);
+        return Integer.compare(ay, by);
+    }
+
+    private double monthlyMarketSpending(String monthKey) {
+        double total = 0;
+        for (SpendingRecord record : spendingHistory) {
+            Calendar cal = Calendar.getInstance();
+            cal.setTimeInMillis(record.addedAt);
+            if (monthKey.equals(monthKey(cal))) total += record.price * record.quantity;
         }
         return total;
     }
@@ -8623,7 +8743,11 @@ public class MainActivity extends Activity {
         double amount;
         int dueDay = 5;
         boolean paid;
+        boolean recurring;
+        boolean detachedFromRecurring;
         String monthKey = "";
+        String startMonthKey = "";
+        String recurringSourceId = "";
         String paidAt = "";
         String paymentMethod = "";
         String category = "";
@@ -8638,7 +8762,11 @@ public class MainActivity extends Activity {
             json.put("amount", amount);
             json.put("dueDay", dueDay);
             json.put("paid", paid);
+            json.put("recurring", recurring);
+            json.put("detachedFromRecurring", detachedFromRecurring);
             json.put("monthKey", monthKey);
+            json.put("startMonthKey", startMonthKey);
+            json.put("recurringSourceId", recurringSourceId);
             json.put("paidAt", paidAt);
             json.put("paymentMethod", paymentMethod);
             json.put("category", category);
@@ -8655,7 +8783,11 @@ public class MainActivity extends Activity {
             entry.amount = json.optDouble("amount", 0);
             entry.dueDay = json.optInt("dueDay", 5);
             entry.paid = json.optBoolean("paid", false);
+            entry.recurring = json.optBoolean("recurring", false);
+            entry.detachedFromRecurring = json.optBoolean("detachedFromRecurring", false);
             entry.monthKey = json.optString("monthKey", "");
+            entry.startMonthKey = json.optString("startMonthKey", entry.monthKey);
+            entry.recurringSourceId = json.optString("recurringSourceId", "");
             entry.paidAt = json.optString("paidAt", "");
             entry.paymentMethod = json.optString("paymentMethod", "");
             entry.category = json.optString("category", "");

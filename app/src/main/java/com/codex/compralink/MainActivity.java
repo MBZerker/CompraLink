@@ -223,6 +223,7 @@ public class MainActivity extends Activity {
     private int homeListFilter;
     private int historyListFilter;
     private int listItemFilter;
+    private boolean comparisonPriceAscending = true;
     private String stockCategoryFilter = "";
     private String stockHistoryCategoryFilter = "";
     private int themeMode = THEME_SYSTEM;
@@ -234,9 +235,8 @@ public class MainActivity extends Activity {
     private QrScannerView qrScannerView;
     private final OkHttpClient syncHttpClient = new OkHttpClient();
     private final String syncClientId = UUID.randomUUID().toString();
-    private WebSocket syncSocket;
-    private String syncListId = "";
-    private boolean syncOpen;
+    private final Map<String, WebSocket> syncSockets = new HashMap<>();
+    private final LinkedHashSet<String> syncOpenListIds = new LinkedHashSet<>();
     private boolean applyingRemoteSync;
 
     @Override
@@ -383,11 +383,11 @@ public class MainActivity extends Activity {
     }
 
     private void showHomeScreen() {
-        disconnectListSync();
         selectedIndex = -1;
         selectedFromHistory = false;
         homeTab = selectedFromHistory ? 3 : 0;
         updateAutoLockedLists();
+        updateListSyncConnection();
         buildRoot();
         addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
         addSearchBar("Pesquisar listas ou itens", homeSearch, value -> {
@@ -4871,13 +4871,24 @@ public class MainActivity extends Activity {
         close.setTextSize(18);
         close.setOnClickListener(v -> showListScreen());
         toolbar.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        Button sort = iconButton(comparisonPriceAscending ? "R$ ↑" : "R$ ↓", softButtonBg(), primaryText());
+        sort.setTextSize(14);
+        sort.setOnClickListener(v -> {
+            comparisonPriceAscending = !comparisonPriceAscending;
+            showPriceComparison(item);
+        });
+        LinearLayout.LayoutParams sortParams = new LinearLayout.LayoutParams(dp(72), dp(48));
+        sortParams.setMargins(dp(8), 0, 0, 0);
+        toolbar.addView(sort, sortParams);
         root.addView(toolbar, matchWrap());
 
         TextView title = label("Compara\u00e7\u00e3o de pre\u00e7os", 22, true, primaryText());
         title.setGravity(Gravity.CENTER);
         root.addView(title, matchWrapWithTop(dp(14)));
 
-        TextView subtitle = label("Ordenado do maior para o menor pre\u00e7o unit\u00e1rio.", 14, false, mutedText());
+        TextView subtitle = label(comparisonPriceAscending
+                ? "Ordenado do menor para o maior pre\u00e7o unit\u00e1rio."
+                : "Ordenado do maior para o menor pre\u00e7o unit\u00e1rio.", 14, false, mutedText());
         subtitle.setGravity(Gravity.CENTER);
         root.addView(subtitle, matchWrapWithTop(dp(4)));
 
@@ -4979,7 +4990,9 @@ public class MainActivity extends Activity {
                 hits.add(new PriceHit(list.name, other.name, other.price, other.updatedAt, purchaseAt));
             }
         }
-        Collections.sort(hits, (a, b) -> Double.compare(b.price, a.price));
+        Collections.sort(hits, comparisonPriceAscending
+                ? (a, b) -> Double.compare(a.price, b.price)
+                : (a, b) -> Double.compare(b.price, a.price));
         return hits;
     }
 
@@ -5312,7 +5325,16 @@ public class MainActivity extends Activity {
                     if (list.archived || list.locked) {
                         list.deletedFromHistory = true;
                         addSpendingRecordsForList(list);
+                        touchList(list);
+                        sendListSyncSnapshot(list);
+                        disconnectListSync(list.id);
                     } else {
+                        if (canSyncList(list)) {
+                            list.deletedFromHistory = true;
+                            touchList(list);
+                            sendListSyncSnapshot(list);
+                            disconnectListSync(list.id);
+                        }
                         lists.remove(index);
                     }
                     selectedIndex = -1;
@@ -5922,24 +5944,30 @@ public class MainActivity extends Activity {
     }
 
     private void updateListSyncConnection() {
-        if (selectedIndex < 0 || selectedIndex >= lists.size()) {
-            disconnectListSync();
-            return;
+        LinkedHashSet<String> wanted = new LinkedHashSet<>();
+        for (ShoppingList list : lists) {
+            if (canSyncList(list)) wanted.add(list.id);
         }
-        ShoppingList list = lists.get(selectedIndex);
-        if (!canSyncList(list)) {
-            disconnectListSync();
-            return;
+        List<String> connected = new ArrayList<>(syncSockets.keySet());
+        for (String listId : connected) {
+            if (!wanted.contains(listId)) disconnectListSync(listId);
         }
-        if (syncSocket != null && syncOpen && list.id.equals(syncListId)) return;
-        disconnectListSync();
-        syncListId = list.id;
+        for (ShoppingList list : lists) {
+            if (wanted.contains(list.id) && !syncSockets.containsKey(list.id)) {
+                openListSync(list);
+            }
+        }
+    }
+
+    private void openListSync(ShoppingList list) {
+        if (!canSyncList(list) || syncSockets.containsKey(list.id)) return;
         String url = SYNC_WS_BASE + Uri.encode(list.id) + "?token=" + Uri.encode(list.syncToken);
         Request request = new Request.Builder().url(url).build();
-        syncSocket = syncHttpClient.newWebSocket(request, new WebSocketListener() {
+        final String listId = list.id;
+        WebSocket socket = syncHttpClient.newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
-                syncOpen = true;
+                runOnUiThread(() -> syncOpenListIds.add(listId));
                 sendListSyncHello(list);
             }
 
@@ -5950,23 +5978,33 @@ public class MainActivity extends Activity {
 
             @Override
             public void onClosed(WebSocket webSocket, int code, String reason) {
-                syncOpen = false;
+                runOnUiThread(() -> {
+                    syncOpenListIds.remove(listId);
+                    if (syncSockets.get(listId) == webSocket) syncSockets.remove(listId);
+                });
             }
 
             @Override
             public void onFailure(WebSocket webSocket, Throwable t, Response response) {
-                syncOpen = false;
+                runOnUiThread(() -> {
+                    syncOpenListIds.remove(listId);
+                    if (syncSockets.get(listId) == webSocket) syncSockets.remove(listId);
+                });
             }
         });
+        syncSockets.put(listId, socket);
     }
 
     private void disconnectListSync() {
-        if (syncSocket != null) {
-            syncSocket.close(1000, "closed");
-            syncSocket = null;
+        for (String listId : new ArrayList<>(syncSockets.keySet())) {
+            disconnectListSync(listId);
         }
-        syncOpen = false;
-        syncListId = "";
+    }
+
+    private void disconnectListSync(String listId) {
+        WebSocket socket = syncSockets.remove(listId);
+        if (socket != null) socket.close(1000, "closed");
+        syncOpenListIds.remove(listId);
     }
 
     private void sendListSyncHello(ShoppingList list) {
@@ -5974,12 +6012,14 @@ public class MainActivity extends Activity {
     }
 
     private void sendListSyncSnapshot(ShoppingList list) {
-        if (applyingRemoteSync || !canSyncList(list) || syncSocket == null || !syncOpen) return;
+        if (applyingRemoteSync || !canSyncList(list) || !syncOpenListIds.contains(list.id)) return;
         sendListSyncMessage("snapshot", list);
     }
 
     private void sendListSyncMessage(String type, ShoppingList list) {
-        if (list == null || syncSocket == null) return;
+        if (list == null) return;
+        WebSocket socket = syncSockets.get(list.id);
+        if (socket == null) return;
         try {
             JSONObject message = new JSONObject();
             message.put("type", type);
@@ -5988,7 +6028,7 @@ public class MainActivity extends Activity {
             message.put("token", list.syncToken);
             message.put("sentAt", System.currentTimeMillis());
             message.put("list", list.toJson());
-            syncSocket.send(message.toString());
+            socket.send(message.toString());
         } catch (JSONException ignored) {
         }
     }
@@ -6011,7 +6051,7 @@ public class MainActivity extends Activity {
         ShoppingList local = lists.get(index);
         if (!stringEquals(local.syncToken, incoming.syncToken)) return;
         if (local.locked || local.archived || local.deletedFromHistory) {
-            disconnectListSync();
+            disconnectListSync(local.id);
             return;
         }
         if (incoming.revision < local.revision) return;
@@ -6021,9 +6061,12 @@ public class MainActivity extends Activity {
         lists.set(index, incoming);
         save();
         applyingRemoteSync = false;
+        if (!canSyncList(incoming)) disconnectListSync(incoming.id);
         if (selectedIndex == index) {
             Toast.makeText(this, "Lista sincronizada.", Toast.LENGTH_SHORT).show();
             showListScreen();
+        } else if (selectedIndex < 0 && homeTab == 0) {
+            showHomeScreen();
         }
     }
 

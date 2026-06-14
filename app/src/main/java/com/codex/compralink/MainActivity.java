@@ -453,8 +453,9 @@ public class MainActivity extends Activity {
         for (ShoppingList list : lists) {
             if (!list.archived || list.deletedFromHistory) continue;
             count++;
-            items += list.items.size();
+            items += activeItemCount(list);
             for (ShoppingItem item : list.items) {
+                if (item.removed) continue;
                 if (item.price > 0) total += item.price * quantityOf(item);
             }
         }
@@ -1952,7 +1953,7 @@ public class MainActivity extends Activity {
         content.addView(name, matchWrap());
 
         LinearLayout meta = iconText(R.drawable.ic_calendar_tiny,
-                formatShortDate(list.createdAt) + " - " + list.items.size() + " itens - " + completedCount(list) + " concluidos",
+                formatShortDate(list.createdAt) + " - " + activeItemCount(list) + " itens - " + completedCount(list) + " concluidos",
                 13, false, neon ? CheckMercadoNeonUi.MUTED : mutedText(), neon ? CheckMercadoNeonUi.MUTED : mutedText());
         meta.setPadding(0, dp(5), 0, 0);
         content.addView(meta, matchWrap());
@@ -2017,11 +2018,12 @@ public class MainActivity extends Activity {
         int done = 0;
         double total = 0;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (item.checked) done++;
             if (item.price > 0) total += item.price * quantityOf(item);
         }
         String status = list.locked ? " - protegida" : "";
-        return formatShortDate(list.createdAt) + " - " + list.items.size() + " itens, " + done + " concluidos, total " + money.format(total) + status;
+        return formatShortDate(list.createdAt) + " - " + activeItemCount(list) + " itens, " + done + " concluidos, total " + money.format(total) + status;
     }
 
     private int budgetStatusColor(ShoppingList list) {
@@ -2096,6 +2098,7 @@ public class MainActivity extends Activity {
     private int completedCount(ShoppingList list) {
         int done = 0;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (item.checked) done++;
         }
         return done;
@@ -2104,9 +2107,19 @@ public class MainActivity extends Activity {
     private double totalOfList(ShoppingList list) {
         double total = 0;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (item.price > 0) total += item.price * quantityOf(item);
         }
         return total;
+    }
+
+    private int activeItemCount(ShoppingList list) {
+        int count = 0;
+        if (list == null) return 0;
+        for (ShoppingItem item : list.items) {
+            if (!item.removed) count++;
+        }
+        return count;
     }
 
     private void showHomeTab() {
@@ -2147,8 +2160,9 @@ public class MainActivity extends Activity {
     }
 
     private boolean isListFinished(ShoppingList list) {
-        if (list.items.isEmpty()) return false;
+        if (activeItemCount(list) == 0) return false;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (!item.checked) return false;
         }
         return true;
@@ -2179,9 +2193,10 @@ public class MainActivity extends Activity {
     }
 
     private boolean updateAutoLockedList(ShoppingList list) {
-        if (list.locked || list.items.isEmpty()) return false;
+        if (list.locked || activeItemCount(list) == 0) return false;
         if (System.currentTimeMillis() - list.createdAt < AUTO_LOCK_AFTER_MS) return false;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (!item.checked) return false;
         }
         list.locked = true;
@@ -2223,6 +2238,7 @@ public class MainActivity extends Activity {
         page.addView(spacer, matchWrap());
 
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             double qty = quantityOf(item);
             String unitPrice = item.price > 0 ? money.format(item.price) : "R$ --";
             String total = item.price > 0 ? money.format(item.price * qty) : "R$ --";
@@ -2292,6 +2308,7 @@ public class MainActivity extends Activity {
         StringBuilder html = printHtmlStart(list.name);
         html.append("<h1>").append(escapeHtml(list.name)).append("</h1><div class=\"gap\"></div>");
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             double qty = quantityOf(item);
             String unitPrice = item.price > 0 ? money.format(item.price) : "R$ --";
             String total = item.price > 0 ? money.format(item.price * qty) : "R$ --";
@@ -4209,14 +4226,14 @@ public class MainActivity extends Activity {
     private boolean matchesHomeListFilter(ShoppingList list) {
         if (homeListFilter == 1) return !list.locked && !list.archived;
         if (homeListFilter == 2) return list.locked;
-        if (homeListFilter == 3) return !list.items.isEmpty();
-        if (homeListFilter == 4) return list.items.isEmpty();
+        if (homeListFilter == 3) return activeItemCount(list) > 0;
+        if (homeListFilter == 4) return activeItemCount(list) == 0;
         return true;
     }
 
     private boolean matchesHistoryListFilter(ShoppingList list) {
-        if (historyListFilter == 1) return !list.items.isEmpty();
-        if (historyListFilter == 2) return list.items.isEmpty();
+        if (historyListFilter == 1) return activeItemCount(list) > 0;
+        if (historyListFilter == 2) return activeItemCount(list) == 0;
         return true;
     }
 
@@ -4473,7 +4490,8 @@ public class MainActivity extends Activity {
         ShoppingList current = lists.get(selectedIndex);
         boolean any = false;
         for (ShoppingItem item : current.items) {
-            if (matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
+            if ((!item.removed && matchesItemSearch(item, listSearch) && matchesItemFilter(item))
+                    || (item.removed && matchesItemSearch(item, listSearch))) {
                 any = true;
                 break;
             }
@@ -4487,24 +4505,98 @@ public class MainActivity extends Activity {
             addItemsByCheckedState(false);
         } else if (current.sortMode == SORT_KEEP_POSITION) {
             for (int i = 0; i < current.items.size(); i++) {
-                if (matchesItemSearch(current.items.get(i), listSearch) && matchesItemFilter(current.items.get(i))) {
-                    root.addView(itemRow(current.items.get(i), i), matchWrapWithTop(dp(8)));
+                ShoppingItem item = current.items.get(i);
+                if (!item.removed && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
+                    root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
                 }
             }
         } else {
             addItemsByCheckedState(false);
             addItemsByCheckedState(true);
         }
+        addRemovedItemsSection();
     }
 
     private void addItemsByCheckedState(boolean checked) {
         ShoppingList current = lists.get(selectedIndex);
         for (int i = 0; i < current.items.size(); i++) {
             ShoppingItem item = current.items.get(i);
-            if (item.checked == checked && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
+            if (!item.removed && item.checked == checked && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
                 root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
             }
         }
+    }
+
+    private void addRemovedItemsSection() {
+        if (selectedIndex < 0 || selectedIndex >= lists.size()) return;
+        ShoppingList current = lists.get(selectedIndex);
+        boolean hasRemoved = false;
+        for (ShoppingItem item : current.items) {
+            if (item.removed && matchesItemSearch(item, listSearch)) {
+                hasRemoved = true;
+                break;
+            }
+        }
+        if (!hasRemoved) return;
+
+        TextView title = label("Itens removidos", 16, true, disabledText());
+        title.setPadding(dp(4), dp(16), dp(4), dp(2));
+        root.addView(title, matchWrap());
+        for (ShoppingItem item : current.items) {
+            if (item.removed && matchesItemSearch(item, listSearch)) {
+                root.addView(removedItemRow(item), matchWrapWithTop(dp(8)));
+            }
+        }
+    }
+
+    private View removedItemRow(ShoppingItem item) {
+        ShoppingList current = lists.get(selectedIndex);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(12), dp(16), dp(12));
+        row.setBackground(removedItemBg());
+        row.setAlpha(current.locked ? 0.62f : 0.78f);
+        elevate(row, 1);
+        if (!current.locked) {
+            row.setOnClickListener(v -> confirmRestoreRemovedItem(item));
+        }
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_trash);
+        icon.setColorFilter(disabledText());
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(28), dp(28));
+        iconParams.setMargins(0, 0, dp(12), 0);
+        row.addView(icon, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        row.addView(texts, weighted());
+
+        TextView name = label(item.name, 15, true, disabledText());
+        name.setPaintFlags(name.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
+        texts.addView(name, matchWrap());
+
+        String qtyText = formatQtyWithAutoUnit(item);
+        String priceText = item.price > 0
+                ? qtyText + " x " + money.format(item.price) + " (" + money.format(item.price * quantityOf(item)) + ")"
+                : qtyText + " x R$ --";
+        TextView price = label(priceText, 13, true, disabledText());
+        price.setPadding(0, dp(3), 0, 0);
+        texts.addView(price, matchWrap());
+        if (item.note != null && !item.note.trim().isEmpty()) {
+            TextView note = label(item.note, 12, false, disabledText());
+            note.setPadding(0, dp(3), 0, 0);
+            texts.addView(note, matchWrap());
+        }
+
+        if (!current.locked) {
+            TextView restore = label("Restaurar", 13, true, accent());
+            restore.setPadding(dp(10), dp(4), dp(10), dp(4));
+            restore.setBackground(softPillBg(accent()));
+            row.addView(restore);
+        }
+        return row;
     }
 
     private View itemRow(ShoppingItem item, int index) {
@@ -4655,11 +4747,32 @@ public class MainActivity extends Activity {
         if (selectedIndex < 0 || selectedIndex >= lists.size()) return;
         ShoppingList list = lists.get(selectedIndex);
         if (list.locked || index < 0 || index >= list.items.size()) return;
-        list.items.remove(index);
+        ShoppingItem item = list.items.get(index);
+        item.removed = true;
+        item.updatedAt = System.currentTimeMillis();
         touchList(list);
         save();
         sendListSyncSnapshot(list);
         showListScreen();
+    }
+
+    private void confirmRestoreRemovedItem(ShoppingItem item) {
+        if (selectedIndex < 0 || selectedIndex >= lists.size()) return;
+        ShoppingList list = lists.get(selectedIndex);
+        if (list.locked || item == null) return;
+        dialog()
+                .setTitle("Restaurar item?")
+                .setMessage(item.name)
+                .setPositiveButton("Restaurar", (dialog, which) -> {
+                    item.removed = false;
+                    item.updatedAt = System.currentTimeMillis();
+                    touchList(list);
+                    save();
+                    sendListSyncSnapshot(list);
+                    showListScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     private void addItem() {
@@ -4822,6 +4935,7 @@ public class MainActivity extends Activity {
         boolean changed = false;
         long addedAt = list.lockedAt > 0 ? list.lockedAt : list.createdAt;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (!item.checked || item.price <= 0 || hasSpendingRecordForItem(item.id)) continue;
             SpendingRecord record = new SpendingRecord(item.name, quantityOf(item), autoUnitForQuantity(quantityOf(item)), item.price, addedAt);
             record.sourceItemId = item.id;
@@ -5178,6 +5292,7 @@ public class MainActivity extends Activity {
         if (list.locked) return;
         int changed = 0;
         for (ShoppingItem item : list.items) {
+            if (item.removed) continue;
             if (item.checked) continue;
             item.checked = true;
             item.updatedAt = System.currentTimeMillis();
@@ -6009,6 +6124,7 @@ public class MainActivity extends Activity {
     private boolean itemChanged(ShoppingItem a, ShoppingItem b) {
         return !stringEquals(a.name, b.name)
                 || a.checked != b.checked
+                || a.removed != b.removed
                 || Math.abs(a.price - b.price) > 0.000001
                 || !stringEquals(a.unit, b.unit)
                 || !stringEquals(a.note, b.note);
@@ -7229,6 +7345,19 @@ public class MainActivity extends Activity {
         );
         drawable.setCornerRadius(dp(18));
         drawable.setStroke(dp(1), stroke());
+        return drawable;
+    }
+
+    private GradientDrawable removedItemBg() {
+        GradientDrawable drawable = new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{
+                        isDarkTheme() ? Color.argb(132, 15, 23, 42) : Color.argb(150, 241, 245, 249),
+                        isDarkTheme() ? Color.argb(118, 2, 6, 23) : Color.argb(138, 226, 232, 240)
+                }
+        );
+        drawable.setCornerRadius(dp(18));
+        drawable.setStroke(dp(1), isDarkTheme() ? Color.argb(90, 100, 116, 139) : Color.argb(120, 148, 163, 184));
         return drawable;
     }
 
@@ -8665,6 +8794,7 @@ public class MainActivity extends Activity {
         String id = UUID.randomUUID().toString();
         String name;
         boolean checked;
+        boolean removed;
         double price;
         String unit;
         String note = "";
@@ -8683,6 +8813,7 @@ public class MainActivity extends Activity {
             json.put("id", id);
             json.put("name", name);
             json.put("checked", checked);
+            json.put("removed", removed);
             json.put("price", price);
             json.put("unit", unit);
             json.put("note", note);
@@ -8699,6 +8830,7 @@ public class MainActivity extends Activity {
             );
             item.id = json.optString("id", UUID.randomUUID().toString());
             item.checked = json.optBoolean("checked", false);
+            item.removed = json.optBoolean("removed", false);
             item.note = json.optString("note", "");
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             item.stockId = json.optString("stockId", "");

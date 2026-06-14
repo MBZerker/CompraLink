@@ -1,12 +1,12 @@
 {
-    "versionCode":  100,
-    "versionName":  "4.69",
+    "versionCode":  101,
+    "versionName":  "4.70",
     "apkUrl":  "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
     "releaseUrl":  "https://github.com/MBZerker/CompraLink",
-    "apkFileName":  "CheckMercado-4.69.apk",
-    "sha256":  "BD15CE44517991F8DCA3159872F43166521DBD3AC1F27BA1EBCBF657FEC84123",
-    "sizeBytes":  39914305,
-    "size":  39914305,
-    "notes":  "Inclui Mercado automatico no orcamento mensal e adiciona despesas fixas mensais recorrentes.",
-    "releaseNotes":  "Inclui Mercado automatico no orcamento mensal e adiciona despesas fixas mensais recorrentes."
+    "apkFileName":  "CheckMercado-4.70.apk",
+    "sha256":  "7AF08ED5A455BF08A8062268E99F67AAF5EDE946C1602C206A9F72CE8E2C2816",
+    "sizeBytes":  39914315,
+    "size":  39914315,
+    "notes":  "Move itens removidos para uma area de Itens removidos com restauracao por confirmacao, sem apagar imediatamente.",
+    "releaseNotes":  "Move itens removidos para uma area de Itens removidos com restauracao por confirmacao, sem apagar imediatamente."
 }

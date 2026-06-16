@@ -1,12 +1,12 @@
 {
-    "versionCode":  101,
-    "versionName":  "4.70",
+    "versionCode":  102,
+    "versionName":  "4.71",
     "apkUrl":  "https://raw.githubusercontent.com/MBZerker/CompraLink/main/CompraLink.apk",
     "releaseUrl":  "https://github.com/MBZerker/CompraLink",
-    "apkFileName":  "CheckMercado-4.70.apk",
-    "sha256":  "7AF08ED5A455BF08A8062268E99F67AAF5EDE946C1602C206A9F72CE8E2C2816",
-    "sizeBytes":  39914315,
-    "size":  39914315,
-    "notes":  "Move itens removidos para uma area de Itens removidos com restauracao por confirmacao, sem apagar imediatamente.",
-    "releaseNotes":  "Move itens removidos para uma area de Itens removidos com restauracao por confirmacao, sem apagar imediatamente."
+    "apkFileName":  "CheckMercado-4.71.apk",
+    "sha256":  "3CBD5E9C2534810D6D8366FBD9F0DED8693438FDE7BA60E1F9874A1EBA3B8F35",
+    "sizeBytes":  39914298,
+    "size":  39914298,
+    "notes":  "Adiciona historico de edicao em itens da lista, com data, hora e detalhes de cada campo alterado.",
+    "releaseNotes":  "Adiciona historico de edicao em itens da lista, com data, hora e detalhes de cada campo alterado."
 }

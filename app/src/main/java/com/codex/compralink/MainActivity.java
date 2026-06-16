@@ -4703,6 +4703,11 @@ public class MainActivity extends Activity {
                 note.setPadding(0, dp(3), 0, 0);
                 itemText.addView(note, matchWrap());
             }
+            if (!item.editHistory.isEmpty()) {
+                TextView edited = label("Editado " + formatItemEditMoment(item.lastEditAt()), 12, false, mutedText());
+                edited.setPadding(0, dp(3), 0, 0);
+                itemText.addView(edited, matchWrap());
+            }
             row.addView(itemText, weighted());
         } else {
             row.addView(itemText, weighted());
@@ -4736,8 +4741,9 @@ public class MainActivity extends Activity {
         if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
         dialog()
                 .setTitle(item.name)
-                .setItems(new String[]{"Editar item", "Remover"}, (dialog, which) -> {
+                .setItems(new String[]{"Editar item", "Ver edição", "Remover"}, (dialog, which) -> {
                     if (which == 0) promptEditItem(item);
+                    else if (which == 1) showItemEditHistory(item);
                     else removeListItem(index);
                 })
                 .show();
@@ -5015,6 +5021,10 @@ public class MainActivity extends Activity {
 
     private void promptEditItem(ShoppingItem item) {
         if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        String oldName = safeText(item.name);
+        double oldPrice = item.price;
+        String oldUnit = safeText(item.unit);
+        String oldNote = safeText(item.note);
         LinearLayout form = dialogForm();
         AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
@@ -5040,22 +5050,87 @@ public class MainActivity extends Activity {
                 .setView(form)
                 .setPositiveButton("Salvar", (dialog, which) -> {
                     String newName = name.getText().toString().trim();
-                    if (!newName.isEmpty()) item.name = newName;
-                    item.price = parsePrice(price.getText().toString());
-                    item.unit = unit.getText().toString().trim();
-                    if (item.unit.isEmpty()) item.unit = "1";
-                    item.note = note.getText().toString().trim();
-                    item.updatedAt = System.currentTimeMillis();
+                    if (newName.isEmpty()) newName = oldName;
+                    double newPrice = parsePrice(price.getText().toString());
+                    String newUnit = unit.getText().toString().trim();
+                    if (newUnit.isEmpty()) newUnit = "1";
+                    String newNote = note.getText().toString().trim();
+                    long editedAt = System.currentTimeMillis();
+                    boolean changed = false;
+                    changed = addItemEditHistory(item, "Produto", oldName, newName, editedAt) || changed;
+                    changed = addItemEditHistory(item, "Preço", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt) || changed;
+                    changed = addItemEditHistory(item, "Un", oldUnit.isEmpty() ? "1" : oldUnit, newUnit, editedAt) || changed;
+                    changed = addItemEditHistory(item, "Nota", displayEditValue(oldNote), displayEditValue(newNote), editedAt) || changed;
+                    item.name = newName;
+                    item.price = newPrice;
+                    item.unit = newUnit;
+                    item.note = newNote;
+                    if (changed) item.updatedAt = editedAt;
                     if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
                         addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
                     }
                     ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
-                    if (list != null) touchList(list);
-                    save();
-                    if (list != null) sendListSyncSnapshot(list);
+                    if (changed && list != null) touchList(list);
+                    if (changed) save();
+                    if (changed && list != null) sendListSyncSnapshot(list);
                     showListScreen();
                 })
                 .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private boolean addItemEditHistory(ShoppingItem item, String field, String oldValue, String newValue, long editedAt) {
+        String oldClean = safeText(oldValue);
+        String newClean = safeText(newValue);
+        if (oldClean.equals(newClean)) return false;
+        item.editHistory.add(0, new ItemEditEntry(field, oldClean, newClean, editedAt));
+        return true;
+    }
+
+    private String safeText(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private String displayEditValue(String value) {
+        String clean = safeText(value);
+        return clean.isEmpty() ? "(vazio)" : clean;
+    }
+
+    private String formatEditPrice(double value) {
+        return value > 0 ? money.format(value) : "R$ --";
+    }
+
+    private void showItemEditHistory(ShoppingItem item) {
+        LinearLayout content = dialogForm();
+        if (item.editHistory.isEmpty()) {
+            TextView empty = label("Nenhuma edição registrada.", 15, false, mutedText());
+            empty.setPadding(dp(4), dp(6), dp(4), dp(6));
+            content.addView(empty, matchWrap());
+        } else {
+            for (ItemEditEntry entry : item.editHistory) {
+                LinearLayout card = new LinearLayout(this);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setPadding(dp(12), dp(10), dp(12), dp(10));
+                card.setBackground(glassCardBg(0));
+                TextView field = label(entry.field, 14, true, primaryText());
+                card.addView(field, matchWrap());
+                TextView change = label("Mudou de " + entry.oldValue + " para " + entry.newValue + " em " + formatItemEditMoment(entry.editedAt), 13, false, mutedText());
+                change.setPadding(0, dp(4), 0, 0);
+                change.setSingleLine(false);
+                card.addView(change, matchWrap());
+                content.addView(card, matchWrapWithTop(dp(8)));
+            }
+        }
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(content);
+        int maxHeight = Math.min(getResources().getDisplayMetrics().heightPixels - dp(180), dp(520));
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, maxHeight));
+        dialog()
+                .setTitle("Histórico de edição")
+                .setMessage(item.name)
+                .setView(scroll)
+                .setPositiveButton("OK", null)
                 .show();
     }
 
@@ -5077,12 +5152,16 @@ public class MainActivity extends Activity {
                 .setTitle("Preco de " + item.name)
                 .setView(input)
                 .setPositiveButton("Salvar", (dialog, which) -> {
-                    item.price = parsePrice(input.getText().toString());
-                    item.updatedAt = System.currentTimeMillis();
+                    double oldPrice = item.price;
+                    double newPrice = parsePrice(input.getText().toString());
+                    long editedAt = System.currentTimeMillis();
+                    boolean changed = addItemEditHistory(item, "Preço", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt);
+                    item.price = newPrice;
+                    if (changed) item.updatedAt = editedAt;
                     ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
-                    if (list != null) touchList(list);
-                    save();
-                    if (list != null) sendListSyncSnapshot(list);
+                    if (changed && list != null) touchList(list);
+                    if (changed) save();
+                    if (changed && list != null) sendListSyncSnapshot(list);
                     showListScreen();
                 })
                 .setNegativeButton("Cancelar", null)
@@ -6912,8 +6991,32 @@ public class MainActivity extends Activity {
                 date.get(Calendar.MINUTE));
     }
 
+    private String formatTimeWithSeconds(long when) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        return String.format(Locale.ROOT, "%02d:%02d:%02d",
+                date.get(Calendar.HOUR_OF_DAY),
+                date.get(Calendar.MINUTE),
+                date.get(Calendar.SECOND));
+    }
+
     private String formatDateTime(long when) {
         return formatShortDate(when) + " \u00e0s " + formatTime(when);
+    }
+
+    private String formatItemEditMoment(long when) {
+        Calendar today = Calendar.getInstance();
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        boolean sameDay = today.get(Calendar.YEAR) == date.get(Calendar.YEAR)
+                && today.get(Calendar.DAY_OF_YEAR) == date.get(Calendar.DAY_OF_YEAR);
+        String day = sameDay
+                ? "Hoje"
+                : String.format(Locale.ROOT, "%02d/%02d/%02d",
+                        date.get(Calendar.DAY_OF_MONTH),
+                        date.get(Calendar.MONTH) + 1,
+                        date.get(Calendar.YEAR) % 100);
+        return day + " às " + formatTimeWithSeconds(when);
     }
 
     private String formatDateLabel(long when) {
@@ -8790,6 +8893,38 @@ public class MainActivity extends Activity {
         }
     }
 
+    private static class ItemEditEntry {
+        String field;
+        String oldValue;
+        String newValue;
+        long editedAt;
+
+        ItemEditEntry(String field, String oldValue, String newValue, long editedAt) {
+            this.field = field == null ? "" : field;
+            this.oldValue = oldValue == null ? "" : oldValue;
+            this.newValue = newValue == null ? "" : newValue;
+            this.editedAt = editedAt <= 0 ? System.currentTimeMillis() : editedAt;
+        }
+
+        JSONObject toJson() throws JSONException {
+            JSONObject json = new JSONObject();
+            json.put("field", field);
+            json.put("oldValue", oldValue);
+            json.put("newValue", newValue);
+            json.put("editedAt", editedAt);
+            return json;
+        }
+
+        static ItemEditEntry fromJson(JSONObject json) {
+            return new ItemEditEntry(
+                    json.optString("field", ""),
+                    json.optString("oldValue", ""),
+                    json.optString("newValue", ""),
+                    json.optLong("editedAt", System.currentTimeMillis())
+            );
+        }
+    }
+
     private static class ShoppingItem {
         String id = UUID.randomUUID().toString();
         String name;
@@ -8800,6 +8935,7 @@ public class MainActivity extends Activity {
         String note = "";
         long updatedAt;
         String stockId = "";
+        final List<ItemEditEntry> editHistory = new ArrayList<>();
 
         ShoppingItem(String name, double price, String unit) {
             this.name = name;
@@ -8819,6 +8955,9 @@ public class MainActivity extends Activity {
             json.put("note", note);
             json.put("updatedAt", updatedAt);
             json.put("stockId", stockId);
+            JSONArray history = new JSONArray();
+            for (ItemEditEntry entry : editHistory) history.put(entry.toJson());
+            json.put("editHistory", history);
             return json;
         }
 
@@ -8834,7 +8973,22 @@ public class MainActivity extends Activity {
             item.note = json.optString("note", "");
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             item.stockId = json.optString("stockId", "");
+            JSONArray history = json.optJSONArray("editHistory");
+            if (history != null) {
+                for (int i = 0; i < history.length(); i++) {
+                    JSONObject entry = history.optJSONObject(i);
+                    if (entry != null) item.editHistory.add(ItemEditEntry.fromJson(entry));
+                }
+            }
             return item;
+        }
+
+        long lastEditAt() {
+            long latest = 0;
+            for (ItemEditEntry entry : editHistory) {
+                latest = Math.max(latest, entry.editedAt);
+            }
+            return latest;
         }
     }
 

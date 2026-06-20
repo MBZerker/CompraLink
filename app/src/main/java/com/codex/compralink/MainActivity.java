@@ -125,6 +125,17 @@ import com.google.mlkit.vision.barcode.BarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
 import com.google.mlkit.vision.common.InputImage;
 
+import com.android.billingclient.api.AcknowledgePurchaseParams;
+import com.android.billingclient.api.BillingClient;
+import com.android.billingclient.api.BillingClientStateListener;
+import com.android.billingclient.api.BillingFlowParams;
+import com.android.billingclient.api.BillingResult;
+import com.android.billingclient.api.ProductDetails;
+import com.android.billingclient.api.Purchase;
+import com.android.billingclient.api.PendingPurchasesParams;
+import com.android.billingclient.api.QueryProductDetailsParams;
+import com.android.billingclient.api.QueryPurchasesParams;
+
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -148,6 +159,10 @@ public class MainActivity extends Activity {
     private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
     private static final String KEY_STOCK_HISTORY_SORT_DESC = "stock_history_sort_desc";
     private static final String KEY_STOCK_SORT_MODE = "stock_sort_mode";
+    private static final String KEY_PREMIUM_UNLOCKED = "premium_unlocked";
+    private static final String KEY_SYNC_USAGE_MONTH = "sync_usage_month";
+    private static final String KEY_SYNC_USAGE_COUNT = "sync_usage_count";
+    private static final String KEY_SYNC_USAGE_LISTS = "sync_usage_lists";
     private static final String KEY_GAME_LEVEL = "market_game_level";
     private static final String KEY_GAME_MOVES = "market_game_moves";
     private static final String KEY_GAME_BOARD = "market_game_board";
@@ -167,6 +182,8 @@ public class MainActivity extends Activity {
     private static final String PAGES_PATH = "/CompraLink/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
+    private static final String PLAY_PREMIUM_PRODUCT_ID = "check_mercado_premium";
+    private static final int FREE_SYNC_USES_PER_MONTH = 3;
     private static final int SORT_CHECKED_BOTTOM = 0;
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
@@ -237,6 +254,12 @@ public class MainActivity extends Activity {
     private final String syncClientId = UUID.randomUUID().toString();
     private final Map<String, WebSocket> syncSockets = new HashMap<>();
     private final LinkedHashSet<String> syncOpenListIds = new LinkedHashSet<>();
+    private BillingClient billingClient;
+    private ProductDetails premiumProductDetails;
+    private String premiumPriceText = "Confira na Play Store";
+    private boolean premiumUnlocked;
+    private boolean premiumScreenOpen;
+    private boolean syncLimitPromptShown;
     private boolean applyingRemoteSync;
 
     @Override
@@ -250,6 +273,7 @@ public class MainActivity extends Activity {
         stockHistoryPending = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_PENDING, false);
         stockHistorySortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_SORT_DESC, true);
         stockSortMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_STOCK_SORT_MODE, STOCK_SORT_DATE);
+        premiumUnlocked = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_PREMIUM_UNLOCKED, false);
         load();
         loadStock();
         loadStockHistory();
@@ -267,8 +291,8 @@ public class MainActivity extends Activity {
             } else {
                 showHomeScreen();
             }
-            UpdateManager.checkForUpdates(this, false);
         }, 2000);
+        initBilling();
     }
 
     @Override
@@ -284,7 +308,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        UpdateManager.resumePendingInstall(this);
+        queryPremiumPurchases();
         updateListSyncConnection();
     }
 
@@ -292,6 +316,15 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         disconnectListSync();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (billingClient != null) {
+            billingClient.endConnection();
+            billingClient = null;
+        }
     }
 
     @Override
@@ -1631,9 +1664,9 @@ public class MainActivity extends Activity {
             if (popupRef[0] != null) popupRef[0].dismiss();
             promptAccentColor();
         });
-        addHomeMenuItem(menu, "Atualizar", R.drawable.ic_update, () -> {
+        addHomeMenuItem(menu, premiumUnlocked ? "Premium ativo" : "Premium", R.drawable.ic_money_circle, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
-            UpdateManager.checkForUpdates(this, true);
+            showPremiumScreen("Desbloqueie todos os recursos do Check Mercado.");
         });
         addHomeMenuItem(menu, "Backup", R.drawable.ic_backup, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
@@ -1675,6 +1708,173 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams params = matchWrap();
         params.setMargins(0, menu.getChildCount() == 0 ? 0 : dp(6), 0, 0);
         menu.addView(item, params);
+    }
+
+    private void initBilling() {
+        billingClient = BillingClient.newBuilder(this)
+                .setListener((billingResult, purchases) -> {
+                    if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                        handlePurchases(purchases);
+                    }
+                })
+                .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+                .build();
+        billingClient.startConnection(new BillingClientStateListener() {
+            @Override
+            public void onBillingSetupFinished(BillingResult billingResult) {
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    queryPremiumProduct();
+                    queryPremiumPurchases();
+                }
+            }
+
+            @Override
+            public void onBillingServiceDisconnected() {
+            }
+        });
+    }
+
+    private void queryPremiumProduct() {
+        if (billingClient == null || !billingClient.isReady()) return;
+        QueryProductDetailsParams.Product product = QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(PLAY_PREMIUM_PRODUCT_ID)
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build();
+        QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder()
+                .setProductList(Collections.singletonList(product))
+                .build();
+        billingClient.queryProductDetailsAsync(params, (billingResult, productDetailsList) -> runOnUiThread(() -> {
+            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && productDetailsList != null && !productDetailsList.isEmpty()) {
+                premiumProductDetails = productDetailsList.get(0);
+                ProductDetails.OneTimePurchaseOfferDetails offer = premiumProductDetails.getOneTimePurchaseOfferDetails();
+                if (offer != null && !isBlank(offer.getFormattedPrice())) premiumPriceText = offer.getFormattedPrice();
+                if (premiumScreenOpen) showPremiumScreen(null);
+            }
+        }));
+    }
+
+    private void queryPremiumPurchases() {
+        if (billingClient == null || !billingClient.isReady()) return;
+        QueryPurchasesParams params = QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build();
+        billingClient.queryPurchasesAsync(params, (billingResult, purchases) -> {
+            if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && purchases != null) {
+                handlePurchases(purchases);
+            }
+        });
+    }
+
+    private void handlePurchases(List<Purchase> purchases) {
+        for (Purchase purchase : purchases) {
+            if (!purchase.getProducts().contains(PLAY_PREMIUM_PRODUCT_ID)) continue;
+            if (purchase.getPurchaseState() != Purchase.PurchaseState.PURCHASED) continue;
+            runOnUiThread(() -> setPremiumUnlocked(true));
+            if (!purchase.isAcknowledged() && billingClient != null && billingClient.isReady()) {
+                AcknowledgePurchaseParams params = AcknowledgePurchaseParams.newBuilder()
+                        .setPurchaseToken(purchase.getPurchaseToken())
+                        .build();
+                billingClient.acknowledgePurchase(params, billingResult -> {
+                });
+            }
+        }
+    }
+
+    private void setPremiumUnlocked(boolean unlocked) {
+        if (premiumUnlocked == unlocked) return;
+        premiumUnlocked = unlocked;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_PREMIUM_UNLOCKED, unlocked).apply();
+        if (unlocked) {
+            Toast.makeText(this, "Premium desbloqueado.", Toast.LENGTH_LONG).show();
+            premiumScreenOpen = false;
+            showHomeScreen();
+            updateListSyncConnection();
+        }
+    }
+
+    private void launchPremiumPurchase() {
+        if (premiumUnlocked) {
+            Toast.makeText(this, "Premium ja esta ativo.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (billingClient == null || !billingClient.isReady()) {
+            Toast.makeText(this, "Conectando a Play Store. Tente novamente em instantes.", Toast.LENGTH_SHORT).show();
+            initBilling();
+            return;
+        }
+        if (premiumProductDetails == null) {
+            queryPremiumProduct();
+            Toast.makeText(this, "Produto premium ainda nao foi carregado pela Play Store.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        BillingFlowParams.ProductDetailsParams productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
+                .setProductDetails(premiumProductDetails)
+                .build();
+        BillingFlowParams flowParams = BillingFlowParams.newBuilder()
+                .setProductDetailsParamsList(Collections.singletonList(productParams))
+                .build();
+        billingClient.launchBillingFlow(this, flowParams);
+    }
+
+    private void showPremiumScreen(String reason) {
+        premiumScreenOpen = true;
+        applySystemBars();
+        FrameLayout screen = new FrameLayout(this);
+        screen.setBackgroundColor(Color.rgb(0, 43, 37));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        FrameLayout poster = new FrameLayout(this);
+        int width = getResources().getDisplayMetrics().widthPixels;
+        int posterHeight = Math.max(getResources().getDisplayMetrics().heightPixels, (int) (width * 1.75f));
+
+        ImageView image = new ImageView(this);
+        image.setImageResource(R.drawable.premium_offer);
+        image.setScaleType(ImageView.ScaleType.FIT_XY);
+        poster.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, posterHeight));
+
+        TextView price = new TextView(this);
+        price.setText(premiumUnlocked ? "Premium ativo" : premiumPriceText);
+        price.setTextColor(Color.rgb(12, 35, 23));
+        price.setGravity(Gravity.CENTER);
+        price.setTextSize(34);
+        price.setTypeface(Typeface.DEFAULT_BOLD);
+        price.setShadowLayer(dp(2), 0, dp(1), Color.argb(80, 255, 255, 255));
+        FrameLayout.LayoutParams priceParams = new FrameLayout.LayoutParams((int) (width * 0.72f), dp(76));
+        priceParams.leftMargin = (int) (width * 0.14f);
+        priceParams.topMargin = (int) (posterHeight * 0.785f);
+        poster.addView(price, priceParams);
+
+        View buyTouch = new View(this);
+        buyTouch.setOnClickListener(v -> launchPremiumPurchase());
+        FrameLayout.LayoutParams buyParams = new FrameLayout.LayoutParams((int) (width * 0.78f), dp(86));
+        buyParams.leftMargin = (int) (width * 0.11f);
+        buyParams.topMargin = (int) (posterHeight * 0.875f);
+        poster.addView(buyTouch, buyParams);
+
+        ImageButton close = plainIconButton(R.drawable.ic_back, Color.WHITE, dp(7));
+        close.setBackground(softPillBg(Color.WHITE));
+        close.setOnClickListener(v -> {
+            premiumScreenOpen = false;
+            showHomeScreen();
+        });
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(52), dp(52), Gravity.TOP | Gravity.LEFT);
+        closeParams.setMargins(dp(14), statusBarHeight() + dp(10), 0, 0);
+        poster.addView(close, closeParams);
+
+        if (!isBlank(reason)) {
+            TextView message = label(reason, 14, true, Color.WHITE);
+            message.setGravity(Gravity.CENTER);
+            message.setPadding(dp(12), dp(6), dp(12), dp(6));
+            message.setBackground(round(Color.argb(178, 6, 78, 59), dp(16), Color.rgb(132, 204, 22), 1));
+            FrameLayout.LayoutParams msgParams = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            msgParams.setMargins(dp(18), statusBarHeight() + dp(68), dp(18), 0);
+            poster.addView(message, msgParams);
+        }
+
+        scroll.addView(poster, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, posterHeight));
+        screen.addView(scroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        setContentView(screen);
     }
 
     private void addStockTabs() {
@@ -6276,6 +6476,13 @@ public class MainActivity extends Activity {
 
     private void openListSync(ShoppingList list) {
         if (!canSyncList(list) || syncSockets.containsKey(list.id)) return;
+        if (!consumeMonthlySyncUse(list)) {
+            if (!syncLimitPromptShown && shellReady && !premiumScreenOpen) {
+                syncLimitPromptShown = true;
+                runOnUiThread(() -> showPremiumScreen("Voce usou as 3 sincronizacoes gratis deste mes. Premium libera sincronizacao ilimitada."));
+            }
+            return;
+        }
         String url = SYNC_WS_BASE + Uri.encode(list.id) + "?token=" + Uri.encode(list.syncToken);
         Request request = new Request.Builder().url(url).build();
         final String listId = list.id;
@@ -6308,6 +6515,53 @@ public class MainActivity extends Activity {
             }
         });
         syncSockets.put(listId, socket);
+    }
+
+    private boolean consumeMonthlySyncUse(ShoppingList list) {
+        if (premiumUnlocked || list == null || isBlank(list.id)) return true;
+        String monthKey = currentUsageMonthKey();
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String storedMonth = prefs.getString(KEY_SYNC_USAGE_MONTH, "");
+        int count = prefs.getInt(KEY_SYNC_USAGE_COUNT, 0);
+        LinkedHashSet<String> usedLists = decodeIdSet(prefs.getString(KEY_SYNC_USAGE_LISTS, ""));
+        if (!monthKey.equals(storedMonth)) {
+            count = 0;
+            usedLists.clear();
+        }
+        if (usedLists.contains(list.id)) return true;
+        if (count >= FREE_SYNC_USES_PER_MONTH) return false;
+        usedLists.add(list.id);
+        prefs.edit()
+                .putString(KEY_SYNC_USAGE_MONTH, monthKey)
+                .putInt(KEY_SYNC_USAGE_COUNT, count + 1)
+                .putString(KEY_SYNC_USAGE_LISTS, encodeIdSet(usedLists))
+                .apply();
+        return true;
+    }
+
+    private String currentUsageMonthKey() {
+        Calendar cal = Calendar.getInstance();
+        return String.format(Locale.ROOT, "%04d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1);
+    }
+
+    private LinkedHashSet<String> decodeIdSet(String raw) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        if (raw == null || raw.trim().isEmpty()) return set;
+        String[] parts = raw.split(",");
+        for (String part : parts) {
+            String clean = part.trim();
+            if (!clean.isEmpty()) set.add(clean);
+        }
+        return set;
+    }
+
+    private String encodeIdSet(LinkedHashSet<String> ids) {
+        StringBuilder builder = new StringBuilder();
+        for (String id : ids) {
+            if (builder.length() > 0) builder.append(',');
+            builder.append(id);
+        }
+        return builder.toString();
     }
 
     private void disconnectListSync() {

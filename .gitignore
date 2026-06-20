@@ -28,4 +28,5 @@ CompraLink.zip
 # keep generated APKs out by default, but track this one because update.json
 # points GitHub raw URLs at it for the in-app updater.
 *.apk
+*.aab
 !CompraLink.apk

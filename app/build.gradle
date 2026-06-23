@@ -1,5 +1,6 @@
 plugins {
     id "com.android.application"
+    id "com.github.triplet.play"
 }
 
 def keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -42,6 +43,12 @@ android {
             shrinkResources false
         }
     }
+}
+
+play {
+    serviceAccountCredentials.set(rootProject.file("play-service-account.json"))
+    track.set("internal")
+    defaultToAppBundles.set(true)
 }
 
 dependencies {

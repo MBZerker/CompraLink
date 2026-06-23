@@ -250,6 +250,7 @@ public class MainActivity extends Activity {
     private int creditsSecretStep;
     private CompraInvadersView invadersView;
     private QrScannerView qrScannerView;
+    private boolean pendingBarcodeScanner;
     private final OkHttpClient syncHttpClient = new OkHttpClient();
     private final String syncClientId = UUID.randomUUID().toString();
     private final Map<String, WebSocket> syncSockets = new HashMap<>();
@@ -360,7 +361,11 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_CAMERA_PERMISSION
                 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            showFiscalQrScanner();
+            if (pendingBarcodeScanner) {
+                showBarcodeScanner();
+            } else {
+                showFiscalQrScanner();
+            }
         }
     }
 
@@ -382,7 +387,12 @@ public class MainActivity extends Activity {
         }
         if (homeTab == 8) {
             stopQrScanner();
-            showHomeScreen();
+            if (pendingBarcodeScanner) {
+                pendingBarcodeScanner = false;
+                showListScreen();
+            } else {
+                showHomeScreen();
+            }
             return;
         }
         if (selectedIndex >= 0 || homeTab != 0) {
@@ -1490,14 +1500,23 @@ public class MainActivity extends Activity {
             qr.setPadding(dp(14), dp(14), dp(14), dp(14));
             qr.setOnClickListener(v -> startFiscalQrScan());
             topLine.addView(qr, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
+        } else if (listOpen) {
+            ShoppingList current = lists.get(selectedIndex);
+            ImageButton barcode = imageIconButton(R.drawable.ic_barcode_scan,
+                    current.locked ? inputBg() : accent(),
+                    current.locked ? disabledText() : (isDarkTheme() ? CheckMercadoNeonUi.TEXT : primaryText()));
+            barcode.setEnabled(!current.locked);
+            barcode.setAlpha(current.locked ? 0.55f : 1f);
+            barcode.setOnClickListener(v -> startBarcodeScan());
+            topLine.addView(barcode, new LinearLayout.LayoutParams(sideButtonSize, sideButtonSize));
         }
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
-        titleBlock.setGravity(homeHeader ? Gravity.TOP : Gravity.CENTER_VERTICAL);
-        titleBlock.setPadding(0, 0, dp(10), 0);
+        titleBlock.setGravity(listOpen ? Gravity.CENTER : (homeHeader ? Gravity.TOP : Gravity.CENTER_VERTICAL));
+        titleBlock.setPadding(listOpen ? dp(10) : 0, 0, listOpen ? dp(10) : dp(10), 0);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
-        if (homeHeader) titleParams.setMargins(dp(12), 0, dp(10), 0);
+        if (homeHeader || listOpen) titleParams.setMargins(dp(12), 0, dp(10), 0);
         topLine.addView(titleBlock, titleParams);
 
         LinearLayout sideControls = new LinearLayout(this);
@@ -1527,6 +1546,7 @@ public class MainActivity extends Activity {
         title.setTextSize(homeHeader ? 30 : 28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(0, 0, 0, 0);
+        if (listOpen) title.setGravity(Gravity.CENTER);
         titleBlock.addView(title);
 
         TextView subtitle = new TextView(this);
@@ -1534,6 +1554,7 @@ public class MainActivity extends Activity {
         subtitle.setTextColor(neonHome() ? CheckMercadoNeonUi.MUTED : mutedText());
         subtitle.setTextSize(14);
         subtitle.setPadding(0, dp(4), 0, 0);
+        if (listOpen) subtitle.setGravity(Gravity.CENTER);
         titleBlock.addView(subtitle);
 
         LinearLayout actions = new LinearLayout(this);
@@ -1667,6 +1688,10 @@ public class MainActivity extends Activity {
         addHomeMenuItem(menu, premiumUnlocked ? "Premium ativo" : "Premium", R.drawable.ic_money_circle, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
             showPremiumScreen("Desbloqueie todos os recursos do Check Mercado.");
+        });
+        addHomeMenuItem(menu, "Resgatar pela Play", R.drawable.ic_update, () -> {
+            if (popupRef[0] != null) popupRef[0].dismiss();
+            showPlayRedeemInfo();
         });
         addHomeMenuItem(menu, "Backup", R.drawable.ic_backup, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
@@ -1814,6 +1839,29 @@ public class MainActivity extends Activity {
                 .setProductDetailsParamsList(Collections.singletonList(productParams))
                 .build();
         billingClient.launchBillingFlow(this, flowParams);
+    }
+
+    private void showPlayRedeemInfo() {
+        dialog()
+                .setTitle("Resgatar premium")
+                .setMessage("Use codigos promocionais criados no Google Play Console. O resgate acontece pela Play Store e o app libera o Premium quando a compra aparecer na sua conta Google.")
+                .setPositiveButton("Abrir Play Store", (dialog, which) -> openPlayRedeem())
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void openPlayRedeem() {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/redeem"));
+        intent.setPackage("com.android.vending");
+        try {
+            startActivity(intent);
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/redeem")));
+            } catch (Exception ignored) {
+                Toast.makeText(this, "Nao foi possivel abrir o resgate da Play Store.", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private void showPremiumScreen(String reason) {
@@ -3123,6 +3171,7 @@ public class MainActivity extends Activity {
     }
 
     private void startFiscalQrScan() {
+        pendingBarcodeScanner = false;
         if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
             return;
@@ -3130,8 +3179,19 @@ public class MainActivity extends Activity {
         showFiscalQrScanner();
     }
 
+    private void startBarcodeScan() {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        pendingBarcodeScanner = true;
+        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_PERMISSION);
+            return;
+        }
+        showBarcodeScanner();
+    }
+
     private void showFiscalQrScanner() {
         stopQrScanner();
+        pendingBarcodeScanner = false;
         selectedIndex = -1;
         selectedFromHistory = false;
         homeTab = 8;
@@ -3152,7 +3212,45 @@ public class MainActivity extends Activity {
         screen.addView(close, closeParams);
 
         FrameLayout scannerFrame = new FrameLayout(this);
-        qrScannerView = new QrScannerView(this, this::onFiscalQrRead);
+        qrScannerView = new QrScannerView(this, this::onFiscalQrRead, false);
+        scannerFrame.addView(qrScannerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        scannerFrame.addView(new QrFrameOverlay(this), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        screen.addView(scannerFrame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(screen);
+    }
+
+    private void showBarcodeScanner() {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        stopQrScanner();
+        pendingBarcodeScanner = true;
+        homeTab = 8;
+        applySystemBars();
+
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setBackgroundColor(Color.BLACK);
+        screen.setPadding(0, statusBarHeight(), 0, 0);
+
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(12), dp(8), dp(12), dp(8));
+        Button close = iconButton("X", Color.argb(190, 15, 23, 42), Color.WHITE);
+        close.setOnClickListener(v -> {
+            stopQrScanner();
+            pendingBarcodeScanner = false;
+            showListScreen();
+        });
+        top.addView(close, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        TextView title = label("Ler codigo de barras", 18, true, Color.WHITE);
+        title.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        titleParams.setMargins(dp(12), 0, dp(64), 0);
+        top.addView(title, titleParams);
+        screen.addView(top, matchWrap());
+
+        FrameLayout scannerFrame = new FrameLayout(this);
+        qrScannerView = new QrScannerView(this, this::onProductBarcodeRead, true);
         scannerFrame.addView(qrScannerView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         scannerFrame.addView(new QrFrameOverlay(this), new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         screen.addView(scannerFrame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
@@ -3163,6 +3261,13 @@ public class MainActivity extends Activity {
         if (result == null || result.trim().isEmpty()) return;
         stopQrScanner();
         importFiscalNoteFromUrl(result.trim());
+    }
+
+    private void onProductBarcodeRead(String result) {
+        if (result == null || result.trim().isEmpty()) return;
+        stopQrScanner();
+        pendingBarcodeScanner = false;
+        promptAddItem(result.trim());
     }
 
     private void stopQrScanner() {
@@ -4997,7 +5102,12 @@ public class MainActivity extends Activity {
     }
 
     private void promptAddItem() {
+        promptAddItem("");
+    }
+
+    private void promptAddItem(String barcode) {
         if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        String cleanBarcode = barcode == null ? "" : barcode.trim();
         LinearLayout form = dialogForm();
         AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         configureSelectAll(name);
@@ -5011,6 +5121,12 @@ public class MainActivity extends Activity {
         note.setSingleLine(false);
         note.setMinLines(2);
         setupProductSuggestions(name, price, unit);
+        if (!isBlank(cleanBarcode)) {
+            TextView code = label("Codigo lido: " + cleanBarcode, 13, true, accent());
+            code.setPadding(dp(2), 0, dp(2), dp(8));
+            form.addView(code, matchWrap());
+            note.setText("Codigo de barras: " + cleanBarcode);
+        }
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
@@ -5025,6 +5141,7 @@ public class MainActivity extends Activity {
                     if (unitText.isEmpty()) unitText = "1";
                     ShoppingItem item = new ShoppingItem(text, parsePrice(price.getText().toString()), unitText);
                     item.note = note.getText().toString().trim();
+                    item.barcode = cleanBarcode;
                     ShoppingList list = lists.get(selectedIndex);
                     list.items.add(item);
                     touchList(list);
@@ -8791,6 +8908,7 @@ public class MainActivity extends Activity {
         private final QrReadCallback callback;
         private final MultiFormatReader reader = new MultiFormatReader();
         private final BarcodeScanner mlScanner;
+        private final boolean allFormats;
         private Camera camera;
         private boolean decoded;
         private boolean mlBusy;
@@ -8807,15 +8925,30 @@ public class MainActivity extends Activity {
             }
         };
 
-        QrScannerView(Context context, QrReadCallback callback) {
+        QrScannerView(Context context, QrReadCallback callback, boolean allFormats) {
             super(context);
             this.callback = callback;
-            BarcodeScannerOptions options = new BarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                    .build();
-            mlScanner = BarcodeScanning.getClient(options);
+            this.allFormats = allFormats;
+            BarcodeScannerOptions.Builder optionsBuilder = new BarcodeScannerOptions.Builder();
+            if (!allFormats) optionsBuilder.setBarcodeFormats(Barcode.FORMAT_QR_CODE);
+            mlScanner = BarcodeScanning.getClient(optionsBuilder.build());
             Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);
-            hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
+            if (allFormats) {
+                List<BarcodeFormat> formats = new ArrayList<>();
+                formats.add(BarcodeFormat.QR_CODE);
+                formats.add(BarcodeFormat.EAN_13);
+                formats.add(BarcodeFormat.EAN_8);
+                formats.add(BarcodeFormat.UPC_A);
+                formats.add(BarcodeFormat.UPC_E);
+                formats.add(BarcodeFormat.CODE_128);
+                formats.add(BarcodeFormat.CODE_39);
+                formats.add(BarcodeFormat.CODE_93);
+                formats.add(BarcodeFormat.ITF);
+                formats.add(BarcodeFormat.CODABAR);
+                hints.put(DecodeHintType.POSSIBLE_FORMATS, formats);
+            } else {
+                hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
+            }
             hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
             reader.setHints(hints);
             getHolder().addCallback(this);
@@ -8853,7 +8986,13 @@ public class MainActivity extends Activity {
                 focusHandler.postDelayed(focusPulse, 2800);
             } catch (Exception e) {
                 stop();
-                promptFiscalQrUrl();
+                if (allFormats) {
+                    Toast.makeText(MainActivity.this, "Nao foi possivel abrir a camera.", Toast.LENGTH_LONG).show();
+                    pendingBarcodeScanner = false;
+                    showListScreen();
+                } else {
+                    promptFiscalQrUrl();
+                }
             }
         }
 
@@ -9187,6 +9326,7 @@ public class MainActivity extends Activity {
         double price;
         String unit;
         String note = "";
+        String barcode = "";
         long updatedAt;
         String stockId = "";
         final List<ItemEditEntry> editHistory = new ArrayList<>();
@@ -9207,6 +9347,7 @@ public class MainActivity extends Activity {
             json.put("price", price);
             json.put("unit", unit);
             json.put("note", note);
+            json.put("barcode", barcode);
             json.put("updatedAt", updatedAt);
             json.put("stockId", stockId);
             JSONArray history = new JSONArray();
@@ -9225,6 +9366,7 @@ public class MainActivity extends Activity {
             item.checked = json.optBoolean("checked", false);
             item.removed = json.optBoolean("removed", false);
             item.note = json.optString("note", "");
+            item.barcode = json.optString("barcode", "");
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             item.stockId = json.optString("stockId", "");
             JSONArray history = json.optJSONArray("editHistory");

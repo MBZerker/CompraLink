@@ -1774,6 +1774,8 @@ public class MainActivity extends Activity {
                 ProductDetails.OneTimePurchaseOfferDetails offer = premiumProductDetails.getOneTimePurchaseOfferDetails();
                 if (offer != null && !isBlank(offer.getFormattedPrice())) premiumPriceText = offer.getFormattedPrice();
                 if (premiumScreenOpen) showPremiumScreen(null);
+            } else if (premiumScreenOpen) {
+                premiumPriceText = "Aguardando Play Store";
             }
         }));
     }
@@ -1819,17 +1821,21 @@ public class MainActivity extends Activity {
 
     private void launchPremiumPurchase() {
         if (premiumUnlocked) {
-            Toast.makeText(this, "Premium ja esta ativo.", Toast.LENGTH_SHORT).show();
+            showAppMessage("Premium", "O Premium já está ativo neste aparelho.");
             return;
         }
         if (billingClient == null || !billingClient.isReady()) {
-            Toast.makeText(this, "Conectando a Play Store. Tente novamente em instantes.", Toast.LENGTH_SHORT).show();
             initBilling();
+            showAppMessage("Play Store", "Ainda estou conectando à Play Store. Aguarde alguns instantes e toque em Comprar versão completa novamente.");
             return;
         }
         if (premiumProductDetails == null) {
             queryPremiumProduct();
-            Toast.makeText(this, "Produto premium ainda nao foi carregado pela Play Store.", Toast.LENGTH_LONG).show();
+            showAppMessage("Premium indisponível",
+                    "A Play Store ainda não carregou o produto Premium.\n\n"
+                            + "Verifique no Play Console se o produto no app está criado e ativo com este ID:\n\n"
+                            + PLAY_PREMIUM_PRODUCT_ID + "\n\n"
+                            + "Se você acabou de criar ou alterar o produto, pode levar alguns minutos para aparecer nos testes.");
             return;
         }
         BillingFlowParams.ProductDetailsParams productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -7314,6 +7320,14 @@ public class MainActivity extends Activity {
 
     private StyledDialogBuilder dialog() {
         return new StyledDialogBuilder(this);
+    }
+
+    private void showAppMessage(String title, String message) {
+        dialog()
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     private void styleDialog(AlertDialog dialog) {

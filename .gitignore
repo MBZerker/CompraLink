@@ -33,3 +33,4 @@ CompraLink.zip
 *.apk
 *.aab
 !CompraLink.apk
+app/src/main/play/

@@ -3267,7 +3267,31 @@ public class MainActivity extends Activity {
         if (result == null || result.trim().isEmpty()) return;
         stopQrScanner();
         pendingBarcodeScanner = false;
-        promptAddItem(result.trim());
+        lookupBarcodeAndPrompt(result.trim());
+    }
+
+    private void lookupBarcodeAndPrompt(String barcode) {
+        if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        String cleanBarcode = barcode == null ? "" : barcode.trim();
+        if (isBlank(cleanBarcode)) return;
+        ProductSuggestion local = findProductByBarcode(cleanBarcode);
+        if (local != null) {
+            promptAddItem(cleanBarcode, local, "Produto encontrado no histórico.");
+            return;
+        }
+        showListScreen();
+        Toast.makeText(this, "Buscando produto...", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            ProductSuggestion online = fetchProductByBarcode(cleanBarcode);
+            runOnUiThread(() -> {
+                if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+                if (online != null) {
+                    promptAddItem(cleanBarcode, online, "Produto encontrado online.");
+                } else {
+                    promptAddItem(cleanBarcode, null, "Produto nao encontrado. Cadastre uma vez e eu lembro nas proximas.");
+                }
+            });
+        }).start();
     }
 
     private void stopQrScanner() {
@@ -4784,11 +4808,96 @@ public class MainActivity extends Activity {
                 String key = normalize(item.name);
                 ProductSuggestion current = latest.get(key);
                 if (current == null || itemDate > current.updatedAt) {
-                    latest.put(key, new ProductSuggestion(item.name, item.price, item.unit, itemDate));
+                    latest.put(key, new ProductSuggestion(item.name, item.price, item.unit, itemDate, item.barcode));
                 }
             }
         }
         return latest;
+    }
+
+    private ProductSuggestion findProductByBarcode(String barcode) {
+        String clean = digitsOnly(barcode);
+        if (isBlank(clean)) return null;
+        ProductSuggestion best = null;
+        for (ShoppingList list : lists) {
+            long listDate = list.lockedAt > 0 ? list.lockedAt : list.createdAt;
+            for (ShoppingItem item : list.items) {
+                if (item.name == null || item.name.trim().isEmpty()) continue;
+                if (!clean.equals(digitsOnly(item.barcode))) continue;
+                long itemDate = Math.max(listDate, item.updatedAt);
+                if (best == null || itemDate > best.updatedAt) {
+                    best = new ProductSuggestion(item.name, item.price, item.unit, itemDate, item.barcode);
+                }
+            }
+        }
+        return best;
+    }
+
+    private ProductSuggestion fetchProductByBarcode(String barcode) {
+        String clean = digitsOnly(barcode);
+        if (isBlank(clean)) return null;
+        try {
+            String url = "https://world.openfoodfacts.org/api/v2/product/" + clean
+                    + ".json?fields=product_name,product_name_pt,product_name_pt_br,brands,quantity";
+            JSONObject json = new JSONObject(downloadJsonText(url));
+            if (json.optInt("status", 0) != 1) return null;
+            JSONObject product = json.optJSONObject("product");
+            if (product == null) return null;
+            String name = firstNonBlank(
+                    product.optString("product_name_pt_br", ""),
+                    product.optString("product_name_pt", ""),
+                    product.optString("product_name", "")
+            );
+            if (isBlank(name)) return null;
+            String brand = product.optString("brands", "").trim();
+            if (!isBlank(brand) && !normalize(name).contains(normalize(brand))) {
+                name = name + " - " + brand;
+            }
+            String quantity = product.optString("quantity", "").trim();
+            if (!isBlank(quantity) && !normalize(name).contains(normalize(quantity))) {
+                name = name + " " + quantity;
+            }
+            return new ProductSuggestion(cleanProductName(name), 0, "1", System.currentTimeMillis(), clean);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String downloadJsonText(String link) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
+        connection.setInstanceFollowRedirects(true);
+        connection.setConnectTimeout(9000);
+        connection.setReadTimeout(12000);
+        connection.setRequestProperty("User-Agent", "CheckMercado/1.0 Android barcode lookup");
+        connection.setRequestProperty("Accept", "application/json");
+        int code = connection.getResponseCode();
+        if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+        try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            return new String(output.toByteArray(), responseCharset(connection.getContentType()));
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    private String digitsOnly(String value) {
+        return value == null ? "" : value.replaceAll("[^0-9]", "");
+    }
+
+    private String cleanProductName(String value) {
+        String text = value == null ? "" : value.replaceAll("\\s+", " ").trim();
+        if (text.length() > 90) text = text.substring(0, 90).trim();
+        return text;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) return "";
+        for (String value : values) {
+            if (!isBlank(value)) return value.trim();
+        }
+        return "";
     }
 
     private void addItems() {
@@ -5106,6 +5215,10 @@ public class MainActivity extends Activity {
     }
 
     private void promptAddItem(String barcode) {
+        promptAddItem(barcode, null, "");
+    }
+
+    private void promptAddItem(String barcode, ProductSuggestion suggestion, String status) {
         if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
         String cleanBarcode = barcode == null ? "" : barcode.trim();
         LinearLayout form = dialogForm();
@@ -5121,10 +5234,21 @@ public class MainActivity extends Activity {
         note.setSingleLine(false);
         note.setMinLines(2);
         setupProductSuggestions(name, price, unit);
+        if (suggestion != null) {
+            name.setText(suggestion.name);
+            name.setSelection(name.getText().length());
+            if (suggestion.price > 0) price.setText(formatPriceInput(suggestion.price));
+            unit.setText(suggestion.unit == null || suggestion.unit.trim().isEmpty() ? "1" : suggestion.unit);
+        }
         if (!isBlank(cleanBarcode)) {
             TextView code = label("Codigo lido: " + cleanBarcode, 13, true, accent());
             code.setPadding(dp(2), 0, dp(2), dp(8));
             form.addView(code, matchWrap());
+            if (!isBlank(status)) {
+                TextView info = label(status, 13, false, mutedText());
+                info.setPadding(dp(2), 0, dp(2), dp(8));
+                form.addView(info, matchWrap());
+            }
             note.setText("Codigo de barras: " + cleanBarcode);
         }
         form.addView(name, matchHeight(dp(54)));
@@ -7964,12 +8088,18 @@ public class MainActivity extends Activity {
         final double price;
         final String unit;
         final long updatedAt;
+        final String barcode;
 
         ProductSuggestion(String name, double price, String unit, long updatedAt) {
+            this(name, price, unit, updatedAt, "");
+        }
+
+        ProductSuggestion(String name, double price, String unit, long updatedAt, String barcode) {
             this.name = name;
             this.price = price;
             this.unit = unit;
             this.updatedAt = updatedAt;
+            this.barcode = barcode == null ? "" : barcode;
         }
 
         @Override

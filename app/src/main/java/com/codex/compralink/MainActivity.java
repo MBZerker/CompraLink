@@ -135,6 +135,12 @@ import com.android.billingclient.api.Purchase;
 import com.android.billingclient.api.PendingPurchasesParams;
 import com.android.billingclient.api.QueryProductDetailsParams;
 import com.android.billingclient.api.QueryPurchasesParams;
+import com.google.android.play.core.appupdate.AppUpdateInfo;
+import com.google.android.play.core.appupdate.AppUpdateManager;
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory;
+import com.google.android.play.core.appupdate.AppUpdateOptions;
+import com.google.android.play.core.install.model.AppUpdateType;
+import com.google.android.play.core.install.model.UpdateAvailability;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -197,6 +203,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_CAMERA_PERMISSION = 9022;
     private static final int REQUEST_BACKUP_SAVE = 9023;
     private static final int REQUEST_BACKUP_OPEN = 9024;
+    private static final int REQUEST_PLAY_UPDATE = 9025;
     private static final String CUSTOM_CATEGORY = "Personalizada...";
     private static final long AUTO_LOCK_AFTER_MS = 24L * 60L * 60L * 1000L;
 
@@ -256,10 +263,14 @@ public class MainActivity extends Activity {
     private final Map<String, WebSocket> syncSockets = new HashMap<>();
     private final LinkedHashSet<String> syncOpenListIds = new LinkedHashSet<>();
     private BillingClient billingClient;
+    private AppUpdateManager appUpdateManager;
+    private AppUpdateInfo pendingPlayUpdate;
     private ProductDetails premiumProductDetails;
     private String premiumPriceText = "Confira na Play Store";
     private boolean premiumUnlocked;
     private boolean premiumScreenOpen;
+    private boolean playUpdateAvailable;
+    private boolean updatePromptShown;
     private boolean syncLimitPromptShown;
     private boolean applyingRemoteSync;
 
@@ -292,8 +303,10 @@ public class MainActivity extends Activity {
             } else {
                 showHomeScreen();
             }
+            checkForPlayUpdate(true);
         }, 2000);
         initBilling();
+        initPlayUpdates();
     }
 
     @Override
@@ -311,6 +324,7 @@ public class MainActivity extends Activity {
         super.onResume();
         queryPremiumPurchases();
         updateListSyncConnection();
+        checkForPlayUpdate(false);
     }
 
     @Override
@@ -331,6 +345,14 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_PLAY_UPDATE) {
+            if (resultCode != RESULT_OK) {
+                playUpdateAvailable = true;
+                pendingPlayUpdate = null;
+                if (shellReady && selectedIndex < 0 && homeTab == 0) showHomeScreen();
+            }
+            return;
+        }
         if (requestCode == REQUEST_BACKUP_SAVE) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
                 savePendingBackupToUri(data.getData());
@@ -1685,6 +1707,10 @@ public class MainActivity extends Activity {
             if (popupRef[0] != null) popupRef[0].dismiss();
             promptAccentColor();
         });
+        addHomeMenuItem(menu, playUpdateAvailable ? "Atualização disponível" : "Ver atualizações", R.drawable.ic_update, () -> {
+            if (popupRef[0] != null) popupRef[0].dismiss();
+            startPlayUpdate();
+        });
         addHomeMenuItem(menu, premiumUnlocked ? "Premium ativo" : "Premium", R.drawable.ic_money_circle, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
             showPremiumScreen("Desbloqueie todos os recursos do Check Mercado.");
@@ -1717,7 +1743,8 @@ public class MainActivity extends Activity {
         item.setOrientation(LinearLayout.HORIZONTAL);
         item.setGravity(Gravity.CENTER_VERTICAL);
         item.setPadding(dp(12), dp(10), dp(12), dp(10));
-        item.setBackground(round(inputBg(), dp(12), Color.TRANSPARENT, 0));
+        boolean updateAttention = text.startsWith("Atualização disponível");
+        item.setBackground(round(updateAttention ? withAlpha(accent(), isDarkTheme() ? 58 : 30) : inputBg(), dp(12), Color.TRANSPARENT, 0));
         item.setOnClickListener(v -> action.run());
 
         ImageView icon = new ImageView(this);
@@ -1725,7 +1752,7 @@ public class MainActivity extends Activity {
         icon.setColorFilter(accent());
         item.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
 
-        TextView label = label(text, 15, true, primaryText());
+        TextView label = label(text, 15, true, updateAttention ? accent() : primaryText());
         LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
         textParams.setMargins(dp(12), 0, 0, 0);
         item.addView(label, textParams);
@@ -1757,6 +1784,65 @@ public class MainActivity extends Activity {
             public void onBillingServiceDisconnected() {
             }
         });
+    }
+
+    private void initPlayUpdates() {
+        if (appUpdateManager == null) appUpdateManager = AppUpdateManagerFactory.create(this);
+    }
+
+    private void checkForPlayUpdate(boolean promptUser) {
+        initPlayUpdates();
+        appUpdateManager.getAppUpdateInfo().addOnSuccessListener(info -> {
+            int availability = info.updateAvailability();
+            if (availability == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS
+                    && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
+                pendingPlayUpdate = info;
+                playUpdateAvailable = true;
+                startPlayUpdate();
+                return;
+            }
+            boolean available = availability == UpdateAvailability.UPDATE_AVAILABLE
+                    && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE);
+            playUpdateAvailable = available;
+            pendingPlayUpdate = available ? info : null;
+            if (available && promptUser && shellReady && !updatePromptShown) {
+                updatePromptShown = true;
+                promptPlayUpdate();
+            }
+        }).addOnFailureListener(error -> {
+            playUpdateAvailable = false;
+            pendingPlayUpdate = null;
+        });
+    }
+
+    private void promptPlayUpdate() {
+        dialog()
+                .setTitle("Atualização disponível")
+                .setMessage("Há uma versão nova do Check Mercado disponível na Google Play.")
+                .setPositiveButton("Atualizar agora", (dialog, which) -> startPlayUpdate())
+                .setNegativeButton("Depois", null)
+                .show();
+    }
+
+    private void startPlayUpdate() {
+        if (appUpdateManager == null) initPlayUpdates();
+        if (pendingPlayUpdate == null) {
+            checkForPlayUpdate(true);
+            return;
+        }
+        try {
+            boolean started = appUpdateManager.startUpdateFlowForResult(
+                    pendingPlayUpdate,
+                    this,
+                    AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
+                    REQUEST_PLAY_UPDATE
+            );
+            if (!started) {
+                showAppMessage("Atualização", "Não foi possível iniciar a atualização pela Play Store. Tente novamente em alguns instantes.");
+            }
+        } catch (Exception ignored) {
+            showAppMessage("Atualização", "Não foi possível iniciar a atualização pela Play Store. Tente novamente em alguns instantes.");
+        }
     }
 
     private void queryPremiumProduct() {

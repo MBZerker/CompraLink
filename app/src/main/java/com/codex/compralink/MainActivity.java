@@ -2,6 +2,10 @@ package com.codex.compralink;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.Manifest;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -21,6 +25,8 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Camera;
 import android.net.Uri;
+import android.provider.MediaStore;
+import android.graphics.BitmapFactory;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Handler;
@@ -161,10 +167,15 @@ public class MainActivity extends Activity {
     private static final String KEY_MONTHLY_BUDGET_LIMIT = "monthly_budget_limit";
     private static final String KEY_MONTHLY_BUDGET_INCOMES = "monthly_budget_incomes";
     private static final String KEY_MONTHLY_BUDGET_ENTRIES = "monthly_budget_entries";
+    private static final String KEY_CATEGORY_CATALOG = "category_catalog";
+    private static final String KEY_PRODUCT_CATALOG = "product_catalog";
     private static final String KEY_SPENDING_RANGE = "spending_range_months";
     private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
     private static final String KEY_STOCK_HISTORY_SORT_DESC = "stock_history_sort_desc";
     private static final String KEY_STOCK_SORT_MODE = "stock_sort_mode";
+    private static final String KEY_STOCK_NOTIFICATIONS_ENABLED = "stock_notifications_enabled";
+    private static final String KEY_STOCK_EXPIRY_NOTICE_DAYS = "stock_expiry_notice_days";
+    private static final String KEY_SYNC_NOTIFICATIONS_ENABLED = "sync_notifications_enabled";
     private static final String KEY_PREMIUM_UNLOCKED = "premium_unlocked";
     private static final String KEY_SYNC_USAGE_MONTH = "sync_usage_month";
     private static final String KEY_SYNC_USAGE_COUNT = "sync_usage_count";
@@ -183,13 +194,17 @@ public class MainActivity extends Activity {
     private static final String BACKUP_BASE = "https://mbzerker.github.io/CompraLink/l/?backup=";
     private static final String SHORTENER_ENDPOINT = "https://nbtchat-store.nectof.workers.dev/shorten";
     private static final String SYNC_WS_BASE = "wss://nbtchat-store.nectof.workers.dev/compralink-sync/";
+    private static final String SYNC_HTTP_BASE = "https://nbtchat-store.nectof.workers.dev/compralink-sync/";
     private static final String BACKUP_FILE_PREFIX = "CheckMercadoBackup:v2:";
     private static final String PAGES_HOST = "mbzerker.github.io";
     private static final String PAGES_PATH = "/CompraLink/l/";
     private static final String OLD_SHARE_PREFIX = "https://compralink.app/list?payload=";
     private static final String CUSTOM_SHARE_PREFIX = "compralink://list?payload=";
     private static final String PLAY_PREMIUM_PRODUCT_ID = "check_mercado_premium";
+    private static final String SYNC_NOTIFICATION_CHANNEL_ID = "shared_list_updates";
+    private static final int SYNC_NOTIFICATION_ID_BASE = 43000;
     private static final int FREE_SYNC_USES_PER_MONTH = 3;
+    private static final int FREE_ACTIVE_LIST_LIMIT = 3;
     private static final int SORT_CHECKED_BOTTOM = 0;
     private static final int SORT_CHECKED_TOP = 1;
     private static final int SORT_KEEP_POSITION = 2;
@@ -204,6 +219,8 @@ public class MainActivity extends Activity {
     private static final int REQUEST_BACKUP_SAVE = 9023;
     private static final int REQUEST_BACKUP_OPEN = 9024;
     private static final int REQUEST_PLAY_UPDATE = 9025;
+    private static final int REQUEST_NOTIFICATIONS = 9026;
+    private static final int REQUEST_ITEM_PHOTO = 9027;
     private static final String CUSTOM_CATEGORY = "Personalizada...";
     private static final long AUTO_LOCK_AFTER_MS = 24L * 60L * 60L * 1000L;
 
@@ -213,6 +230,8 @@ public class MainActivity extends Activity {
     private final List<SpendingRecord> spendingHistory = new ArrayList<>();
     private final List<MonthlyBudgetEntry> monthlyBudgetEntries = new ArrayList<>();
     private final List<MonthlyBudgetIncome> monthlyBudgetIncomes = new ArrayList<>();
+    private final LinkedHashSet<String> categoryCatalog = new LinkedHashSet<>();
+    private final List<ProductCatalogEntry> productCatalog = new ArrayList<>();
     private final NumberFormat money = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
     private LinearLayout root;
     private AutoCompleteTextView itemInput;
@@ -232,6 +251,8 @@ public class MainActivity extends Activity {
     private String historySearch = "";
     private String stockSearch = "";
     private String stockHistorySearch = "";
+    private String registrySearch = "";
+    private int registryTab;
     private int searchToken;
     private int searchResultsStartIndex = -1;
     private String flashImportedListId = "";
@@ -247,6 +268,8 @@ public class MainActivity extends Activity {
     private int homeListFilter;
     private int historyListFilter;
     private int listItemFilter;
+    private final LinkedHashSet<String> collapsedHomeCategories = new LinkedHashSet<>();
+    private final LinkedHashSet<String> collapsedItemCategories = new LinkedHashSet<>();
     private boolean comparisonPriceAscending = true;
     private String stockCategoryFilter = "";
     private String stockHistoryCategoryFilter = "";
@@ -272,7 +295,13 @@ public class MainActivity extends Activity {
     private boolean playUpdateAvailable;
     private boolean updatePromptShown;
     private boolean syncLimitPromptShown;
+    private boolean stockNotificationsEnabled;
+    private boolean syncNotificationsEnabled;
+    private int stockExpiryNoticeDays;
     private boolean applyingRemoteSync;
+    private String pendingPhotoListId = "";
+    private String pendingPhotoItemId = "";
+    private String pendingFiscalShareListId = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -286,12 +315,18 @@ public class MainActivity extends Activity {
         stockHistorySortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_SORT_DESC, true);
         stockSortMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_STOCK_SORT_MODE, STOCK_SORT_DATE);
         premiumUnlocked = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_PREMIUM_UNLOCKED, false);
+        stockNotificationsEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_NOTIFICATIONS_ENABLED, false);
+        syncNotificationsEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_SYNC_NOTIFICATIONS_ENABLED, false);
+        stockExpiryNoticeDays = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_STOCK_EXPIRY_NOTICE_DAYS, 7);
         load();
         loadStock();
         loadStockHistory();
         loadMonthlyBudgetIncomes();
         loadSpendingHistory();
         loadMonthlyBudget();
+        loadCategoryCatalog();
+        loadProductCatalog();
+        refreshProductCatalogFromData(false);
         ensureSpendingRecordsForClosedLists();
         showSplash();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
@@ -366,6 +401,10 @@ public class MainActivity extends Activity {
             }
             return;
         }
+        if (requestCode == REQUEST_ITEM_PHOTO) {
+            handleItemPhotoResult(resultCode, data);
+            return;
+        }
         if (requestCode != REQUEST_QR_SCAN || resultCode != RESULT_OK || data == null) return;
         String result = data.getStringExtra("SCAN_RESULT");
         if (result == null) result = data.getStringExtra("com.google.zxing.client.android.SCAN_RESULT");
@@ -380,6 +419,25 @@ public class MainActivity extends Activity {
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_NOTIFICATIONS) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (!granted) {
+                stockNotificationsEnabled = false;
+                syncNotificationsEnabled = false;
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putBoolean(KEY_STOCK_NOTIFICATIONS_ENABLED, false)
+                        .putBoolean(KEY_SYNC_NOTIFICATIONS_ENABLED, false)
+                        .apply();
+                StockExpiryReceiver.cancel(this);
+                showAppMessage("Notifica\u00e7\u00f5es", "Permiss\u00e3o negada. As notifica\u00e7\u00f5es ficam desativadas at\u00e9 voc\u00ea permitir notifica\u00e7\u00f5es para o app.");
+            } else {
+                StockExpiryReceiver.ensureChannel(this);
+                ensureSyncNotificationChannel();
+                if (stockNotificationsEnabled) StockExpiryReceiver.schedule(this);
+                Toast.makeText(this, "Notifica\u00e7\u00f5es ativadas.", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
         if (requestCode == REQUEST_CAMERA_PERMISSION
                 && grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -417,6 +475,10 @@ public class MainActivity extends Activity {
             }
             return;
         }
+        if (homeTab == 9) {
+            showListScreen();
+            return;
+        }
         if (selectedIndex >= 0 || homeTab != 0) {
             selectedIndex = -1;
             if (selectedFromHistory) {
@@ -447,6 +509,276 @@ public class MainActivity extends Activity {
         setContentView(splash);
     }
 
+
+    private void showRegistryScreen() {
+        selectedIndex = -1;
+        selectedFromHistory = false;
+        homeTab = 10;
+        refreshProductCatalogFromData(true);
+        buildRoot();
+        addTopHeader("Cadastros", "Corrija categorias e produtos usados no autopreenchimento.", false);
+        addRegistryTabs();
+        addSearchBar(registryTab == 0 ? "Pesquisar categorias" : "Pesquisar produtos cadastrados", registrySearch, value -> {
+            registrySearch = value;
+            refreshSearchResults(this::renderRegistryResults);
+        });
+        renderRegistryResults();
+        setContentView(rootScroll());
+    }
+
+    private void addRegistryTabs() {
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setGravity(Gravity.CENTER_VERTICAL);
+        tabs.setPadding(dp(8), dp(8), dp(8), dp(8));
+        tabs.setBackground(isDarkTheme() ? CheckMercadoNeonUi.input(this, true) : inputPanelBg(false));
+        tabs.addView(registryTabButton("Categorias", R.drawable.ic_tag_tiny, 0), new LinearLayout.LayoutParams(0, dp(50), 1));
+        View divider = new View(this);
+        divider.setBackgroundColor(isDarkTheme() ? Color.argb(80, 57, 229, 108) : Color.argb(90, 148, 163, 184));
+        tabs.addView(divider, new LinearLayout.LayoutParams(dp(1), dp(32)));
+        tabs.addView(registryTabButton("Produtos", R.drawable.ic_cart, 1), new LinearLayout.LayoutParams(0, dp(50), 1));
+        root.addView(tabs, matchWrapWithTop(dp(10)));
+    }
+
+    private View registryTabButton(String text, int iconRes, int tab) {
+        boolean active = registryTab == tab;
+        LinearLayout button = new LinearLayout(this);
+        button.setGravity(Gravity.CENTER);
+        button.setOrientation(LinearLayout.HORIZONTAL);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setBackground(active ? softPillBg(accent()) : null);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(active ? accent() : mutedText());
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(20), dp(20));
+        iconParams.setMargins(0, 0, dp(8), 0);
+        button.addView(icon, iconParams);
+        TextView label = label(text, 14, true, active ? accent() : mutedText());
+        button.addView(label, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        button.setOnClickListener(v -> {
+            registryTab = tab;
+            registrySearch = "";
+            showRegistryScreen();
+        });
+        return button;
+    }
+
+    private void renderRegistryResults() {
+        if (registryTab == 0) renderCategoryRegistry();
+        else renderProductRegistry();
+    }
+
+    private void renderCategoryRegistry() {
+        root.addView(registryActionCard("Nova categoria", "Crie uma categoria para listas, produtos, despensa e gastos.", R.drawable.ic_tag_tiny, v -> promptCategoryCatalog(null)), matchWrapWithTop(dp(10)));
+        List<CategoryRow> rows = categoryRegistryRows();
+        boolean shown = false;
+        for (CategoryRow row : rows) {
+            if (!matchesRegistry(row.name + " " + row.usage, registrySearch)) continue;
+            shown = true;
+            root.addView(categoryRegistryCard(row), matchWrapWithTop(dp(8)));
+        }
+        if (!shown) root.addView(infoCard("Nenhuma categoria", "Adicione uma categoria ou limpe a pesquisa."), matchWrapWithTop(dp(10)));
+    }
+
+    private void renderProductRegistry() {
+        root.addView(registryActionCard("Novo produto", "Cadastre nome, categoria, unidade, preco e codigo de barras.", R.drawable.ic_cart, v -> promptProductCatalog(null)), matchWrapWithTop(dp(10)));
+        List<ProductCatalogEntry> rows = visibleProductCatalog();
+        boolean shown = false;
+        for (ProductCatalogEntry entry : rows) {
+            if (!matchesRegistry(entry.name + " " + entry.category + " " + entry.barcode, registrySearch)) continue;
+            shown = true;
+            root.addView(productRegistryCard(entry), matchWrapWithTop(dp(8)));
+        }
+        if (!shown) root.addView(infoCard("Nenhum produto", "Produtos de listas finalizadas aparecem aqui para correção e autopreenchimento."), matchWrapWithTop(dp(10)));
+    }
+
+    private View registryActionCard(String title, String body, int iconRes, View.OnClickListener click) {
+        LinearLayout card = (LinearLayout) infoCardWithIcon(title, body, iconRes, accent());
+        card.setOnClickListener(click);
+        return card;
+    }
+
+    private View categoryRegistryCard(CategoryRow row) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(10), dp(12));
+        card.setBackground(glassCardBg(categoryColor(row.name)));
+        elevate(card, 4);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_tag_tiny);
+        icon.setColorFilter(categoryColor(row.name));
+        card.addView(icon, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        textParams.setMargins(dp(12), 0, dp(8), 0);
+        card.addView(texts, textParams);
+        texts.addView(label(row.name, 17, true, primaryText()));
+        texts.addView(label(row.usage, 13, false, mutedText()));
+        TextView menu = label("⋮", 28, true, mutedText());
+        menu.setGravity(Gravity.CENTER);
+        card.addView(menu, new LinearLayout.LayoutParams(dp(42), dp(48)));
+        View.OnClickListener action = v -> showCategoryCatalogMenu(row);
+        card.setOnClickListener(action);
+        menu.setOnClickListener(action);
+        return card;
+    }
+
+    private View productRegistryCard(ProductCatalogEntry entry) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(10), dp(12));
+        card.setBackground(glassCardBg(categoryColor(entry.category)));
+        elevate(card, 4);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_cart);
+        icon.setColorFilter(categoryColor(entry.category));
+        card.addView(icon, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1);
+        textParams.setMargins(dp(12), 0, dp(8), 0);
+        card.addView(texts, textParams);
+        texts.addView(label(entry.name, 17, true, primaryText()));
+        String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
+        String unit = isBlank(entry.unit) ? "1" : entry.unit;
+        String cat = isBlank(entry.category) ? "Sem categoria" : entry.category;
+        texts.addView(label(cat + " · " + unit + " · " + price, 13, false, mutedText()));
+        if (!isBlank(entry.barcode)) texts.addView(label("Codigo: " + entry.barcode, 12, false, mutedText()));
+        TextView menu = label("⋮", 28, true, mutedText());
+        menu.setGravity(Gravity.CENTER);
+        card.addView(menu, new LinearLayout.LayoutParams(dp(42), dp(48)));
+        View.OnClickListener action = v -> showProductCatalogMenu(entry);
+        card.setOnClickListener(action);
+        menu.setOnClickListener(action);
+        return card;
+    }
+
+    private void showCategoryCatalogMenu(CategoryRow row) {
+        CharSequence[] options = {"Editar nome", "Excluir categoria"};
+        dialog()
+                .setTitle(row.name)
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) promptCategoryCatalog(row.name);
+                    else confirmDeleteCategory(row.name);
+                })
+                .show();
+    }
+
+    private void promptCategoryCatalog(String oldName) {
+        EditText input = dialogInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        if (!isBlank(oldName)) input.setText(oldName);
+        configureSelectAll(input);
+        dialog()
+                .setTitle(isBlank(oldName) ? "Nova categoria" : "Editar categoria")
+                .setView(input)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    String clean = input.getText().toString().trim();
+                    if (isBlank(clean)) return;
+                    if (isBlank(oldName)) {
+                        rememberCategory(clean);
+                    } else {
+                        renameCategoryEverywhere(oldName, clean);
+                    }
+                    saveCategoryCatalog();
+                    showRegistryScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void confirmDeleteCategory(String name) {
+        dialog()
+                .setTitle("Excluir categoria?")
+                .setMessage("A categoria sera removida dos cadastros e as ocorrencias serao marcadas como Outros ou sem categoria.")
+                .setPositiveButton("Excluir", (dialog, which) -> {
+                    deleteCategoryEverywhere(name);
+                    showRegistryScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void showProductCatalogMenu(ProductCatalogEntry entry) {
+        CharSequence[] options = {"Editar produto", "Excluir cadastro"};
+        dialog()
+                .setTitle(entry.name)
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) promptProductCatalog(entry);
+                    else confirmDeleteProductCatalog(entry);
+                })
+                .show();
+    }
+
+    private void promptProductCatalog(ProductCatalogEntry target) {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setCurrencyInput(price);
+        EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setDecimalInput(unit);
+        AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        setupItemCategorySuggestions(category);
+        EditText barcode = dialogInput("Codigo de barras", InputType.TYPE_CLASS_NUMBER);
+        barcode.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
+        if (target != null) {
+            name.setText(target.name);
+            if (target.price > 0) price.setText(formatPriceInput(target.price));
+            unit.setText(isBlank(target.unit) ? "1" : target.unit);
+            category.setText(target.category);
+            barcode.setText(target.barcode);
+        } else {
+            unit.setText("1");
+        }
+        configureSelectAll(name);
+        configureSelectAll(unit);
+        form.addView(name, matchHeight(dp(54)));
+        form.addView(price, matchHeightWithTop(dp(54), dp(8)));
+        form.addView(unit, matchHeightWithTop(dp(54), dp(8)));
+        form.addView(category, matchHeightWithTop(dp(54), dp(8)));
+        form.addView(barcode, matchHeightWithTop(dp(54), dp(8)));
+        dialog()
+                .setTitle(target == null ? "Novo produto" : "Editar produto")
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    String newName = name.getText().toString().trim();
+                    if (isBlank(newName)) return;
+                    ProductCatalogEntry entry = target == null ? new ProductCatalogEntry() : target;
+                    String oldName = entry.name;
+                    entry.name = newName;
+                    entry.price = parsePrice(price.getText().toString());
+                    entry.unit = unit.getText().toString().trim();
+                    entry.category = category.getText().toString().trim();
+                    entry.barcode = digitsOnly(barcode.getText().toString());
+                    entry.deleted = false;
+                    entry.updatedAt = System.currentTimeMillis();
+                    if (target == null) productCatalog.add(0, entry);
+                    rememberCategory(entry.category);
+                    applyProductCatalogEdit(oldName, entry);
+                    saveProductCatalog();
+                    saveCategoryCatalog();
+                    showRegistryScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    private void confirmDeleteProductCatalog(ProductCatalogEntry entry) {
+        dialog()
+                .setTitle("Excluir produto?")
+                .setMessage("O produto deixara de aparecer no cadastro e no autopreenchimento. As compras antigas permanecem salvas.")
+                .setPositiveButton("Excluir", (dialog, which) -> {
+                    entry.deleted = true;
+                    entry.updatedAt = System.currentTimeMillis();
+                    saveProductCatalog();
+                    showRegistryScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
     private void showHomeScreen() {
         selectedIndex = -1;
         selectedFromHistory = false;
@@ -454,7 +786,8 @@ public class MainActivity extends Activity {
         updateAutoLockedLists();
         updateListSyncConnection();
         buildRoot();
-        addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
+        addTopHeader("Suas listas", "Crie listas e compare pre\u00e7os salvos.", false);
+        addHomeFreeLimitBanner();
         addSearchBar("Pesquisar listas ou itens", homeSearch, value -> {
             homeSearch = value;
             refreshSearchResults(this::renderHomeResults);
@@ -464,18 +797,43 @@ public class MainActivity extends Activity {
     }
 
     private void renderHomeResults() {
-        boolean shown = false;
+        List<Integer> visible = new ArrayList<>();
         for (int i = 0; i < lists.size(); i++) {
             if (lists.get(i).archived || lists.get(i).deletedFromHistory) continue;
             if (!matchesHomeListFilter(lists.get(i))) continue;
             if (!matchesListSearch(lists.get(i), homeSearch)) continue;
-            shown = true;
-            root.addView(listCard(i), matchWrapWithTop(dp(10)));
+            visible.add(i);
         }
-        if (!shown) {
+        if (visible.isEmpty()) {
             root.addView(homeSearch == null || homeSearch.trim().isEmpty()
                     ? infoCard("Nenhuma lista criada", "Toque no carrinho para criar sua primeira lista.")
                     : infoCard("Nada encontrado", "Nenhuma lista ou item corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+            return;
+        }
+        if (!shouldGroupHomeLists(visible)) {
+            for (Integer index : visible) root.addView(listCard(index), matchWrapWithTop(dp(10)));
+            return;
+        }
+        Map<String, List<Integer>> groups = new LinkedHashMap<>();
+        for (Integer index : visible) {
+            String category = listCategoryOf(lists.get(index));
+            List<Integer> rows = groups.get(category);
+            if (rows == null) {
+                rows = new ArrayList<>();
+                groups.put(category, rows);
+            }
+            rows.add(index);
+        }
+        for (Map.Entry<String, List<Integer>> group : groups.entrySet()) {
+            String key = categoryCollapseKey(group.getKey());
+            boolean collapsed = collapsedHomeCategories.contains(key);
+            root.addView(categoryToggleHeader(group.getKey(), group.getValue().size(), collapsed, () -> {
+                toggleCollapse(collapsedHomeCategories, key);
+                showHomeScreen();
+            }), matchWrapWithTop(dp(10)));
+            if (!collapsed) {
+                for (Integer index : group.getValue()) root.addView(listCard(index), matchWrapWithTop(dp(8)));
+            }
         }
     }
 
@@ -485,7 +843,7 @@ public class MainActivity extends Activity {
         homeTab = 3;
         updateAutoLockedLists();
         buildRoot();
-        addTopHeader("Historico", "Listas protegidas ficam guardadas aqui.", false);
+        addTopHeader("Hist\u00f3rico", "Listas protegidas ficam guardadas aqui.", false);
         addHistorySummary();
         addSearchBar("Pesquisar historico ou itens", historySearch, value -> {
             historySearch = value;
@@ -532,14 +890,14 @@ public class MainActivity extends Activity {
         selectedFromHistory = false;
         homeTab = spending ? 2 : 1;
         buildRoot();
-        addTopHeader(spending ? "Gastos" : "Estoque",
-                spending ? "Resumo e graficos das compras registradas." : "Itens comprados e duracao estimada.",
+        addTopHeader(spending ? "Gastos" : "Despensa",
+                spending ? "Resumo e gr\u00e1ficos das compras registradas." : "Itens comprados, validade e dura\u00e7\u00e3o estimada.",
                 false);
         addStockTabs();
         if (spending) {
             addSpendingScreen();
         } else {
-            addSearchBar("Pesquisar itens do estoque", stockSearch, value -> {
+            addSearchBar("Pesquisar itens da despensa", stockSearch, value -> {
                 stockSearch = value;
                 refreshSearchResults(this::addStockScreen);
             });
@@ -723,7 +1081,7 @@ public class MainActivity extends Activity {
         form.addView(description, matchHeightWithTop(dp(54), 0));
 
         EditText amount = dialogInput("Valor recebido", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(amount);
+        setCurrencyInput(amount);
         configureSelectAll(amount);
         if (target.amount > 0) amount.setText(formatPriceInput(target.amount));
         form.addView(amount, matchHeightWithTop(dp(54), dp(8)));
@@ -925,7 +1283,7 @@ public class MainActivity extends Activity {
 
     private void promptMonthlyBudgetLimit() {
         EditText limit = dialogInput("Teto mensal", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(limit);
+        setCurrencyInput(limit);
         configureSelectAll(limit);
         if (monthlyBudgetLimit > 0) limit.setText(formatPriceInput(monthlyBudgetLimit));
         dialog()
@@ -952,7 +1310,7 @@ public class MainActivity extends Activity {
         form.addView(description, matchHeightWithTop(dp(54), 0));
 
         EditText amount = dialogInput("Valor", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(amount);
+        setCurrencyInput(amount);
         configureSelectAll(amount);
         if (target.amount > 0) amount.setText(formatPriceInput(target.amount));
         form.addView(amount, matchHeightWithTop(dp(54), dp(8)));
@@ -988,6 +1346,7 @@ public class MainActivity extends Activity {
         form.addView(recurring, matchWrapWithTop(dp(8)));
 
         EditText paidAt = dialogInput("Pago em (DD/MM)", InputType.TYPE_CLASS_TEXT);
+        setDateInput(paidAt, false);
         paidAt.setText(target.paidAt);
         form.addView(paidAt, matchHeightWithTop(dp(54), dp(8)));
 
@@ -1255,6 +1614,9 @@ public class MainActivity extends Activity {
         ShoppingList list = lists.get(selectedIndex);
         updateListSyncConnection();
         addTopHeader(list.name, listSubtitle(list), true);
+        if (!premiumUnlocked && !list.locked && !list.archived) {
+            addFeatureLimitBanner("Sincroniza\u00e7\u00e3o Free", freeSyncUsageText() + " Toque para liberar sincroniza\u00e7\u00e3o ilimitada.");
+        }
         if (list.locked) {
             String message = list.archived
                     ? "Esta lista esta no historico. Voce pode copiar ou remover, mas ela permanece protegida."
@@ -1392,6 +1754,7 @@ public class MainActivity extends Activity {
         if (homeTab == 5) return "comparison:" + currentListIdForKey();
         if (homeTab == 6) return "stock-history";
         if (homeTab == 9) return "budget:" + selectedBudgetMonthKey();
+        if (homeTab == 10) return "registry:" + registryTab;
         if (homeTab == 3) return "history";
         if (homeTab == 2) return "spending:" + spendingRangeMonths;
         if (homeTab == 1) return "stock";
@@ -1492,7 +1855,7 @@ public class MainActivity extends Activity {
         boolean dark = isDarkTheme();
         if (selectedIndex >= 0 || homeTab == 5) return dark ? R.drawable.bg_list_dark : R.drawable.bg_list_light;
         if (homeTab == 1 || homeTab == 6) return dark ? R.drawable.bg_stock_dark : R.drawable.bg_stock_light;
-        if (homeTab == 2 || homeTab == 9) return dark ? R.drawable.bg_spending_dark : R.drawable.bg_spending_light;
+        if (homeTab == 2 || homeTab == 9 || homeTab == 10) return dark ? R.drawable.bg_spending_dark : R.drawable.bg_spending_light;
         if (homeTab == 3) return dark ? R.drawable.bg_history_dark : R.drawable.bg_history_light;
         return dark ? R.drawable.bg_home_dark : R.drawable.bg_home_light;
     }
@@ -1691,6 +2054,232 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void addHomeFreeLimitBanner() {
+        if (premiumUnlocked || activeVisibleListCount() < FREE_ACTIVE_LIST_LIMIT) return;
+        addFeatureLimitBanner("Limite de listas Free", freeListUsageText() + " Toque para liberar listas ilimitadas.");
+    }
+
+    private void addPlanStatusBanner() {
+        int color = premiumUnlocked ? Color.rgb(22, 163, 74) : Color.rgb(234, 179, 8);
+        String title = premiumUnlocked ? "Plano Premium ativo" : "Plano Free";
+        String body = premiumUnlocked
+                ? "Sincroniza\u00e7\u00e3o ilimitada e recursos premium liberados nesta conta Google."
+                : freeListUsageText() + " Premium libera listas ilimitadas, sincroniza\u00e7\u00e3o ilimitada e remove os bloqueios de uso premium.";
+        root.addView(limitBanner(title, body, color), matchWrapWithTop(dp(10)));
+    }
+
+    private void addFeatureLimitBanner(String title, String body) {
+        root.addView(limitBanner(title, body, Color.rgb(234, 179, 8)), matchWrapWithTop(dp(10)));
+    }
+
+    private View limitBanner(String title, String body, int color) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(11), dp(14), dp(11));
+        card.setBackground(round(withAlpha(color, isDarkTheme() ? 42 : 34), dp(14), withAlpha(color, isDarkTheme() ? 190 : 150), 1));
+
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(premiumUnlocked ? R.drawable.ic_money_circle : R.drawable.ic_lock_closed);
+        icon.setColorFilter(color);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(26), dp(26));
+        iconParams.setMargins(0, 0, dp(10), 0);
+        card.addView(icon, iconParams);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        card.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        texts.addView(label(title, 14, true, primaryText()));
+        TextView message = label(body, 12, false, mutedText());
+        message.setPadding(0, dp(2), 0, 0);
+        texts.addView(message);
+        if (!premiumUnlocked) {
+            card.setClickable(true);
+            card.setOnClickListener(v -> showPremiumScreen(title + "\n" + body));
+        }
+        return card;
+    }
+
+    private String freeListUsageText() {
+        return "Listas ativas no Free: " + activeVisibleListCount() + "/" + FREE_ACTIVE_LIST_LIMIT + ".";
+    }
+
+    private int activeVisibleListCount() {
+        int count = 0;
+        for (ShoppingList list : lists) {
+            if (list.archived || list.deletedFromHistory) continue;
+            count++;
+        }
+        return count;
+    }
+
+    private boolean canCreateFreeList() {
+        return premiumUnlocked || activeVisibleListCount() < FREE_ACTIVE_LIST_LIMIT;
+    }
+
+    private String freeSyncUsageText() {
+        int used = currentMonthlySyncCount();
+        return "Sincroniza\u00e7\u00e3o compartilhada: " + used + "/" + FREE_SYNC_USES_PER_MONTH + " uso(s) neste m\u00eas.";
+    }
+
+    private int currentMonthlySyncCount() {
+        android.content.SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        String storedMonth = prefs.getString(KEY_SYNC_USAGE_MONTH, "");
+        if (!currentUsageMonthKey().equals(storedMonth)) return 0;
+        return prefs.getInt(KEY_SYNC_USAGE_COUNT, 0);
+    }
+
+    private void showNotificationSettings() {
+        LinearLayout form = dialogForm();
+
+        CheckBox expiry = new CheckBox(this);
+        expiry.setText("Avisar antes da validade de produtos da despensa");
+        expiry.setTextSize(14);
+        expiry.setChecked(stockNotificationsEnabled);
+        tintCheckBox(expiry);
+        form.addView(expiry, matchWrap());
+
+        EditText days = dialogInput("Dias antes da validade", InputType.TYPE_CLASS_NUMBER);
+        days.setText(String.valueOf(Math.max(1, stockExpiryNoticeDays)));
+        days.setSelection(days.getText().length());
+        form.addView(days, matchHeightWithTop(dp(52), dp(8)));
+
+        CheckBox shared = new CheckBox(this);
+        shared.setText("Avisar quando outra pessoa alterar uma lista compartilhada");
+        shared.setTextSize(14);
+        shared.setChecked(syncNotificationsEnabled);
+        tintCheckBox(shared);
+        form.addView(shared, matchWrapWithTop(dp(8)));
+
+        TextView hint = label("As notifica\u00e7\u00f5es dependem da permiss\u00e3o do Android. A validade precisa estar preenchida no item da despensa.", 12, false, mutedText());
+        hint.setPadding(0, dp(8), 0, 0);
+        form.addView(hint, matchWrap());
+
+        AlertDialog alert = dialog()
+                .setTitle("Notifica\u00e7\u00f5es")
+                .setView(form)
+                .setPositiveButton("Salvar", null)
+                .setNeutralButton("Verificar validade", null)
+                .setNegativeButton("Cancelar", null)
+                .show();
+        alert.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+            int noticeDays = parseNoticeDays(days.getText().toString());
+            if (noticeDays <= 0) {
+                showAppMessage("Notifica\u00e7\u00f5es", "Informe uma quantidade de dias maior que zero.");
+                return;
+            }
+            saveNotificationSettings(expiry.isChecked(), noticeDays, shared.isChecked());
+            alert.dismiss();
+        });
+        alert.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            if (!canPostAppNotifications()) {
+                requestNotificationsPermission();
+                return;
+            }
+            int count = StockExpiryReceiver.checkAndNotify(this, true);
+            Toast.makeText(this, count > 0 ? "Verifica\u00e7\u00e3o de validade conclu\u00edda." : "Nenhum item pr\u00f3ximo da validade.", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    private void enableStockNotifications() {
+        stockNotificationsEnabled = true;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_STOCK_NOTIFICATIONS_ENABLED, true)
+                .putInt(KEY_STOCK_EXPIRY_NOTICE_DAYS, stockExpiryNoticeDays)
+                .apply();
+        StockExpiryReceiver.ensureChannel(this);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+            return;
+        }
+        StockExpiryReceiver.schedule(this);
+        Toast.makeText(this, "Lembretes de validade ativados.", Toast.LENGTH_SHORT).show();
+    }
+
+    private void disableStockNotifications() {
+        stockNotificationsEnabled = false;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_STOCK_NOTIFICATIONS_ENABLED, false).apply();
+        StockExpiryReceiver.cancel(this);
+        Toast.makeText(this, "Lembretes de validade desativados.", Toast.LENGTH_SHORT).show();
+    }
+
+    private void setStockExpiryNoticeDays(int days) {
+        stockExpiryNoticeDays = days;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_STOCK_EXPIRY_NOTICE_DAYS, days).apply();
+        if (stockNotificationsEnabled) StockExpiryReceiver.schedule(this);
+        Toast.makeText(this, "Aviso ajustado para " + days + " dia(s) antes.", Toast.LENGTH_SHORT).show();
+    }
+
+    private int parseNoticeDays(String raw) {
+        try {
+            return Math.max(1, Math.min(365, Integer.parseInt(raw == null ? "" : raw.trim())));
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private void saveNotificationSettings(boolean expiryEnabled, int noticeDays, boolean syncEnabled) {
+        stockNotificationsEnabled = expiryEnabled;
+        syncNotificationsEnabled = syncEnabled;
+        stockExpiryNoticeDays = noticeDays;
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(KEY_STOCK_NOTIFICATIONS_ENABLED, stockNotificationsEnabled)
+                .putBoolean(KEY_SYNC_NOTIFICATIONS_ENABLED, syncNotificationsEnabled)
+                .putInt(KEY_STOCK_EXPIRY_NOTICE_DAYS, stockExpiryNoticeDays)
+                .apply();
+        StockExpiryReceiver.ensureChannel(this);
+        ensureSyncNotificationChannel();
+        if (stockNotificationsEnabled) StockExpiryReceiver.schedule(this); else StockExpiryReceiver.cancel(this);
+        if ((stockNotificationsEnabled || syncNotificationsEnabled) && !canPostAppNotifications()) {
+            requestNotificationsPermission();
+        } else if (stockNotificationsEnabled) {
+            StockExpiryReceiver.checkAndNotify(this, false);
+        }
+        Toast.makeText(this, "Prefer\u00eancias de notifica\u00e7\u00e3o salvas.", Toast.LENGTH_SHORT).show();
+    }
+
+    private boolean canPostAppNotifications() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestNotificationsPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        }
+    }
+
+    private void ensureSyncNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null || manager.getNotificationChannel(SYNC_NOTIFICATION_CHANNEL_ID) != null) return;
+        NotificationChannel channel = new NotificationChannel(SYNC_NOTIFICATION_CHANNEL_ID, "Listas compartilhadas", NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription("Avisos quando outra pessoa altera uma lista compartilhada.");
+        channel.enableLights(true);
+        channel.setLightColor(accent());
+        manager.createNotificationChannel(channel);
+    }
+
+    private void notifySharedListChanged(ShoppingList list) {
+        if (!syncNotificationsEnabled || list == null || !canPostAppNotifications()) return;
+        ensureSyncNotificationChannel();
+        Intent open = new Intent(this, MainActivity.class);
+        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent contentIntent = PendingIntent.getActivity(this, 1, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, SYNC_NOTIFICATION_CHANNEL_ID)
+                : new Notification.Builder(this);
+        builder.setSmallIcon(R.drawable.ic_share_nodes)
+                .setContentTitle("Lista compartilhada atualizada")
+                .setContentText(list.name + " foi alterada por outra pessoa.")
+                .setStyle(new Notification.BigTextStyle().bigText(list.name + " foi alterada por outra pessoa."))
+                .setContentIntent(contentIntent)
+                .setAutoCancel(true);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_DEFAULT);
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(SYNC_NOTIFICATION_ID_BASE + Math.abs(list.id.hashCode() % 1000), builder.build());
+    }
     private void showHomeMenu(View anchor) {
         LinearLayout menu = new LinearLayout(this);
         menu.setOrientation(LinearLayout.VERTICAL);
@@ -1711,17 +2300,31 @@ public class MainActivity extends Activity {
             if (popupRef[0] != null) popupRef[0].dismiss();
             startPlayUpdate();
         });
-        addHomeMenuItem(menu, premiumUnlocked ? "Premium ativo" : "Premium", R.drawable.ic_money_circle, () -> {
+        addHomeMenuItem(menu, premiumUnlocked ? "Plano: Premium" : "Plano: Free", R.drawable.ic_money_circle, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
-            showPremiumScreen("Desbloqueie todos os recursos do Check Mercado.");
+            if (premiumUnlocked) {
+                showAppMessage("Premium", "O Premium est\u00e1 ativo nesta conta Google.");
+            } else {
+                showPremiumScreen("Desbloqueie todos os recursos do Check Mercado.");
+            }
         });
-        addHomeMenuItem(menu, "Resgatar pela Play", R.drawable.ic_update, () -> {
+        addHomeMenuItem(menu, "Notifica\u00e7\u00f5es", R.drawable.ic_calendar_tiny, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
-            showPlayRedeemInfo();
+            showNotificationSettings();
         });
+        if (!premiumUnlocked) {
+            addHomeMenuItem(menu, "Resgatar pela Play", R.drawable.ic_update, () -> {
+                if (popupRef[0] != null) popupRef[0].dismiss();
+                showPlayRedeemInfo();
+            });
+        }
         addHomeMenuItem(menu, "Backup", R.drawable.ic_backup, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
             exportBackup();
+        });
+        addHomeMenuItem(menu, "Cadastros", R.drawable.ic_tag_tiny, () -> {
+            if (popupRef[0] != null) popupRef[0].dismiss();
+            showRegistryScreen();
         });
         addHomeMenuItem(menu, "Cr\u00e9ditos", R.drawable.ic_credits, () -> {
             if (popupRef[0] != null) popupRef[0].dismiss();
@@ -1878,6 +2481,81 @@ public class MainActivity extends Activity {
         });
     }
 
+
+    private void verifyPremiumStatus() {
+        if (billingClient == null || !billingClient.isReady()) {
+            initBilling();
+            showAppMessage("Verificar Premium", "Ainda estou conectando \u00e0 Play Store. Aguarde alguns segundos e toque em Verificar Premium novamente.");
+            return;
+        }
+        QueryPurchasesParams purchaseParams = QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.INAPP)
+                .build();
+        billingClient.queryPurchasesAsync(purchaseParams, (purchaseResult, purchases) -> {
+            List<Purchase> safePurchases = purchases == null ? Collections.emptyList() : purchases;
+            String purchaseSummary = premiumPurchaseSummary(safePurchases);
+            for (Purchase purchase : safePurchases) {
+                if (!purchase.getProducts().contains(PLAY_PREMIUM_PRODUCT_ID)) continue;
+                if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
+                    handlePurchases(Collections.singletonList(purchase));
+                    runOnUiThread(() -> showAppMessage("Premium", "A Play Store retornou o produto Premium para esta conta. O plano foi liberado."));
+                    return;
+                }
+                runOnUiThread(() -> showAppMessage("Premium pendente", "A Play Store encontrou o produto Premium, mas ele ainda n\u00e3o est\u00e1 marcado como comprado.\n\nEstado: " + purchaseStateText(purchase.getPurchaseState())));
+                return;
+            }
+
+            QueryProductDetailsParams.Product product = QueryProductDetailsParams.Product.newBuilder()
+                    .setProductId(PLAY_PREMIUM_PRODUCT_ID)
+                    .setProductType(BillingClient.ProductType.INAPP)
+                    .build();
+            QueryProductDetailsParams productParams = QueryProductDetailsParams.newBuilder()
+                    .setProductList(Collections.singletonList(product))
+                    .build();
+            billingClient.queryProductDetailsAsync(productParams, (productResult, productDetailsList) -> runOnUiThread(() -> {
+                boolean productLoaded = productResult.getResponseCode() == BillingClient.BillingResponseCode.OK
+                        && productDetailsList != null
+                        && !productDetailsList.isEmpty();
+                if (productLoaded) {
+                    premiumProductDetails = productDetailsList.get(0);
+                    ProductDetails.OneTimePurchaseOfferDetails offer = premiumProductDetails.getOneTimePurchaseOfferDetails();
+                    if (offer != null && !isBlank(offer.getFormattedPrice())) premiumPriceText = offer.getFormattedPrice();
+                }
+                String message = "Produto esperado: " + PLAY_PREMIUM_PRODUCT_ID
+                        + "\nPacote do app: " + getPackageName()
+                        + "\n\nConsulta de compras: " + billingStatus(purchaseResult)
+                        + "\nCompras retornadas: " + purchaseSummary
+                        + "\n\nProduto carregado na Play: " + (productLoaded ? "sim" : "n\u00e3o")
+                        + "\nConsulta do produto: " + billingStatus(productResult)
+                        + "\n\nSe o c\u00f3digo aparece como resgatado, mas as compras retornadas n\u00e3o incluem o produto esperado, o c\u00f3digo provavelmente foi criado para outro produto/op\u00e7\u00e3o ou a Play ainda n\u00e3o associou esse resgate a este pacote instalado.";
+                showAppMessage("Verificar Premium", message);
+            }));
+        });
+    }
+
+    private String premiumPurchaseSummary(List<Purchase> purchases) {
+        if (purchases == null || purchases.isEmpty()) return "nenhuma";
+        StringBuilder builder = new StringBuilder();
+        for (Purchase purchase : purchases) {
+            if (builder.length() > 0) builder.append("; ");
+            builder.append(purchase.getProducts()).append(" (").append(purchaseStateText(purchase.getPurchaseState())).append(")");
+        }
+        return builder.toString();
+    }
+
+    private String purchaseStateText(int state) {
+        if (state == Purchase.PurchaseState.PURCHASED) return "comprado";
+        if (state == Purchase.PurchaseState.PENDING) return "pendente";
+        if (state == Purchase.PurchaseState.UNSPECIFIED_STATE) return "indefinido";
+        return String.valueOf(state);
+    }
+
+    private String billingStatus(BillingResult result) {
+        if (result == null) return "sem resposta";
+        String debug = result.getDebugMessage();
+        return result.getResponseCode() + (debug == null || debug.trim().isEmpty() ? "" : " - " + debug);
+    }
+
     private void handlePurchases(List<Purchase> purchases) {
         for (Purchase purchase : purchases) {
             if (!purchase.getProducts().contains(PLAY_PREMIUM_PRODUCT_ID)) continue;
@@ -1951,9 +2629,14 @@ public class MainActivity extends Activity {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/redeem")));
             } catch (Exception ignored) {
-                Toast.makeText(this, "Nao foi possivel abrir o resgate da Play Store.", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "N\u00e3o foi poss\u00edvel abrir o resgate da Play Store.", Toast.LENGTH_LONG).show();
             }
         }
+    }
+
+    private int randomPremiumOfferImage() {
+        int[] images = {R.drawable.premium_offer_1, R.drawable.premium_offer_2, R.drawable.premium_offer_3, R.drawable.premium_offer_4};
+        return images[(int) (Math.abs(System.nanoTime()) % images.length)];
     }
 
     private void showPremiumScreen(String reason) {
@@ -1969,21 +2652,9 @@ public class MainActivity extends Activity {
         int posterHeight = Math.max(getResources().getDisplayMetrics().heightPixels, (int) (width * 1.75f));
 
         ImageView image = new ImageView(this);
-        image.setImageResource(R.drawable.premium_offer);
+        image.setImageResource(randomPremiumOfferImage());
         image.setScaleType(ImageView.ScaleType.FIT_XY);
         poster.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, posterHeight));
-
-        TextView price = new TextView(this);
-        price.setText(premiumUnlocked ? "Premium ativo" : premiumPriceText);
-        price.setTextColor(Color.rgb(12, 35, 23));
-        price.setGravity(Gravity.CENTER);
-        price.setTextSize(34);
-        price.setTypeface(Typeface.DEFAULT_BOLD);
-        price.setShadowLayer(dp(2), 0, dp(1), Color.argb(80, 255, 255, 255));
-        FrameLayout.LayoutParams priceParams = new FrameLayout.LayoutParams((int) (width * 0.72f), dp(76));
-        priceParams.leftMargin = (int) (width * 0.14f);
-        priceParams.topMargin = (int) (posterHeight * 0.785f);
-        poster.addView(price, priceParams);
 
         View buyTouch = new View(this);
         buyTouch.setOnClickListener(v -> launchPremiumPurchase());
@@ -2025,11 +2696,11 @@ public class MainActivity extends Activity {
         tabs.setBackground(inputPanelBg(false));
         root.addView(tabs, matchHeightWithTop(dp(64), dp(12)));
 
-        addStockTabButton(tabs, "Estoque", R.drawable.ic_box, 1, () -> showStockWindow(false));
+        addStockTabButton(tabs, "Despensa", R.drawable.ic_box, 1, () -> showStockWindow(false));
         addStockTabDivider(tabs);
         addStockTabButton(tabs, "Gastos", R.drawable.ic_report, 2, () -> showStockWindow(true));
         addStockTabDivider(tabs);
-        View history = addStockTabButton(tabs, "Historico", R.drawable.ic_history, 6, this::showStockHistoryWindow);
+        View history = addStockTabButton(tabs, "Hist\u00f3rico", R.drawable.ic_history, 6, this::showStockHistoryWindow);
         if (stockHistoryPending && homeTab != 6) startStockHistoryBlink(history);
 
         LinearLayout tools = iconStrip();
@@ -2100,7 +2771,7 @@ public class MainActivity extends Activity {
         secretLastTap = now;
         secretLogoTaps++;
         if (secretLogoTaps == 3) {
-            Toast.makeText(this, "Algo no estoque parece diferente...", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Algo na despensa parece diferente...", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -2232,9 +2903,9 @@ public class MainActivity extends Activity {
         homeTab = 6;
         clearStockHistoryPending();
         buildRoot();
-        addTopHeader("Historico", "Baixas do estoque guardadas para consulta.", false);
+        addTopHeader("Hist\u00f3rico", "Baixas da despensa guardadas para consulta.", false);
         addStockTabs();
-        addSearchBar("Pesquisar historico do estoque", stockHistorySearch, value -> {
+        addSearchBar("Pesquisar hist\u00f3rico da despensa", stockHistorySearch, value -> {
             stockHistorySearch = value;
             refreshSearchResults(this::addStockHistoryScreen);
         });
@@ -2291,6 +2962,11 @@ public class MainActivity extends Activity {
         name.setMaxLines(2);
         name.setTextColor(neon ? CheckMercadoNeonUi.TEXT : (listColor == 0 ? primaryText() : readableOnTint(listColor)));
         content.addView(name, matchWrap());
+        if (!isBlank(list.category)) {
+            LinearLayout category = iconText(R.drawable.ic_tag_tiny, list.category, 12, true, neon ? CheckMercadoNeonUi.GREEN : readableOnTint(accentColor), neon ? CheckMercadoNeonUi.GREEN : accentColor);
+            category.setPadding(0, dp(4), 0, 0);
+            content.addView(category, matchWrap());
+        }
 
         LinearLayout meta = iconText(R.drawable.ic_calendar_tiny,
                 formatShortDate(list.createdAt) + " - " + activeItemCount(list) + " itens - " + completedCount(list) + " concluidos",
@@ -2851,7 +3527,7 @@ public class MainActivity extends Activity {
         stockSelectionStatus = null;
         if (stock.isEmpty()) {
             selectedStockIds.clear();
-            root.addView(infoCard("Estoque vazio", "Marque itens comprados nas listas para adiciona-los ao estoque."), matchWrapWithTop(dp(10)));
+            root.addView(infoCard("Despensa vazia", "Marque itens comprados nas listas para adicion\u00e1-los \u00e0 despensa."), matchWrapWithTop(dp(10)));
             return;
         }
         pruneSelectedStockIds();
@@ -2861,7 +3537,7 @@ public class MainActivity extends Activity {
         }
         sortStockRows(rows);
         if (rows.isEmpty()) {
-            root.addView(infoCard("Nada encontrado", "Nenhum item do estoque corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+            root.addView(infoCard("Nada encontrado", "Nenhum item da despensa corresponde \u00e0 pesquisa."), matchWrapWithTop(dp(10)));
             return;
         }
         for (StockEntry entry : rows) {
@@ -2911,7 +3587,7 @@ public class MainActivity extends Activity {
     }
 
     private void updateStockSelectionStatus() {
-        // A selecao aparece no proprio item; nao exibimos uma faixa extra no estoque.
+        // A selecao aparece no proprio item; nao exibimos uma faixa extra na despensa.
     }
 
     private void toggleStockSelection(StockEntry entry, LinearLayout card, TextView marker) {
@@ -2971,7 +3647,7 @@ public class MainActivity extends Activity {
         String[] options = new String[]{"Data", "Nome", "Unidade", "Pre\u00e7o", "Categoria", "Dias"};
         int[] modes = new int[]{STOCK_SORT_DATE, STOCK_SORT_NAME, STOCK_SORT_QUANTITY, STOCK_SORT_PRICE, STOCK_SORT_CATEGORY, STOCK_SORT_DAYS};
         dialog()
-                .setTitle("Ordenar estoque")
+                .setTitle("Ordenar despensa")
                 .setItems(options, (dialog, which) -> {
                     stockSortMode = modes[which];
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_STOCK_SORT_MODE, stockSortMode).apply();
@@ -3209,7 +3885,7 @@ public class MainActivity extends Activity {
         dialog()
                 .setTitle("Backup")
                 .setItems(options, (dialog, which) -> {
-                    if (which == 0) saveEncryptedBackupFile();
+                    if (which == 0) promptBackupScope();
                     else openEncryptedBackupFile();
                 })
                 .show();
@@ -3219,9 +3895,24 @@ public class MainActivity extends Activity {
         exportBackup();
     }
 
-    private void saveEncryptedBackupFile() {
+    private void promptBackupScope() {
+        CharSequence[] options = {
+                "Tudo do app",
+                "Banco de dados completo",
+                "Orcamento mensal",
+                "Gastos",
+                "Despensa",
+                "Produtos e categorias"
+        };
+        dialog()
+                .setTitle("Escolher backup")
+                .setItems(options, (dialog, which) -> saveEncryptedBackupFile(which))
+                .show();
+    }
+
+    private void saveEncryptedBackupFile(int scope) {
         try {
-            pendingBackupFileText = buildEncryptedBackupFileText();
+            pendingBackupFileText = buildEncryptedBackupFileText(scope);
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("text/plain");
@@ -3357,9 +4048,24 @@ public class MainActivity extends Activity {
 
     private void onProductBarcodeRead(String result) {
         if (result == null || result.trim().isEmpty()) return;
+        String clean = result.trim();
         stopQrScanner();
         pendingBarcodeScanner = false;
-        lookupBarcodeAndPrompt(result.trim());
+        if (looksLikeFiscalQr(clean)) {
+            if (selectedIndex >= 0 && selectedIndex < lists.size() && isSharedList(lists.get(selectedIndex))) {
+                pendingFiscalShareListId = lists.get(selectedIndex).id;
+            }
+            importFiscalNoteFromUrl(clean);
+            return;
+        }
+        lookupBarcodeAndPrompt(clean);
+    }
+
+    private boolean looksLikeFiscalQr(String value) {
+        if (isBlank(value)) return false;
+        String lower = value.toLowerCase(Locale.ROOT);
+        return (lower.startsWith("http://") || lower.startsWith("https://"))
+                && (lower.contains("nfce") || lower.contains("sefaz") || lower.contains("qrcode") || extractFiscalAccessKeyFromUrl(value).length() == 44);
     }
 
     private void lookupBarcodeAndPrompt(String barcode) {
@@ -3776,6 +4482,11 @@ public class MainActivity extends Activity {
         }
         lists.add(0, list);
         save();
+        if (!isBlank(pendingFiscalShareListId)) {
+            ShoppingList channel = findListById(pendingFiscalShareListId);
+            if (channel != null) sendFiscalListSyncMessage(channel, list);
+            pendingFiscalShareListId = "";
+        }
         selectedIndex = -1;
         selectedFromHistory = false;
         flashImportedListId = list.id;
@@ -3792,7 +4503,8 @@ public class MainActivity extends Activity {
         selectedFromHistory = false;
         homeTab = 0;
         buildRoot();
-        addTopHeader("Suas listas", "Crie listas e compare precos salvos.", false);
+        addTopHeader("Suas listas", "Crie listas e compare pre\u00e7os salvos.", false);
+        addHomeFreeLimitBanner();
         setContentView(rootScroll());
         String finalMessage = message;
         if (pageContent != null && !pageContent.trim().isEmpty()) {
@@ -3858,7 +4570,7 @@ public class MainActivity extends Activity {
         root.addView(actions, matchHeightWithTop(dp(54), dp(10)));
 
         if (stockHistory.isEmpty()) {
-            root.addView(infoCard("Hist\u00f3rico vazio", "Itens baixados do estoque aparecem aqui."), matchWrapWithTop(dp(10)));
+            root.addView(infoCard("Hist\u00f3rico vazio", "Itens baixados da despensa aparecem aqui."), matchWrapWithTop(dp(10)));
             return;
         }
         List<StockEntry> rows = new ArrayList<>(stockHistory);
@@ -3869,7 +4581,7 @@ public class MainActivity extends Activity {
         if (stockHistorySortDesc) Collections.reverse(rows);
         root.addView(infoCard("Ordena\u00e7\u00e3o por dura\u00e7\u00e3o", stockHistorySortDesc ? "Maior dura\u00e7\u00e3o primeiro." : "Menor dura\u00e7\u00e3o primeiro."), matchWrapWithTop(dp(10)));
         if (rows.isEmpty()) {
-            root.addView(infoCard("Nada encontrado", "Nenhum item do historico do estoque corresponde a pesquisa."), matchWrapWithTop(dp(10)));
+            root.addView(infoCard("Nada encontrado", "Nenhum item do hist\u00f3rico da despensa corresponde \u00e0 pesquisa."), matchWrapWithTop(dp(10)));
             return;
         }
 
@@ -3932,7 +4644,7 @@ public class MainActivity extends Activity {
 
     private void confirmClearStockHistory() {
         dialog()
-                .setTitle("Limpar historico do estoque?")
+                .setTitle("Limpar hist\u00f3rico da despensa?")
                 .setMessage("Isso removera permanentemente todas as baixas do historico de estoque. Continuar?")
                 .setPositiveButton("Limpar", (dialog, which) -> {
                     rememberStockUndo();
@@ -3945,43 +4657,76 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject buildBackupJson() throws JSONException {
+        return buildBackupJson(0);
+    }
+
+    private JSONObject buildBackupJson(int scope) throws JSONException {
+        refreshProductCatalogFromData(true);
         JSONObject json = new JSONObject();
         json.put("app", "Check Mercado");
-        json.put("backupVersion", 1);
+        json.put("backupVersion", 2);
         json.put("createdAt", System.currentTimeMillis());
+        json.put("scope", scope);
 
-        JSONArray listArray = new JSONArray();
-        for (ShoppingList list : lists) listArray.put(list.toJson());
-        json.put("lists", listArray);
+        boolean fullApp = scope == 0;
+        boolean fullDb = scope == 1;
+        boolean budgetOnly = scope == 2;
+        boolean spendingOnly = scope == 3;
+        boolean stockOnly = scope == 4;
+        boolean catalogOnly = scope == 5;
 
-        JSONArray stockArray = new JSONArray();
-        for (StockEntry entry : stock) stockArray.put(entry.toJson());
-        json.put("stock", stockArray);
+        if (fullApp || fullDb) {
+            JSONArray listArray = new JSONArray();
+            for (ShoppingList list : lists) listArray.put(list.toJson());
+            json.put("lists", listArray);
+        }
 
-        JSONArray stockHistoryArray = new JSONArray();
-        for (StockEntry entry : stockHistory) stockHistoryArray.put(entry.toJson());
-        json.put("stockHistory", stockHistoryArray);
+        if (fullApp || fullDb || stockOnly) {
+            JSONArray stockArray = new JSONArray();
+            for (StockEntry entry : stock) stockArray.put(entry.toJson());
+            json.put("stock", stockArray);
 
-        JSONArray spendingArray = new JSONArray();
-        for (SpendingRecord entry : spendingHistory) spendingArray.put(entry.toJson());
-        JSONArray monthlyBudgetArray = new JSONArray();
-        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) monthlyBudgetArray.put(entry.toJson());
-        json.put("monthlyBudgetEntries", monthlyBudgetArray);
-        JSONArray monthlyIncomeArray = new JSONArray();
-        for (MonthlyBudgetIncome income : monthlyBudgetIncomes) monthlyIncomeArray.put(income.toJson());
-        json.put("monthlyBudgetIncomes", monthlyIncomeArray);
+            JSONArray stockHistoryArray = new JSONArray();
+            for (StockEntry entry : stockHistory) stockHistoryArray.put(entry.toJson());
+            json.put("stockHistory", stockHistoryArray);
+        }
 
+        if (fullApp || fullDb || spendingOnly) {
+            JSONArray spendingArray = new JSONArray();
+            for (SpendingRecord entry : spendingHistory) spendingArray.put(entry.toJson());
+            json.put("spendingHistory", spendingArray);
+        }
 
-        json.put("spendingHistory", spendingArray);
+        if (fullApp || fullDb || budgetOnly) {
+            JSONArray monthlyBudgetArray = new JSONArray();
+            for (MonthlyBudgetEntry entry : monthlyBudgetEntries) monthlyBudgetArray.put(entry.toJson());
+            json.put("monthlyBudgetEntries", monthlyBudgetArray);
+            JSONArray monthlyIncomeArray = new JSONArray();
+            for (MonthlyBudgetIncome income : monthlyBudgetIncomes) monthlyIncomeArray.put(income.toJson());
+            json.put("monthlyBudgetIncomes", monthlyIncomeArray);
+        }
 
-        JSONObject settings = new JSONObject();
-        settings.put("themeMode", themeMode);
-        settings.put("accentColor", accentColor);
-        settings.put("spendingRangeMonths", spendingRangeMonths);
-        settings.put("monthlyGoal", monthlyGoal);
-        settings.put("monthlyBudgetLimit", monthlyBudgetLimit);
-        settings.put("gameBest", getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BEST, ""));
-        json.put("settings", settings);
+        if (fullApp || fullDb || catalogOnly) {
+            JSONArray categoryArray = new JSONArray();
+            for (String category : collectAllCategories()) categoryArray.put(category);
+            json.put("categoryCatalog", categoryArray);
+            JSONArray productArray = new JSONArray();
+            for (ProductCatalogEntry entry : productCatalog) productArray.put(entry.toJson());
+            json.put("productCatalog", productArray);
+        }
+
+        if (fullApp || budgetOnly) {
+            JSONObject settings = new JSONObject();
+            if (fullApp) {
+                settings.put("themeMode", themeMode);
+                settings.put("accentColor", accentColor);
+                settings.put("spendingRangeMonths", spendingRangeMonths);
+                settings.put("gameBest", getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_GAME_BEST, ""));
+            }
+            settings.put("monthlyGoal", monthlyGoal);
+            settings.put("monthlyBudgetLimit", monthlyBudgetLimit);
+            json.put("settings", settings);
+        }
         return json;
     }
 
@@ -4130,6 +4875,7 @@ public class MainActivity extends Activity {
 
     private void promptMonthlyGoal() {
         EditText input = dialogInput("Meta mensal", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        setCurrencyInput(input);
         if (monthlyGoal > 0) {
             input.setText(formatPriceInput(monthlyGoal));
             input.setSelection(input.getText().length());
@@ -4181,7 +4927,7 @@ public class MainActivity extends Activity {
         Collections.sort(ranking, (a, b) -> Double.compare(b.getValue(), a.getValue()));
         root.addView(label("Gastos por categoria", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         if (ranking.isEmpty()) {
-            root.addView(infoCard("Sem categorias", "Edite a categoria dos itens no estoque para analisar seus gastos por grupo."), matchWrapWithTop(dp(8)));
+            root.addView(infoCard("Sem categorias", "Edite a categoria dos itens na despensa para analisar seus gastos por grupo."), matchWrapWithTop(dp(8)));
             return;
         }
         double max = Math.max(1, ranking.get(0).getValue());
@@ -4253,9 +4999,9 @@ public class MainActivity extends Activity {
             if (row.cycles == 1 || days > row.maxDays) row.maxDays = days;
         }
 
-        root.addView(label("Duração do estoque", 18, true, primaryText()), matchWrapWithTop(dp(16)));
+        root.addView(label("Duração da despensa", 18, true, primaryText()), matchWrapWithTop(dp(16)));
         if (stats.isEmpty()) {
-            root.addView(infoCard("Sem baixas no estoque", "Quando você der baixa em itens do estoque, o app calcula quanto tempo cada produto durou e monta este gráfico."), matchWrapWithTop(dp(8)));
+            root.addView(infoCard("Sem baixas na despensa", "Quando você der baixa em itens da despensa, o app calcula quanto tempo cada produto durou e monta este gráfico."), matchWrapWithTop(dp(8)));
             return;
         }
 
@@ -4637,6 +5383,7 @@ public class MainActivity extends Activity {
         String key = normalize(query);
         if (key.isEmpty()) return true;
         if (normalize(list.name).contains(key)) return true;
+        if (normalize(list.category).contains(key)) return true;
         for (ShoppingItem item : list.items) {
             if (normalize(item.name).contains(key)) return true;
             if (normalize(item.note).contains(key)) return true;
@@ -4660,7 +5407,7 @@ public class MainActivity extends Activity {
 
     private boolean matchesItemSearch(ShoppingItem item, String query) {
         String key = normalize(query);
-        return key.isEmpty() || normalize(item.name).contains(key) || normalize(item.note).contains(key);
+        return key.isEmpty() || normalize(item.name).contains(key) || normalize(item.note).contains(key) || normalize(item.category).contains(key);
     }
 
     private boolean matchesItemFilter(ShoppingItem item) {
@@ -4710,7 +5457,7 @@ public class MainActivity extends Activity {
         priceInput.setHintTextColor(mutedText());
         priceInput.setLinkTextColor(accent());
         priceInput.setTextSize(15);
-        setDecimalInput(priceInput);
+        setCurrencyInput(priceInput);
         priceInput.setBackground(round(inputBg(), dp(14), stroke(), 1));
         priceInput.setPadding(dp(12), 0, dp(12), 0);
 
@@ -4760,6 +5507,257 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private boolean matchesRegistry(String value, String query) {
+        String key = normalize(query == null ? "" : query);
+        return key.isEmpty() || normalize(value).contains(key);
+    }
+
+    private List<CategoryRow> categoryRegistryRows() {
+        LinkedHashMap<String, Integer> counts = new LinkedHashMap<>();
+        for (String category : collectAllCategories()) counts.put(category, 0);
+        for (ShoppingList list : lists) bumpCategoryCount(counts, list.category);
+        for (ShoppingList list : lists) for (ShoppingItem item : list.items) bumpCategoryCount(counts, item.category);
+        for (StockEntry entry : stock) bumpCategoryCount(counts, entry.category);
+        for (StockEntry entry : stockHistory) bumpCategoryCount(counts, entry.category);
+        for (SpendingRecord record : spendingHistory) bumpCategoryCount(counts, record.category);
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) bumpCategoryCount(counts, entry.category);
+        for (ProductCatalogEntry entry : productCatalog) if (!entry.deleted) bumpCategoryCount(counts, entry.category);
+        List<CategoryRow> rows = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (isBlank(entry.getKey())) continue;
+            int count = entry.getValue();
+            rows.add(new CategoryRow(entry.getKey(), count + (count == 1 ? " uso" : " usos")));
+        }
+        Collections.sort(rows, (a, b) -> normalize(a.name).compareTo(normalize(b.name)));
+        return rows;
+    }
+
+    private void bumpCategoryCount(Map<String, Integer> counts, String category) {
+        if (isBlankCategory(category)) return;
+        String clean = category.trim();
+        String existing = findCategoryName(counts.keySet(), clean);
+        if (existing == null) {
+            counts.put(clean, 1);
+        } else {
+            counts.put(existing, counts.get(existing) + 1);
+        }
+    }
+
+    private String findCategoryName(Iterable<String> values, String category) {
+        String key = normalize(category);
+        for (String value : values) if (normalize(value).equals(key)) return value;
+        return null;
+    }
+
+    private List<String> collectAllCategories() {
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String category : categoryCatalog) if (!isBlankCategory(category)) values.add(category.trim());
+        for (ShoppingList list : lists) if (!isBlankCategory(list.category)) values.add(list.category.trim());
+        for (ShoppingList list : lists) for (ShoppingItem item : list.items) if (!isBlankCategory(item.category)) values.add(item.category.trim());
+        for (StockEntry entry : stock) if (!isBlankCategory(entry.category)) values.add(entry.category.trim());
+        for (StockEntry entry : stockHistory) if (!isBlankCategory(entry.category)) values.add(entry.category.trim());
+        for (SpendingRecord record : spendingHistory) if (!isBlankCategory(record.category)) values.add(record.category.trim());
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) if (!isBlankCategory(entry.category)) values.add(entry.category.trim());
+        for (ProductCatalogEntry entry : productCatalog) if (!entry.deleted && !isBlankCategory(entry.category)) values.add(entry.category.trim());
+        return new ArrayList<>(values);
+    }
+
+    private void rememberCategory(String category) {
+        if (isBlankCategory(category)) return;
+        String clean = category.trim();
+        String existing = findCategoryName(categoryCatalog, clean);
+        if (existing == null) categoryCatalog.add(clean);
+    }
+
+    private void renameCategoryEverywhere(String oldName, String newName) {
+        if (isBlank(oldName) || isBlank(newName)) return;
+        String oldKey = normalize(oldName);
+        categoryCatalog.removeIf(value -> normalize(value).equals(oldKey));
+        categoryCatalog.add(newName.trim());
+        for (ShoppingList list : lists) if (normalize(list.category).equals(oldKey)) list.category = newName.trim();
+        for (ShoppingList list : lists) for (ShoppingItem item : list.items) if (normalize(item.category).equals(oldKey)) item.category = newName.trim();
+        for (StockEntry entry : stock) if (normalize(entry.category).equals(oldKey)) entry.category = newName.trim();
+        for (StockEntry entry : stockHistory) if (normalize(entry.category).equals(oldKey)) entry.category = newName.trim();
+        for (SpendingRecord record : spendingHistory) if (normalize(record.category).equals(oldKey)) record.category = newName.trim();
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) if (normalize(entry.category).equals(oldKey)) entry.category = newName.trim();
+        for (ProductCatalogEntry entry : productCatalog) if (normalize(entry.category).equals(oldKey)) entry.category = newName.trim();
+        save();
+        saveStock();
+        saveStockHistory();
+        saveSpendingHistory();
+        saveMonthlyBudget();
+        saveProductCatalog();
+    }
+
+    private void deleteCategoryEverywhere(String name) {
+        if (isBlank(name)) return;
+        String key = normalize(name);
+        categoryCatalog.removeIf(value -> normalize(value).equals(key));
+        for (ShoppingList list : lists) if (normalize(list.category).equals(key)) list.category = "";
+        for (ShoppingList list : lists) for (ShoppingItem item : list.items) if (normalize(item.category).equals(key)) item.category = "";
+        for (StockEntry entry : stock) if (normalize(entry.category).equals(key)) entry.category = "Outros";
+        for (StockEntry entry : stockHistory) if (normalize(entry.category).equals(key)) entry.category = "Outros";
+        for (SpendingRecord record : spendingHistory) if (normalize(record.category).equals(key)) record.category = "Outros";
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) if (normalize(entry.category).equals(key)) entry.category = "Outros";
+        for (ProductCatalogEntry entry : productCatalog) if (normalize(entry.category).equals(key)) entry.category = "";
+        saveCategoryCatalog();
+        save();
+        saveStock();
+        saveStockHistory();
+        saveSpendingHistory();
+        saveMonthlyBudget();
+        saveProductCatalog();
+    }
+
+    private List<ProductCatalogEntry> visibleProductCatalog() {
+        refreshProductCatalogFromData(true);
+        List<ProductCatalogEntry> rows = new ArrayList<>();
+        for (ProductCatalogEntry entry : productCatalog) if (!entry.deleted && !isBlank(entry.name)) rows.add(entry);
+        Collections.sort(rows, (a, b) -> normalize(a.name).compareTo(normalize(b.name)));
+        return rows;
+    }
+
+    private void refreshProductCatalogFromData(boolean persist) {
+        boolean changed = false;
+        Map<String, ProductCatalogEntry> byName = new LinkedHashMap<>();
+        for (ProductCatalogEntry entry : productCatalog) {
+            if (!isBlank(entry.name)) byName.put(normalize(entry.name), entry);
+        }
+        for (ShoppingList list : lists) {
+            if (!list.locked && !list.archived) continue;
+            long listDate = list.lockedAt > 0 ? list.lockedAt : list.updatedAt;
+            for (ShoppingItem item : list.items) {
+                changed = addProductCandidate(byName, item.name, item.price, item.unit, item.category, item.barcode, Math.max(listDate, item.updatedAt), persist) || changed;
+            }
+        }
+        for (StockEntry entry : stock) changed = addProductCandidate(byName, entry.name, entry.price, entry.unit, entry.category, "", entry.updatedAt, persist) || changed;
+        for (StockEntry entry : stockHistory) changed = addProductCandidate(byName, entry.name, entry.price, entry.unit, entry.category, "", entry.updatedAt, persist) || changed;
+        for (SpendingRecord record : spendingHistory) changed = addProductCandidate(byName, record.name, record.price, record.unit, record.category, "", record.addedAt, persist) || changed;
+        if (changed && persist) saveProductCatalog();
+    }
+
+    private boolean addProductCandidate(Map<String, ProductCatalogEntry> byName, String name, double price, String unit, String category, String barcode, long updatedAt, boolean addMissing) {
+        if (isBlank(name)) return false;
+        String key = normalize(name);
+        ProductCatalogEntry existing = byName.get(key);
+        if (existing != null) {
+            if (existing.deleted) return false;
+            if (!isBlank(barcode) && isBlank(existing.barcode)) existing.barcode = digitsOnly(barcode);
+            if (!isBlank(category) && isBlankCategory(existing.category)) existing.category = category.trim();
+            return false;
+        }
+        if (!addMissing) return false;
+        ProductCatalogEntry entry = new ProductCatalogEntry();
+        entry.name = name.trim();
+        entry.price = Math.max(0, price);
+        entry.unit = isBlank(unit) ? "1" : unit.trim();
+        entry.category = isBlankCategory(category) ? "" : category.trim();
+        entry.barcode = digitsOnly(barcode);
+        entry.updatedAt = updatedAt > 0 ? updatedAt : System.currentTimeMillis();
+        productCatalog.add(entry);
+        byName.put(key, entry);
+        return true;
+    }
+
+    private void rememberProduct(ShoppingItem item) {
+        if (item == null) return;
+        rememberProduct(item.name, item.price, item.unit, item.category, item.barcode);
+    }
+
+    private void rememberProduct(String name, double price, String unit, String category, String barcode) {
+        if (isBlank(name)) return;
+        String key = normalize(name);
+        ProductCatalogEntry target = null;
+        for (ProductCatalogEntry entry : productCatalog) {
+            if (normalize(entry.name).equals(key)) {
+                target = entry;
+                break;
+            }
+        }
+        if (target == null) {
+            target = new ProductCatalogEntry();
+            productCatalog.add(0, target);
+        }
+        target.name = name.trim();
+        target.price = Math.max(0, price);
+        target.unit = isBlank(unit) ? "1" : unit.trim();
+        target.category = isBlankCategory(category) ? "" : category.trim();
+        target.barcode = digitsOnly(barcode);
+        target.deleted = false;
+        target.updatedAt = System.currentTimeMillis();
+        rememberCategory(target.category);
+        saveProductCatalog();
+        saveCategoryCatalog();
+    }
+
+    private void applyProductCatalogEdit(String oldName, ProductCatalogEntry entry) {
+        if (entry == null || isBlank(oldName) || normalize(oldName).equals(normalize(entry.name))) return;
+        String oldKey = normalize(oldName);
+        long now = System.currentTimeMillis();
+        for (ShoppingList list : lists) {
+            for (ShoppingItem item : list.items) {
+                if (normalize(item.name).equals(oldKey)) {
+                    item.name = entry.name;
+                    item.category = entry.category;
+                    if (!isBlank(entry.barcode)) item.barcode = entry.barcode;
+                    item.updatedAt = now;
+                }
+            }
+        }
+        for (StockEntry stockEntry : stock) if (normalize(stockEntry.name).equals(oldKey)) { stockEntry.name = entry.name; stockEntry.category = isBlankCategory(entry.category) ? stockEntry.category : entry.category; stockEntry.updatedAt = now; }
+        for (StockEntry stockEntry : stockHistory) if (normalize(stockEntry.name).equals(oldKey)) { stockEntry.name = entry.name; stockEntry.category = isBlankCategory(entry.category) ? stockEntry.category : entry.category; stockEntry.updatedAt = now; }
+        for (SpendingRecord record : spendingHistory) if (normalize(record.name).equals(oldKey)) { record.name = entry.name; record.category = isBlankCategory(entry.category) ? record.category : entry.category; }
+        save();
+        saveStock();
+        saveStockHistory();
+        saveSpendingHistory();
+    }
+    private void setupListCategorySuggestions(AutoCompleteTextView input) {
+        setupStringSuggestions(input, listCategorySuggestions());
+    }
+
+    private void setupItemCategorySuggestions(AutoCompleteTextView input) {
+        setupStringSuggestions(input, itemCategorySuggestions());
+    }
+
+    private List<String> listCategorySuggestions() {
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String category : collectAllCategories()) values.add(category);
+        return new ArrayList<>(values);
+    }
+
+    private List<String> itemCategorySuggestions() {
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String category : collectAllCategories()) values.add(category);
+        return new ArrayList<>(values);
+    }
+
+    private void setupStringSuggestions(AutoCompleteTextView input, List<String> values) {
+        if (input == null || values == null || values.isEmpty()) return;
+        ArrayAdapter<String> adapter = new ArrayAdapter<String>(this, android.R.layout.simple_dropdown_item_1line, values) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                View view = super.getView(position, convertView, parent);
+                view.setBackgroundColor(cardBg());
+                if (view instanceof TextView) {
+                    TextView text = (TextView) view;
+                    text.setTextColor(primaryText());
+                    text.setTextSize(15);
+                }
+                return view;
+            }
+
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                return getView(position, convertView, parent);
+            }
+        };
+        input.setAdapter(adapter);
+        input.setThreshold(0);
+        input.setOnClickListener(v -> input.showDropDown());
+        input.setOnFocusChangeListener((v, hasFocus) -> { if (hasFocus) input.showDropDown(); });
+    }
     private void setupProductSuggestions() {
         setupProductSuggestions(itemInput, priceInput, unitInput);
     }
@@ -4890,6 +5888,7 @@ public class MainActivity extends Activity {
     }
 
     private Map<String, ProductSuggestion> productSuggestionMap() {
+        refreshProductCatalogFromData(false);
         Map<String, ProductSuggestion> latest = new LinkedHashMap<>();
         for (ShoppingList list : lists) {
             if (!list.locked && !list.archived) continue;
@@ -4904,6 +5903,14 @@ public class MainActivity extends Activity {
                 }
             }
         }
+        for (ProductCatalogEntry entry : productCatalog) {
+            if (entry.deleted || isBlank(entry.name)) continue;
+            String key = normalize(entry.name);
+            ProductSuggestion current = latest.get(key);
+            if (current == null || entry.updatedAt >= current.updatedAt) {
+                latest.put(key, new ProductSuggestion(entry.name, entry.price, entry.unit, entry.updatedAt, entry.barcode));
+            }
+        }
         return latest;
     }
 
@@ -4911,6 +5918,12 @@ public class MainActivity extends Activity {
         String clean = digitsOnly(barcode);
         if (isBlank(clean)) return null;
         ProductSuggestion best = null;
+        for (ProductCatalogEntry entry : productCatalog) {
+            if (entry.deleted || isBlank(entry.barcode)) continue;
+            if (clean.equals(digitsOnly(entry.barcode))) {
+                best = new ProductSuggestion(entry.name, entry.price, entry.unit, entry.updatedAt, entry.barcode);
+            }
+        }
         for (ShoppingList list : lists) {
             long listDate = list.lockedAt > 0 ? list.lockedAt : list.createdAt;
             for (ShoppingItem item : list.items) {
@@ -4994,35 +6007,163 @@ public class MainActivity extends Activity {
 
     private void addItems() {
         ShoppingList current = lists.get(selectedIndex);
-        boolean any = false;
+        List<Integer> visible = visibleItemIndices(current);
+        boolean hasRemovedVisible = false;
         for (ShoppingItem item : current.items) {
-            if ((!item.removed && matchesItemSearch(item, listSearch) && matchesItemFilter(item))
-                    || (item.removed && matchesItemSearch(item, listSearch))) {
-                any = true;
+            if (item.removed && matchesItemSearch(item, listSearch)) {
+                hasRemovedVisible = true;
                 break;
             }
         }
-        if (!any && listSearch != null && !listSearch.trim().isEmpty()) {
+        if (visible.isEmpty() && !hasRemovedVisible && listSearch != null && !listSearch.trim().isEmpty()) {
             root.addView(infoCard("Nada encontrado", "Nenhum item da lista corresponde a pesquisa."), matchWrapWithTop(dp(10)));
             return;
         }
-        if (current.sortMode == SORT_CHECKED_TOP) {
-            addItemsByCheckedState(true);
-            addItemsByCheckedState(false);
-        } else if (current.sortMode == SORT_KEEP_POSITION) {
-            for (int i = 0; i < current.items.size(); i++) {
-                ShoppingItem item = current.items.get(i);
-                if (!item.removed && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) {
-                    root.addView(itemRow(item, i), matchWrapWithTop(dp(8)));
+        if (shouldGroupItems(current, visible)) {
+            Map<String, List<Integer>> groups = new LinkedHashMap<>();
+            for (Integer index : visible) {
+                ShoppingItem item = current.items.get(index);
+                String category = itemCategoryOf(item);
+                List<Integer> rows = groups.get(category);
+                if (rows == null) {
+                    rows = new ArrayList<>();
+                    groups.put(category, rows);
+                }
+                rows.add(index);
+            }
+            for (Map.Entry<String, List<Integer>> group : groups.entrySet()) {
+                String key = categoryCollapseKey(group.getKey());
+                boolean collapsed = collapsedItemCategories.contains(key);
+                root.addView(categoryToggleHeader(group.getKey(), group.getValue().size(), collapsed, () -> {
+                    toggleCollapse(collapsedItemCategories, key);
+                    showListScreen();
+                }), matchWrapWithTop(dp(10)));
+                if (!collapsed) {
+                    for (Integer index : group.getValue()) root.addView(itemRow(current.items.get(index), index), matchWrapWithTop(dp(8)));
                 }
             }
         } else {
-            addItemsByCheckedState(false);
-            addItemsByCheckedState(true);
+            for (Integer index : visible) root.addView(itemRow(current.items.get(index), index), matchWrapWithTop(dp(8)));
         }
         addRemovedItemsSection();
     }
 
+    private List<Integer> visibleItemIndices(ShoppingList current) {
+        List<Integer> result = new ArrayList<>();
+        if (current == null) return result;
+        if (current.sortMode == SORT_CHECKED_TOP) {
+            collectItemIndicesByCheckedState(current, true, result);
+            collectItemIndicesByCheckedState(current, false, result);
+        } else if (current.sortMode == SORT_KEEP_POSITION) {
+            collectItemIndicesInCurrentOrder(current, result);
+        } else {
+            collectItemIndicesByCheckedState(current, false, result);
+            collectItemIndicesByCheckedState(current, true, result);
+        }
+        return result;
+    }
+
+    private void collectItemIndicesByCheckedState(ShoppingList current, boolean checked, List<Integer> out) {
+        for (int i = 0; i < current.items.size(); i++) {
+            ShoppingItem item = current.items.get(i);
+            if (!item.removed && item.checked == checked && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) out.add(i);
+        }
+    }
+
+    private void collectItemIndicesInCurrentOrder(ShoppingList current, List<Integer> out) {
+        for (int i = 0; i < current.items.size(); i++) {
+            ShoppingItem item = current.items.get(i);
+            if (!item.removed && matchesItemSearch(item, listSearch) && matchesItemFilter(item)) out.add(i);
+        }
+    }
+
+    private boolean shouldGroupHomeLists(List<Integer> visible) {
+        boolean hasNamedCategory = false;
+        LinkedHashSet<String> categories = new LinkedHashSet<>();
+        for (Integer index : visible) {
+            ShoppingList list = lists.get(index);
+            if (!isBlank(list.category)) hasNamedCategory = true;
+            categories.add(categoryCollapseKey(listCategoryOf(list)));
+        }
+        return hasNamedCategory && categories.size() > 1;
+    }
+
+    private boolean shouldGroupItems(ShoppingList list, List<Integer> visible) {
+        boolean hasNamedCategory = false;
+        LinkedHashSet<String> categories = new LinkedHashSet<>();
+        for (Integer index : visible) {
+            ShoppingItem item = list.items.get(index);
+            if (!isBlank(item.category)) hasNamedCategory = true;
+            categories.add(categoryCollapseKey(itemCategoryOf(item)));
+        }
+        return hasNamedCategory && categories.size() > 1;
+    }
+
+    private View categoryToggleHeader(String title, int count, boolean collapsed, Runnable onToggle) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(14), dp(10), dp(12), dp(10));
+        int color = categoryColor(title);
+        card.setBackground(isDarkTheme() ? CheckMercadoNeonUi.card(this, color) : glassCardBg(color));
+        elevate(card, 4);
+        card.setOnClickListener(v -> onToggle.run());
+        card.setOnLongClickListener(v -> {
+            promptRenameCategoryFromHeader(title);
+            return true;
+        });
+
+        ImageView tag = new ImageView(this);
+        tag.setImageResource(R.drawable.ic_tag_tiny);
+        tag.setColorFilter(isDarkTheme() ? CheckMercadoNeonUi.GREEN : color);
+        LinearLayout.LayoutParams tagParams = new LinearLayout.LayoutParams(dp(22), dp(22));
+        tagParams.setMargins(0, 0, dp(10), 0);
+        card.addView(tag, tagParams);
+
+        TextView label = label(title + "  " + count, 16, true, primaryText());
+        card.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        ImageView arrow = new ImageView(this);
+        arrow.setImageResource(collapsed ? R.drawable.ic_arrow_down : R.drawable.ic_arrow_up);
+        arrow.setColorFilter(mutedText());
+        card.addView(arrow, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        return card;
+    }
+
+    private void toggleCollapse(LinkedHashSet<String> set, String key) {
+        if (set.contains(key)) set.remove(key); else set.add(key);
+    }
+
+    private String categoryCollapseKey(String category) {
+        return normalize(category == null ? "" : category);
+    }
+
+    private String listCategoryOf(ShoppingList list) {
+        return list == null || isBlank(list.category) ? "Sem categoria" : list.category.trim();
+    }
+
+    private String itemCategoryOf(ShoppingItem item) {
+        return item == null || isBlank(item.category) ? "Sem categoria" : item.category.trim();
+    }
+
+    private void promptRenameCategoryFromHeader(String oldName) {
+        if (isBlank(oldName) || "Sem categoria".equalsIgnoreCase(oldName.trim())) return;
+        EditText input = dialogInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        input.setText(oldName);
+        configureSelectAll(input);
+        dialog()
+                .setTitle("Editar categoria")
+                .setView(input)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    String clean = input.getText().toString().trim();
+                    if (isBlank(clean) || normalize(clean).equals(normalize(oldName))) return;
+                    renameCategoryEverywhere(oldName, clean);
+                    saveCategoryCatalog();
+                    if (selectedIndex >= 0) showListScreen(); else showHomeScreen();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
     private void addItemsByCheckedState(boolean checked) {
         ShoppingList current = lists.get(selectedIndex);
         for (int i = 0; i < current.items.size(); i++) {
@@ -5043,7 +6184,7 @@ public class MainActivity extends Activity {
                 break;
             }
         }
-        if (!hasRemoved) return;
+        if (!hasRemoved || !isSharedList(current)) return;
 
         TextView title = label("Itens removidos", 16, true, disabledText());
         title.setPadding(dp(4), dp(16), dp(4), dp(2));
@@ -5159,6 +6300,13 @@ public class MainActivity extends Activity {
         checkHolder.setClipChildren(false);
         checkHolder.setClipToPadding(false);
         checkHolder.addView(box, new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER));
+        if (hasActiveItemPhoto(item)) {
+            ImageButton photo = plainIconButton(R.drawable.ic_photo, accent(), dp(5));
+            photo.setBackground(softPillBg(accent()));
+            photo.setOnClickListener(v -> showItemPhoto(item));
+            FrameLayout.LayoutParams photoParams = new FrameLayout.LayoutParams(dp(28), dp(28), Gravity.BOTTOM | Gravity.RIGHT);
+            checkHolder.addView(photo, photoParams);
+        }
         LinearLayout.LayoutParams checkParams = new LinearLayout.LayoutParams(dp(64), dp(64));
         checkParams.setMargins(0, 0, dp(4), 0);
         row.addView(checkHolder, checkParams);
@@ -5187,6 +6335,11 @@ public class MainActivity extends Activity {
         itemText.setOrientation(LinearLayout.VERTICAL);
         itemText.setGravity(Gravity.CENTER_VERTICAL);
         itemText.addView(name, matchWrap());
+        if (!isBlank(item.category)) {
+            LinearLayout category = iconText(R.drawable.ic_tag_tiny, item.category, 12, false, mutedText(), mutedText());
+            category.setPadding(0, dp(2), 0, 0);
+            itemText.addView(category, matchWrap());
+        }
 
         TextView price = new TextView(this);
         price.setText(priceText);
@@ -5209,7 +6362,7 @@ public class MainActivity extends Activity {
                 note.setPadding(0, dp(3), 0, 0);
                 itemText.addView(note, matchWrap());
             }
-            if (!item.editHistory.isEmpty()) {
+            if (isSharedList(current) && !item.editHistory.isEmpty()) {
                 TextView edited = label("Editado " + formatItemEditMoment(item.lastEditAt()), 12, false, mutedText());
                 edited.setPadding(0, dp(3), 0, 0);
                 itemText.addView(edited, matchWrap());
@@ -5245,11 +6398,21 @@ public class MainActivity extends Activity {
 
     private void showItemOptions(ShoppingItem item, int index) {
         if (selectedIndex < 0 || lists.get(selectedIndex).locked) return;
+        ShoppingList list = lists.get(selectedIndex);
+        ArrayList<String> options = new ArrayList<>();
+        options.add("Editar item");
+        options.add("Tirar foto");
+        if (hasActiveItemPhoto(item)) options.add("Ver foto");
+        if (isSharedList(list)) options.add("Ver edi\u00e7\u00e3o");
+        options.add(isSharedList(list) ? "Mover para itens removidos" : "Remover definitivamente");
         dialog()
                 .setTitle(item.name)
-                .setItems(new String[]{"Editar item", "Ver edição", "Remover"}, (dialog, which) -> {
-                    if (which == 0) promptEditItem(item);
-                    else if (which == 1) showItemEditHistory(item);
+                .setItems(options.toArray(new String[0]), (dialog, which) -> {
+                    String action = options.get(which);
+                    if ("Editar item".equals(action)) promptEditItem(item);
+                    else if ("Tirar foto".equals(action)) startItemPhotoCapture(item);
+                    else if ("Ver foto".equals(action)) showItemPhoto(item);
+                    else if ("Ver edi\u00e7\u00e3o".equals(action)) showItemEditHistory(item);
                     else removeListItem(index);
                 })
                 .show();
@@ -5260,8 +6423,12 @@ public class MainActivity extends Activity {
         ShoppingList list = lists.get(selectedIndex);
         if (list.locked || index < 0 || index >= list.items.size()) return;
         ShoppingItem item = list.items.get(index);
-        item.removed = true;
-        item.updatedAt = System.currentTimeMillis();
+        if (isSharedList(list)) {
+            item.removed = true;
+            item.updatedAt = System.currentTimeMillis();
+        } else {
+            list.items.remove(index);
+        }
         touchList(list);
         save();
         sendListSyncSnapshot(list);
@@ -5317,11 +6484,13 @@ public class MainActivity extends Activity {
         AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         configureSelectAll(name);
         EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(price);
+        setCurrencyInput(price);
         EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         setDecimalInput(unit);
         unit.setText("1");
         configureSelectAll(unit);
+        AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        setupItemCategorySuggestions(category);
         EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         note.setSingleLine(false);
         note.setMinLines(2);
@@ -5346,6 +6515,7 @@ public class MainActivity extends Activity {
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
+        form.addView(category, matchWrapWithTop(dp(8)));
         form.addView(note, matchWrapWithTop(dp(8)));
         dialog()
                 .setTitle("Adicionar item")
@@ -5357,6 +6527,7 @@ public class MainActivity extends Activity {
                     if (unitText.isEmpty()) unitText = "1";
                     ShoppingItem item = new ShoppingItem(text, parsePrice(price.getText().toString()), unitText);
                     item.note = note.getText().toString().trim();
+                    item.category = category.getText().toString().trim();
                     item.barcode = cleanBarcode;
                     ShoppingList list = lists.get(selectedIndex);
                     list.items.add(item);
@@ -5388,6 +6559,162 @@ public class MainActivity extends Activity {
                 .start();
     }
 
+    private void startItemPhotoCapture(ShoppingItem item) {
+        if (selectedIndex < 0 || selectedIndex >= lists.size() || item == null) return;
+        ShoppingList list = lists.get(selectedIndex);
+        if (list.locked) return;
+        if (!isSharedList(list)) {
+            showAppMessage("Foto do item", "Fotos de itens ficam disponÃ­veis por 24h no servidor apenas em listas compartilhadas. Compartilhe a lista antes de anexar a foto.");
+            return;
+        }
+        pendingPhotoListId = list.id;
+        pendingPhotoItemId = item.id;
+        Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        if (intent.resolveActivity(getPackageManager()) == null) {
+            showAppMessage("C\u00e2mera indispon\u00edvel", "N\u00e3o encontrei um app de c\u00e2mera neste aparelho.");
+            return;
+        }
+        startActivityForResult(intent, REQUEST_ITEM_PHOTO);
+    }
+
+    private void handleItemPhotoResult(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null) {
+            pendingPhotoListId = "";
+            pendingPhotoItemId = "";
+            return;
+        }
+        Bundle extras = data.getExtras();
+        Bitmap bitmap = extras == null ? null : (Bitmap) extras.get("data");
+        if (bitmap == null) {
+            showAppMessage("Foto do item", "A cÃ¢mera nÃ£o retornou uma imagem vÃ¡lida.");
+            return;
+        }
+        int listIndex = findListIndexById(pendingPhotoListId);
+        ShoppingList list = listIndex < 0 ? null : lists.get(listIndex);
+        ShoppingItem item = list == null ? null : findItemById(list, pendingPhotoItemId);
+        pendingPhotoListId = "";
+        pendingPhotoItemId = "";
+        if (list == null || item == null || !isSharedList(list)) return;
+        uploadItemPhoto(list, item, bitmap);
+    }
+
+    private void uploadItemPhoto(ShoppingList list, ShoppingItem item, Bitmap source) {
+        Toast.makeText(this, "Enviando foto...", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            try {
+                String encoded = encodeItemPhoto(source);
+                String endpoint = SYNC_HTTP_BASE + Uri.encode(list.id) + "/photo?token=" + Uri.encode(list.syncToken);
+                HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(25000);
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setDoOutput(true);
+                JSONObject body = new JSONObject();
+                body.put("itemId", item.id);
+                body.put("contentType", "image/jpeg");
+                body.put("image", encoded);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                int code = connection.getResponseCode();
+                String response = readText(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
+                connection.disconnect();
+                if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+                JSONObject json = new JSONObject(response);
+                if (!json.optBoolean("ok", false)) throw new JSONException(json.optString("error", "upload_failed"));
+                String photoUrl = json.optString("url", "");
+                String photoId = json.optString("photoId", "");
+                long expiresAt = json.optLong("expiresAt", System.currentTimeMillis() + 24L * 60L * 60L * 1000L);
+                runOnUiThread(() -> {
+                    item.photoUrl = photoUrl;
+                    item.photoId = photoId;
+                    item.photoExpiresAt = expiresAt;
+                    item.updatedAt = System.currentTimeMillis();
+                    touchList(list);
+                    save();
+                    sendListSyncSnapshot(list);
+                    Toast.makeText(this, "Foto anexada por 24h.", Toast.LENGTH_SHORT).show();
+                    showListScreen();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> showAppMessage("Foto do item", "N\u00e3o foi poss\u00edvel enviar a foto: " + errorMessage(e)));
+            }
+        }).start();
+    }
+
+    private String encodeItemPhoto(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int maxSide = 960;
+        Bitmap target = source;
+        if (Math.max(width, height) > maxSide) {
+            float scale = maxSide / (float) Math.max(width, height);
+            target = Bitmap.createScaledBitmap(source, Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)), true);
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        target.compress(Bitmap.CompressFormat.JPEG, 76, output);
+        return Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP);
+    }
+
+    private boolean hasActiveItemPhoto(ShoppingItem item) {
+        return item != null && !isBlank(item.photoUrl) && item.photoExpiresAt > System.currentTimeMillis();
+    }
+
+    private void showItemPhoto(ShoppingItem item) {
+        if (!hasActiveItemPhoto(item)) {
+            showAppMessage("Foto expirada", "A foto deste item jÃ¡ expirou no servidor.");
+            return;
+        }
+        homeTab = 9;
+        applySystemBars();
+        LinearLayout screen = new LinearLayout(this);
+        screen.setOrientation(LinearLayout.VERTICAL);
+        screen.setPadding(dp(12), statusBarHeight() + dp(8), dp(12), dp(12));
+        screen.setBackgroundColor(Color.BLACK);
+        Button close = iconButton("X", Color.argb(190, 15, 23, 42), Color.WHITE);
+        close.setTextSize(18);
+        close.setOnClickListener(v -> showListScreen());
+        screen.addView(close, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        FrameLayout photoFrame = new FrameLayout(this);
+        ProgressBar progress = new ProgressBar(this);
+        if (Build.VERSION.SDK_INT >= 21) progress.setIndeterminateTintList(ColorStateList.valueOf(Color.WHITE));
+        photoFrame.addView(progress, new FrameLayout.LayoutParams(dp(58), dp(58), Gravity.CENTER));
+        ImageView image = new ImageView(this);
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        photoFrame.addView(image, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        screen.addView(photoFrame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        setContentView(screen);
+        new Thread(() -> {
+            try {
+                byte[] bytes = downloadBytes(item.photoUrl);
+                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                runOnUiThread(() -> {
+                    progress.setVisibility(View.GONE);
+                    image.setImageBitmap(bitmap);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> showAppMessage("Foto do item", "N\u00e3o foi poss\u00edvel abrir a foto: " + errorMessage(e)));
+            }
+        }).start();
+    }
+
+    private byte[] downloadBytes(String link) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(link).openConnection();
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(20000);
+        int code = connection.getResponseCode();
+        if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+        try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            return output.toByteArray();
+        } finally {
+            connection.disconnect();
+        }
+    }
     private void promptStockQuantity(ShoppingItem item, Runnable onSaved, Runnable onCancel) {
         LinearLayout form = dialogForm();
         EditText qty = dialogInput("Quantidade", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
@@ -5423,7 +6750,7 @@ public class MainActivity extends Activity {
                 existing.unit = unit == null || unit.isEmpty() ? "un" : unit;
                 existing.price = item.price;
                 existing.updatedAt = now;
-                if (isBlankCategory(existing.category)) existing.category = latestCategoryForProduct(item.name);
+                if (isBlankCategory(existing.category)) existing.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
                 saveStock();
                 return;
             }
@@ -5435,14 +6762,14 @@ public class MainActivity extends Activity {
             linked.unit = unit == null || unit.isEmpty() ? "un" : unit;
             linked.price = item.price;
             linked.updatedAt = now;
-            if (isBlankCategory(linked.category)) linked.category = latestCategoryForProduct(item.name);
+            if (isBlankCategory(linked.category)) linked.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
             item.stockId = linked.id;
             saveStock();
             return;
         }
         StockEntry entry = new StockEntry(item.name, amount, unit, item.price, now);
         entry.sourceItemId = item.id;
-        entry.category = latestCategoryForProduct(item.name);
+        entry.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
         stock.add(0, entry);
         item.stockId = entry.id;
         saveStock();
@@ -5479,7 +6806,7 @@ public class MainActivity extends Activity {
             SpendingRecord record = new SpendingRecord(item.name, quantityOf(item), autoUnitForQuantity(quantityOf(item)), item.price, addedAt);
             record.sourceItemId = item.id;
             record.sourceListId = list.id;
-            record.category = latestCategoryForProduct(item.name);
+            record.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
             StockEntry stockEntry = findStockBySourceItem(item.id);
             if (stockEntry != null && !isBlankCategory(stockEntry.category)) record.category = stockEntry.category;
             spendingHistory.add(0, record);
@@ -5558,17 +6885,21 @@ public class MainActivity extends Activity {
         double oldPrice = item.price;
         String oldUnit = safeText(item.unit);
         String oldNote = safeText(item.note);
+        String oldCategory = safeText(item.category);
         LinearLayout form = dialogForm();
         AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
         configureSelectAll(name);
         EditText price = dialogInput("Preco", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(price);
+        setCurrencyInput(price);
         if (item.price > 0) price.setText(formatPriceInput(item.price));
         EditText unit = dialogInput("Un", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
         setDecimalInput(unit);
         unit.setText(item.unit == null || item.unit.isEmpty() ? "1" : item.unit);
         configureSelectAll(unit);
+        AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        category.setText(item.category == null ? "" : item.category);
+        setupItemCategorySuggestions(category);
         EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         note.setSingleLine(false);
         note.setMinLines(2);
@@ -5577,6 +6908,7 @@ public class MainActivity extends Activity {
         form.addView(name, matchHeight(dp(54)));
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
+        form.addView(category, matchWrapWithTop(dp(8)));
         form.addView(note, matchWrapWithTop(dp(8)));
         dialog()
                 .setTitle("Editar item")
@@ -5588,21 +6920,30 @@ public class MainActivity extends Activity {
                     String newUnit = unit.getText().toString().trim();
                     if (newUnit.isEmpty()) newUnit = "1";
                     String newNote = note.getText().toString().trim();
+                    String newCategory = category.getText().toString().trim();
                     long editedAt = System.currentTimeMillis();
-                    boolean changed = false;
-                    changed = addItemEditHistory(item, "Produto", oldName, newName, editedAt) || changed;
-                    changed = addItemEditHistory(item, "Preço", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt) || changed;
-                    changed = addItemEditHistory(item, "Un", oldUnit.isEmpty() ? "1" : oldUnit, newUnit, editedAt) || changed;
-                    changed = addItemEditHistory(item, "Nota", displayEditValue(oldNote), displayEditValue(newNote), editedAt) || changed;
+                    ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
+                    boolean changed = itemEditChanged(oldName, newName)
+                            || Math.abs(oldPrice - newPrice) > 0.000001
+                            || itemEditChanged(oldUnit.isEmpty() ? "1" : oldUnit, newUnit)
+                            || itemEditChanged(oldNote, newNote)
+                            || itemEditChanged(oldCategory, newCategory);
+                    if (changed && isSharedList(list)) {
+                        addItemEditHistory(item, "Produto", oldName, newName, editedAt);
+                        addItemEditHistory(item, "Pre\u00e7o", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt);
+                        addItemEditHistory(item, "Un", oldUnit.isEmpty() ? "1" : oldUnit, newUnit, editedAt);
+                        addItemEditHistory(item, "Nota", displayEditValue(oldNote), displayEditValue(newNote), editedAt);
+                        addItemEditHistory(item, "Categoria", displayEditValue(oldCategory), displayEditValue(newCategory), editedAt);
+                    }
                     item.name = newName;
                     item.price = newPrice;
                     item.unit = newUnit;
                     item.note = newNote;
+                    item.category = newCategory;
                     if (changed) item.updatedAt = editedAt;
                     if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
                         addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
                     }
-                    ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
                     if (changed && list != null) touchList(list);
                     if (changed) save();
                     if (changed && list != null) sendListSyncSnapshot(list);
@@ -5618,6 +6959,14 @@ public class MainActivity extends Activity {
         if (oldClean.equals(newClean)) return false;
         item.editHistory.add(0, new ItemEditEntry(field, oldClean, newClean, editedAt));
         return true;
+    }
+
+    private boolean itemEditChanged(String oldValue, String newValue) {
+        return !safeText(oldValue).equals(safeText(newValue));
+    }
+
+    private boolean isSharedList(ShoppingList list) {
+        return list != null && !isBlank(list.syncToken);
     }
 
     private String safeText(String value) {
@@ -5676,7 +7025,7 @@ public class MainActivity extends Activity {
         input.setLinkTextColor(accent());
         input.setBackground(round(inputBg(), dp(12), stroke(), 1));
         input.setPadding(dp(12), 0, dp(12), 0);
-        setDecimalInput(input);
+        setCurrencyInput(input);
         if (item.price > 0) {
             input.setText(formatPriceInput(item.price));
             input.setSelection(input.getText().length());
@@ -5688,10 +7037,11 @@ public class MainActivity extends Activity {
                     double oldPrice = item.price;
                     double newPrice = parsePrice(input.getText().toString());
                     long editedAt = System.currentTimeMillis();
-                    boolean changed = addItemEditHistory(item, "Preço", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt);
+                    ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
+                    boolean changed = Math.abs(oldPrice - newPrice) > 0.000001;
+                    if (changed && isSharedList(list)) addItemEditHistory(item, "Pre\u00e7o", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt);
                     item.price = newPrice;
                     if (changed) item.updatedAt = editedAt;
-                    ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
                     if (changed && list != null) touchList(list);
                     if (changed) save();
                     if (changed && list != null) sendListSyncSnapshot(list);
@@ -5843,15 +7193,22 @@ public class MainActivity extends Activity {
     }
 
     private void promptNewList() {
+        if (!canCreateFreeList()) {
+            showPremiumScreen("Voc\u00ea atingiu o limite de " + FREE_ACTIVE_LIST_LIMIT + " listas ativas no plano Free. Premium libera listas ilimitadas.");
+            return;
+        }
         LinearLayout form = dialogForm();
         AutoCompleteTextView input = dialogAutoCompleteInput("Nome da lista", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         setupListNameSuggestions(input);
         form.addView(input, matchHeight(dp(54)));
         EditText budget = dialogInput("Or\u00e7amento", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(budget);
+        setCurrencyInput(budget);
         form.addView(budget, matchHeightWithTop(dp(54), dp(8)));
+        AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        setupListCategorySuggestions(category);
+        form.addView(category, matchHeightWithTop(dp(54), dp(8)));
         CheckBox saveToStock = new CheckBox(this);
-        saveToStock.setText("Salvar itens marcados no estoque");
+        saveToStock.setText("Salvar itens marcados na despensa");
         saveToStock.setTextColor(primaryText());
         saveToStock.setTextSize(14);
         saveToStock.setChecked(true);
@@ -5866,6 +7223,7 @@ public class MainActivity extends Activity {
                     ShoppingList list = new ShoppingList(name);
                     list.color = randomListColor();
                     list.budget = parsePrice(budget.getText().toString());
+                    list.category = category.getText().toString().trim();
                     list.saveCheckedToStock = saveToStock.isChecked();
                     lists.add(0, list);
                     save();
@@ -5877,23 +7235,27 @@ public class MainActivity extends Activity {
 
     private void showListOptions(int index) {
         ShoppingList list = lists.get(index);
-        String[] options = list.locked
-                ? new String[]{"Copiar", "Remover"}
-                : new String[]{"Concluir esta lista", "Editar nome", "Mudar cor", "Remover"};
+        ArrayList<String> options = new ArrayList<>();
+        options.add("Compartilhar");
+        if (list.locked) {
+            options.add("Copiar");
+            options.add("Remover");
+        } else {
+            options.add("Concluir esta lista");
+            options.add("Editar nome");
+            options.add("Mudar cor");
+            options.add("Remover");
+        }
         dialog()
                 .setTitle(list.name)
-                .setItems(options, (dialog, which) -> {
-                    if (list.locked && which == 0) {
-                        copyListFromHistory(index);
-                    } else if (list.locked || which == 3) {
-                        confirmDeleteList(index);
-                    } else if (which == 0) {
-                        completeList(index);
-                    } else if (which == 1) {
-                        promptEditList(index);
-                    } else if (which == 2) {
-                        promptListColor(index);
-                    }
+                .setItems(options.toArray(new String[0]), (dialog, which) -> {
+                    String action = options.get(which);
+                    if ("Compartilhar".equals(action)) shareListAtIndex(index);
+                    else if ("Copiar".equals(action)) copyListFromHistory(index);
+                    else if ("Remover".equals(action)) confirmDeleteList(index);
+                    else if ("Concluir esta lista".equals(action)) completeList(index);
+                    else if ("Editar nome".equals(action)) promptEditList(index);
+                    else if ("Mudar cor".equals(action)) promptListColor(index);
                 })
                 .show();
     }
@@ -5939,12 +7301,16 @@ public class MainActivity extends Activity {
         input.setSelection(input.getText().length());
         form.addView(input, matchHeight(dp(54)));
         EditText budget = dialogInput("Or\u00e7amento", InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
-        setDecimalInput(budget);
+        setCurrencyInput(budget);
         if (list.budget > 0) {
             budget.setText(formatPriceInput(list.budget));
             budget.setSelection(budget.getText().length());
         }
         form.addView(budget, matchHeightWithTop(dp(54), dp(8)));
+        AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        category.setText(list.category == null ? "" : list.category);
+        setupListCategorySuggestions(category);
+        form.addView(category, matchHeightWithTop(dp(54), dp(8)));
         dialog()
                 .setTitle("Editar lista")
                 .setView(form)
@@ -5952,6 +7318,7 @@ public class MainActivity extends Activity {
                     String name = input.getText().toString().trim();
                     if (!name.isEmpty()) list.name = name;
                     list.budget = parsePrice(budget.getText().toString());
+                    list.category = category.getText().toString().trim();
                     touchList(list);
                     save();
                     sendListSyncSnapshot(list);
@@ -6211,7 +7578,7 @@ public class MainActivity extends Activity {
 
     private void confirmDeleteStock(StockEntry entry) {
         dialog()
-                .setTitle("Remover do estoque?")
+                .setTitle("Remover da despensa?")
                 .setMessage(entry.name)
                 .setPositiveButton("Remover", (dialog, which) -> {
                     rememberStockUndo();
@@ -6226,16 +7593,18 @@ public class MainActivity extends Activity {
     private void showStockOptions(StockEntry entry) {
         boolean selected = entry != null && selectedStockIds.contains(entry.id) && !selectedStockIds.isEmpty();
         String[] options = selected
-                ? new String[]{"Editar quantidade", "Editar categoria", "Dar baixa", "Dar baixa em todos"}
-                : new String[]{"Editar quantidade", "Editar categoria", "Dar baixa"};
+                ? new String[]{"Editar quantidade", "Editar validade", "Editar categoria", "Dar baixa", "Dar baixa em todos"}
+                : new String[]{"Editar quantidade", "Editar validade", "Editar categoria", "Dar baixa"};
         dialog()
                 .setTitle(entry.name)
                 .setItems(options, (dialog, which) -> {
                     if (which == 0) {
                         promptEditStockQuantity(entry);
                     } else if (which == 1) {
-                        promptEditStockCategory(entry);
+                        promptEditStockExpiry(entry);
                     } else if (which == 2) {
+                        promptEditStockCategory(entry);
+                    } else if (which == 3) {
                         confirmCheckoutStock(entry);
                     } else {
                         confirmCheckoutSelectedStock();
@@ -6246,8 +7615,8 @@ public class MainActivity extends Activity {
 
     private void confirmCheckoutStock(StockEntry entry) {
         dialog()
-                .setTitle("Dar baixa no estoque?")
-                .setMessage(entry.name + "\nO item saira do estoque atual e ficara no historico.")
+                .setTitle("Dar baixa na despensa?")
+                .setMessage(entry.name + "\nO item saira da despensa atual e ficara no historico.")
                 .setPositiveButton("Dar baixa", (dialog, which) -> checkoutStock(entry))
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -6270,7 +7639,7 @@ public class MainActivity extends Activity {
         if (rows.isEmpty()) return;
         dialog()
                 .setTitle("Dar baixa em todos?")
-                .setMessage(rows.size() + " item(ns) selecionado(s) sair\u00e3o do estoque atual e ficar\u00e3o no hist\u00f3rico.")
+                .setMessage(rows.size() + " item(ns) selecionado(s) sair\u00e3o da despensa atual e ficar\u00e3o no hist\u00f3rico.")
                 .setPositiveButton("Dar baixa", (dialog, which) -> checkoutSelectedStock(rows))
                 .setNegativeButton("Cancelar", null)
                 .show();
@@ -6324,6 +7693,38 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    private void promptEditStockExpiry(StockEntry entry) {
+        EditText input = dialogInput("Validade (DD/MM/AAAA)", InputType.TYPE_CLASS_DATETIME);
+        setDateInput(input, true);
+        if (entry.expiryAt > 0) {
+            input.setText(formatShortDate(entry.expiryAt));
+            input.setSelection(input.getText().length());
+        }
+        LinearLayout form = dialogForm();
+        form.addView(input, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+        TextView hint = label("Deixe vazio para remover a validade.", 12, false, mutedText());
+        hint.setPadding(0, dp(6), 0, 0);
+        form.addView(hint, matchWrap());
+        dialog()
+                .setTitle("Validade")
+                .setMessage(entry.name)
+                .setView(form)
+                .setPositiveButton("Salvar", (dialog, which) -> {
+                    long expiry = parseBrazilDateEndOfDay(input.getText().toString());
+                    if (expiry < 0) {
+                        showAppMessage("Validade", "Use o formato DD/MM/AAAA ou deixe o campo vazio.");
+                        return;
+                    }
+                    rememberStockUndo();
+                    entry.expiryAt = expiry;
+                    entry.updatedAt = System.currentTimeMillis();
+                    saveStock();
+                    if (stockNotificationsEnabled) StockExpiryReceiver.checkAndNotify(this, false);
+                    showStockWindow(false);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
     private void promptEditStockCategory(StockEntry entry) {
         String[] categories = categoryOptions();
         dialog()
@@ -6405,8 +7806,15 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void shareListAtIndex(int index) {
+        if (index < 0 || index >= lists.size()) return;
+        selectedIndex = index;
+        selectedFromHistory = lists.get(index).archived;
+        shareSelectedList();
+    }
+
     private void shareSelectedList() {
-        CharSequence[] options = {"Lista completa", "Com privacidade"};
+        CharSequence[] options = {"Lista completa sincronizada", "Com privacidade"};
         dialog()
                 .setTitle("Compartilhar")
                 .setItems(options, (dialog, which) -> shareSelectedList(which == 1))
@@ -6812,7 +8220,7 @@ public class MainActivity extends Activity {
         if (!consumeMonthlySyncUse(list)) {
             if (!syncLimitPromptShown && shellReady && !premiumScreenOpen) {
                 syncLimitPromptShown = true;
-                runOnUiThread(() -> showPremiumScreen("Voce usou as 3 sincronizacoes gratis deste mes. Premium libera sincronizacao ilimitada."));
+                runOnUiThread(() -> showPremiumScreen("Voc\u00ea usou as 3 sincroniza\u00e7\u00f5es gr\u00e1tis deste m\u00eas. Premium libera sincroniza\u00e7\u00e3o ilimitada."));
             }
             return;
         }
@@ -6822,8 +8230,10 @@ public class MainActivity extends Activity {
         WebSocket socket = syncHttpClient.newWebSocket(request, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket webSocket, Response response) {
-                runOnUiThread(() -> syncOpenListIds.add(listId));
-                sendListSyncHello(list);
+                runOnUiThread(() -> {
+                    syncOpenListIds.add(listId);
+                    sendListSyncMessage("snapshot", list);
+                });
             }
 
             @Override
@@ -6844,12 +8254,21 @@ public class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     syncOpenListIds.remove(listId);
                     if (syncSockets.get(listId) == webSocket) syncSockets.remove(listId);
+                    retryListSync(listId);
                 });
             }
         });
         syncSockets.put(listId, socket);
     }
 
+    private void retryListSync(String listId) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            int index = findListIndexById(listId);
+            if (index < 0) return;
+            ShoppingList list = lists.get(index);
+            if (canSyncList(list) && !syncSockets.containsKey(listId)) openListSync(list);
+        }, 5000L);
+    }
     private boolean consumeMonthlySyncUse(ShoppingList list) {
         if (premiumUnlocked || list == null || isBlank(list.id)) return true;
         String monthKey = currentUsageMonthKey();
@@ -6935,11 +8354,50 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void sendFiscalListSyncMessage(ShoppingList channel, ShoppingList imported) {
+        if (channel == null || imported == null || !canSyncList(channel)) return;
+        WebSocket socket = syncSockets.get(channel.id);
+        if (socket == null) return;
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "fiscalList");
+            message.put("clientId", syncClientId);
+            message.put("listId", channel.id);
+            message.put("token", channel.syncToken);
+            message.put("sentAt", System.currentTimeMillis());
+            message.put("list", imported.toJson());
+            socket.send(message.toString());
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private void saveImportedListFromSync(ShoppingList imported) {
+        if (imported == null || imported.items.isEmpty()) return;
+        if (findListIndexById(imported.id) >= 0) return;
+        clearImportedStockLinks(imported);
+        lists.add(0, imported);
+        flashImportedListId = imported.id;
+        save();
+        if (selectedIndex < 0 && homeTab == 0) showHomeScreen();
+        else Toast.makeText(this, "Nota fiscal recebida pela lista compartilhada.", Toast.LENGTH_SHORT).show();
+    }
+
+    private ShoppingList findListById(String id) {
+        int index = findListIndexById(id);
+        return index < 0 ? null : lists.get(index);
+    }
+
     private void handleListSyncMessage(String text) {
         try {
             JSONObject message = new JSONObject(text);
             if (syncClientId.equals(message.optString("clientId"))) return;
-            if (!"snapshot".equals(message.optString("type"))) return;
+            String type = message.optString("type");
+            if ("fiscalList".equals(type)) {
+                ShoppingList incomingFiscal = ShoppingList.fromJson(message.getJSONObject("list"));
+                runOnUiThread(() -> saveImportedListFromSync(incomingFiscal));
+                return;
+            }
+            if (!"snapshot".equals(type)) return;
             ShoppingList incoming = ShoppingList.fromJson(message.getJSONObject("list"));
             if (isBlank(incoming.id) || isBlank(incoming.syncToken)) return;
             runOnUiThread(() -> applyRemoteListSnapshot(incoming));
@@ -6989,8 +8447,8 @@ public class MainActivity extends Activity {
         return payload;
     }
 
-    private String buildEncryptedBackupFileText() throws Exception {
-        String backupLink = BACKUP_BASE + encodeCompressed(buildBackupJson().toString());
+    private String buildEncryptedBackupFileText(int scope) throws Exception {
+        String backupLink = BACKUP_BASE + encodeCompressed(buildBackupJson(scope).toString());
         return BACKUP_FILE_PREFIX + encryptBackupText(backupLink);
     }
 
@@ -7138,7 +8596,81 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void normalizeBackupReferencesAfterImport() {
+        boolean stockChanged = false;
+        for (StockEntry entry : stock) {
+            if (!isBlank(entry.sourceItemId) && findListItemById(entry.sourceItemId) == null) {
+                entry.sourceItemId = "";
+                stockChanged = true;
+            }
+        }
+        if (stockChanged) saveStock();
+
+        boolean spendingChanged = false;
+        for (SpendingRecord record : spendingHistory) {
+            if (!isBlank(record.sourceListId) && findListIndexById(record.sourceListId) < 0) {
+                record.sourceListId = "";
+                spendingChanged = true;
+            }
+            if (!isBlank(record.sourceItemId) && findListItemById(record.sourceItemId) == null) {
+                record.sourceItemId = "";
+                spendingChanged = true;
+            }
+        }
+        if (spendingChanged) saveSpendingHistory();
+    }
+
+    private ShoppingItem findListItemById(String itemId) {
+        if (isBlank(itemId)) return null;
+        for (ShoppingList list : lists) {
+            for (ShoppingItem item : list.items) {
+                if (itemId.equals(item.id)) return item;
+            }
+        }
+        return null;
+    }
+
+    private void refreshCategoryCatalogFromData() {
+        for (ShoppingList list : lists) rememberCategory(list.category);
+        for (ShoppingList list : lists) for (ShoppingItem item : list.items) rememberCategory(item.category);
+        for (StockEntry entry : stock) rememberCategory(entry.category);
+        for (StockEntry entry : stockHistory) rememberCategory(entry.category);
+        for (SpendingRecord record : spendingHistory) rememberCategory(record.category);
+        for (MonthlyBudgetEntry entry : monthlyBudgetEntries) rememberCategory(entry.category);
+        for (ProductCatalogEntry entry : productCatalog) if (!entry.deleted) rememberCategory(entry.category);
+        saveCategoryCatalog();
+    }
+
+    private void mergeProductCatalogEntry(ProductCatalogEntry incoming) {
+        if (incoming == null || isBlank(incoming.name)) return;
+        ProductCatalogEntry target = null;
+        for (ProductCatalogEntry entry : productCatalog) {
+            boolean sameId = !isBlank(incoming.id) && incoming.id.equals(entry.id);
+            boolean sameName = normalize(incoming.name).equals(normalize(entry.name));
+            boolean sameBarcode = !isBlank(incoming.barcode) && !isBlank(entry.barcode) && digitsOnly(incoming.barcode).equals(digitsOnly(entry.barcode));
+            if (sameId || sameName || sameBarcode) {
+                target = entry;
+                break;
+            }
+        }
+        if (target == null) {
+            productCatalog.add(incoming);
+            return;
+        }
+        if (incoming.updatedAt >= target.updatedAt) {
+            target.id = isBlank(incoming.id) ? target.id : incoming.id;
+            target.name = incoming.name;
+            target.price = incoming.price;
+            target.unit = incoming.unit;
+            target.category = incoming.category;
+            target.barcode = incoming.barcode;
+            target.updatedAt = incoming.updatedAt;
+            target.deleted = incoming.deleted;
+        }
+    }
     private void importBackupJson(JSONObject backup) throws JSONException {
+        int scope = backup.optInt("scope", 0);
+        boolean exactRestore = scope == 0 || scope == 1;
         JSONArray listArray = backup.optJSONArray("lists");
         if (listArray != null) {
             for (int i = 0; i < listArray.length(); i++) {
@@ -7185,6 +8717,22 @@ public class MainActivity extends Activity {
         }
 
 
+        JSONArray categoryArray = backup.optJSONArray("categoryCatalog");
+        if (categoryArray != null) {
+            if (exactRestore) categoryCatalog.clear();
+            for (int i = 0; i < categoryArray.length(); i++) rememberCategory(categoryArray.optString(i, ""));
+            saveCategoryCatalog();
+        }
+
+        JSONArray productArray = backup.optJSONArray("productCatalog");
+        if (productArray != null) {
+            if (exactRestore) productCatalog.clear();
+            for (int i = 0; i < productArray.length(); i++) {
+                JSONObject entry = productArray.optJSONObject(i);
+                if (entry != null) mergeProductCatalogEntry(ProductCatalogEntry.fromJson(entry));
+            }
+            saveProductCatalog();
+        }
         JSONObject settings = backup.optJSONObject("settings");
         if (settings != null) {
             themeMode = settings.optInt("themeMode", themeMode);
@@ -7200,6 +8748,9 @@ public class MainActivity extends Activity {
                     .putLong(KEY_MONTHLY_BUDGET_LIMIT, Double.doubleToLongBits(monthlyBudgetLimit))
                     .apply();
         }
+        normalizeBackupReferencesAfterImport();
+        refreshCategoryCatalogFromData();
+        refreshProductCatalogFromData(true);
     }
 
     private void loadStockHistory() {
@@ -7298,6 +8849,7 @@ public class MainActivity extends Activity {
             }
         }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_STOCK, array.toString()).apply();
+        if (stockNotificationsEnabled) StockExpiryReceiver.schedule(this);
     }
 
     private void saveStockHistory() {
@@ -7322,13 +8874,60 @@ public class MainActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_SPENDING_HISTORY, array.toString()).apply();
     }
 
+    private void loadCategoryCatalog() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_CATEGORY_CATALOG, "[]");
+        categoryCatalog.clear();
+        try {
+            JSONArray array = new JSONArray(raw);
+            for (int i = 0; i < array.length(); i++) rememberCategory(array.optString(i, ""));
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private void saveCategoryCatalog() {
+        JSONArray array = new JSONArray();
+        for (String category : categoryCatalog) if (!isBlankCategory(category)) array.put(category.trim());
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_CATEGORY_CATALOG, array.toString()).apply();
+    }
+
+    private void loadProductCatalog() {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_PRODUCT_CATALOG, "[]");
+        productCatalog.clear();
+        try {
+            JSONArray array = new JSONArray(raw);
+            for (int i = 0; i < array.length(); i++) {
+                JSONObject entry = array.optJSONObject(i);
+                if (entry != null) productCatalog.add(ProductCatalogEntry.fromJson(entry));
+            }
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private void saveProductCatalog() {
+        JSONArray array = new JSONArray();
+        for (ProductCatalogEntry entry : productCatalog) {
+            try {
+                array.put(entry.toJson());
+            } catch (JSONException ignored) {
+            }
+        }
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_PRODUCT_CATALOG, array.toString()).apply();
+    }
     private double parsePrice(String raw) {
         if (raw == null) return 0;
-        String cleaned = raw.trim().replace("R$", "").replace(" ", "");
+        String cleaned = raw.trim()
+                .replace('\u00A0', ' ')
+                .replaceAll("[^0-9,.-]", "");
         if (cleaned.isEmpty()) return 0;
-        if (cleaned.contains(",") && cleaned.contains(".")) {
-            cleaned = cleaned.replace(".", "").replace(",", ".");
-        } else {
+        int lastComma = cleaned.lastIndexOf(',');
+        int lastDot = cleaned.lastIndexOf('.');
+        if (lastComma >= 0 && lastDot >= 0) {
+            if (lastComma > lastDot) {
+                cleaned = cleaned.replace(".", "").replace(",", ".");
+            } else {
+                cleaned = cleaned.replace(",", "");
+            }
+        } else if (lastComma >= 0) {
             cleaned = cleaned.replace(",", ".");
         }
         try {
@@ -7404,10 +9003,79 @@ public class MainActivity extends Activity {
         input.setKeyListener(DigitsKeyListener.getInstance("0123456789,."));
     }
 
+    private void setCurrencyInput(EditText input) {
+        input.setRawInputType(InputType.TYPE_CLASS_PHONE);
+        input.addTextChangedListener(new TextWatcher() {
+            private boolean editing;
+
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (editing) return;
+                String digits = s == null ? "" : s.toString().replaceAll("[^0-9]", "");
+                if (digits.length() > 15) digits = digits.substring(0, 15);
+                editing = true;
+                if (digits.isEmpty()) {
+                    input.setText("");
+                } else {
+                    BigDecimal value = new BigDecimal(digits).movePointLeft(2);
+                    input.setText(money.format(value));
+                    input.setSelection(input.getText().length());
+                }
+                editing = false;
+            }
+        });
+    }
+
+    private void setDateInput(EditText input, boolean includeYear) {
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setKeyListener(DigitsKeyListener.getInstance("0123456789"));
+        input.addTextChangedListener(new TextWatcher() {
+            private boolean editing;
+
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (editing) return;
+                String digits = s == null ? "" : s.toString().replaceAll("[^0-9]", "");
+                int max = includeYear ? 8 : 4;
+                if (digits.length() > max) digits = digits.substring(0, max);
+                String formatted = formatDateDigits(digits, includeYear);
+                editing = true;
+                input.setText(formatted);
+                input.setSelection(input.getText().length());
+                editing = false;
+            }
+        });
+    }
+
+    private String formatDateDigits(String digits, boolean includeYear) {
+        if (digits == null) return "";
+        if (digits.length() <= 2) return digits;
+        if (!includeYear || digits.length() <= 4) return digits.substring(0, 2) + "/" + digits.substring(2);
+        return digits.substring(0, 2) + "/" + digits.substring(2, 4) + "/" + digits.substring(4);
+    }
+
     private StyledDialogBuilder dialog() {
         return new StyledDialogBuilder(this);
     }
 
+    private View wrapDialogViewForKeyboard(View view) {
+        if (view == null || view instanceof ScrollView) return view;
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setClipToPadding(false);
+        scroll.setPadding(0, 0, 0, dp(16));
+        if (Build.VERSION.SDK_INT >= 29) scroll.setForceDarkAllowed(false);
+        scroll.addView(view, new ScrollView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        int maxHeight = Math.min(getResources().getDisplayMetrics().heightPixels - statusBarHeight() - dp(180), dp(560));
+        scroll.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(dp(180), maxHeight)));
+        return scroll;
+    }
     private void showAppMessage(String title, String message) {
         dialog()
                 .setTitle(title)
@@ -7421,7 +9089,7 @@ public class MainActivity extends Activity {
         if (window != null) {
             window.setBackgroundDrawable(round(cardBg(), dp(22), stroke(), 1));
             window.setDimAmount(isDarkTheme() ? 0.72f : 0.42f);
-            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE | WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
         }
         View decor = window == null ? null : window.getDecorView();
         if (decor != null) {
@@ -7569,6 +9237,64 @@ public class MainActivity extends Activity {
         return formatShortDate(entry.addedAt) + " - H\u00e1 " + days + (days == 1 ? " dia" : " dias");
     }
 
+    private int expiryColor(StockEntry entry) {
+        long days = daysUntilExpiry(entry);
+        if (days < 0) return Color.rgb(225, 29, 72);
+        if (days <= stockExpiryNoticeDays) return Color.rgb(234, 179, 8);
+        return Color.rgb(22, 163, 74);
+    }
+
+    private String formatExpiryStatus(StockEntry entry) {
+        long days = daysUntilExpiry(entry);
+        String date = formatShortDate(entry.expiryAt);
+        if (days < 0) {
+            long late = Math.abs(days);
+            return "Validade: " + date + " - vencido h\u00e1 " + late + (late == 1 ? " dia" : " dias");
+        }
+        if (days == 0) return "Validade: " + date + " - vence hoje";
+        return "Validade: " + date + " - faltam " + days + (days == 1 ? " dia" : " dias");
+    }
+
+    private long daysUntilExpiry(StockEntry entry) {
+        if (entry == null || entry.expiryAt <= 0) return Long.MAX_VALUE;
+        long today = startOfDay(System.currentTimeMillis());
+        long expiry = startOfDay(entry.expiryAt);
+        return (expiry - today) / 86400000L;
+    }
+
+    private long startOfDay(long when) {
+        Calendar date = Calendar.getInstance();
+        date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
+        date.set(Calendar.HOUR_OF_DAY, 0);
+        date.set(Calendar.MINUTE, 0);
+        date.set(Calendar.SECOND, 0);
+        date.set(Calendar.MILLISECOND, 0);
+        return date.getTimeInMillis();
+    }
+
+    private long parseBrazilDateEndOfDay(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return 0;
+        Matcher matcher = Pattern.compile("^(\\d{1,2})/(\\d{1,2})/(\\d{2}|\\d{4})$").matcher(raw.trim());
+        if (!matcher.matches()) return -1;
+        int day = Integer.parseInt(matcher.group(1));
+        int month = Integer.parseInt(matcher.group(2));
+        int year = Integer.parseInt(matcher.group(3));
+        if (year < 100) year += 2000;
+        Calendar date = Calendar.getInstance();
+        date.setLenient(false);
+        date.set(Calendar.YEAR, year);
+        date.set(Calendar.MONTH, month - 1);
+        date.set(Calendar.DAY_OF_MONTH, day);
+        date.set(Calendar.HOUR_OF_DAY, 23);
+        date.set(Calendar.MINUTE, 59);
+        date.set(Calendar.SECOND, 59);
+        date.set(Calendar.MILLISECOND, 0);
+        try {
+            return date.getTimeInMillis();
+        } catch (IllegalArgumentException ignored) {
+            return -1;
+        }
+    }
     private String formatShortDate(long when) {
         Calendar date = Calendar.getInstance();
         date.setTimeInMillis(when <= 0 ? System.currentTimeMillis() : when);
@@ -7629,6 +9355,12 @@ public class MainActivity extends Activity {
 
     private String monthKey(Calendar cal) {
         return String.format(Locale.ROOT, "%02d/%04d", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR));
+    }
+
+    private void disablePlatformForcedDark() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            getWindow().getDecorView().setForceDarkAllowed(false);
+        }
     }
 
     private void applySystemBars() {
@@ -7701,6 +9433,8 @@ public class MainActivity extends Activity {
             showCompraInvaders();
         } else if (homeTab == 9) {
             showMonthlyBudgetScreen();
+        } else if (homeTab == 10) {
+            showRegistryScreen();
         } else {
             showHomeScreen();
         }
@@ -8183,7 +9917,53 @@ public class MainActivity extends Activity {
         }
     }
 
-    private static class ProductSuggestion {
+
+    private static class CategoryRow {
+        final String name;
+        final String usage;
+
+        CategoryRow(String name, String usage) {
+            this.name = name == null ? "" : name;
+            this.usage = usage == null ? "" : usage;
+        }
+    }
+
+    private static class ProductCatalogEntry {
+        String id = UUID.randomUUID().toString();
+        String name = "";
+        double price;
+        String unit = "1";
+        String category = "";
+        String barcode = "";
+        long updatedAt = System.currentTimeMillis();
+        boolean deleted;
+
+        JSONObject toJson() throws JSONException {
+            JSONObject json = new JSONObject();
+            json.put("id", id);
+            json.put("name", name);
+            json.put("price", price);
+            json.put("unit", unit);
+            json.put("category", category);
+            json.put("barcode", barcode);
+            json.put("updatedAt", updatedAt);
+            json.put("deleted", deleted);
+            return json;
+        }
+
+        static ProductCatalogEntry fromJson(JSONObject json) {
+            ProductCatalogEntry entry = new ProductCatalogEntry();
+            entry.id = json.optString("id", UUID.randomUUID().toString());
+            entry.name = json.optString("name", "");
+            entry.price = json.optDouble("price", 0);
+            entry.unit = json.optString("unit", "1");
+            entry.category = json.optString("category", "");
+            entry.barcode = json.optString("barcode", "");
+            entry.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
+            entry.deleted = json.optBoolean("deleted", false);
+            return entry;
+        }
+    }    private static class ProductSuggestion {
         final String name;
         final double price;
         final String unit;
@@ -8247,6 +10027,7 @@ public class MainActivity extends Activity {
         String id = UUID.randomUUID().toString();
         String syncToken = "";
         String name;
+        String category = "";
         int color;
         double budget;
         long createdAt = System.currentTimeMillis();
@@ -8269,6 +10050,7 @@ public class MainActivity extends Activity {
             json.put("id", id);
             json.put("syncToken", syncToken);
             json.put("name", name);
+            json.put("category", category);
             json.put("color", color);
             json.put("budget", budget);
             json.put("createdAt", createdAt);
@@ -8290,6 +10072,7 @@ public class MainActivity extends Activity {
             ShoppingList list = new ShoppingList(json.optString("name", "Lista"));
             list.id = json.optString("id", UUID.randomUUID().toString());
             list.syncToken = json.optString("syncToken", "");
+            list.category = json.optString("category", "");
             list.color = json.optInt("color", 0);
             list.budget = json.optDouble("budget", 0);
             list.createdAt = json.optLong("createdAt", System.currentTimeMillis());
@@ -9457,17 +11240,22 @@ public class MainActivity extends Activity {
         }
 
         @Override
+        public AlertDialog.Builder setView(View view) {
+            return super.setView(wrapDialogViewForKeyboard(view));
+        }
+        @Override
         public AlertDialog.Builder setItems(CharSequence[] items, DialogInterface.OnClickListener listener) {
             ArrayAdapter<CharSequence> adapter = new ArrayAdapter<CharSequence>(MainActivity.this, android.R.layout.simple_list_item_1, items) {
                 @Override
                 public View getView(int position, View convertView, ViewGroup parent) {
                     View view = super.getView(position, convertView, parent);
                     view.setBackgroundColor(cardBg());
-                    view.setPadding(dp(10), dp(6), dp(10), dp(6));
+                    view.setPadding(dp(18), dp(14), dp(18), dp(14));
+                    view.setMinimumHeight(dp(58));
                     if (view instanceof TextView) {
                         TextView text = (TextView) view;
                         text.setTextColor(isDarkTheme() ? Color.rgb(226, 232, 240) : primaryText());
-                        text.setTextSize(16);
+                        text.setTextSize(17);
                         text.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
                     }
                     return view;
@@ -9494,7 +11282,7 @@ public class MainActivity extends Activity {
                         text.setTextColor(position == checkedItem
                                 ? (isDarkTheme() ? CheckMercadoNeonUi.GREEN : accent())
                                 : (isDarkTheme() ? Color.rgb(226, 232, 240) : primaryText()));
-                        text.setTextSize(16);
+                        text.setTextSize(17);
                         text.setTypeface(Typeface.DEFAULT, position == checkedItem ? Typeface.BOLD : Typeface.NORMAL);
                     }
                     return view;
@@ -9557,8 +11345,12 @@ public class MainActivity extends Activity {
         String unit;
         String note = "";
         String barcode = "";
+        String category = "";
         long updatedAt;
         String stockId = "";
+        String photoUrl = "";
+        String photoId = "";
+        long photoExpiresAt;
         final List<ItemEditEntry> editHistory = new ArrayList<>();
 
         ShoppingItem(String name, double price, String unit) {
@@ -9578,8 +11370,12 @@ public class MainActivity extends Activity {
             json.put("unit", unit);
             json.put("note", note);
             json.put("barcode", barcode);
+            json.put("category", category);
             json.put("updatedAt", updatedAt);
             json.put("stockId", stockId);
+            json.put("photoUrl", photoUrl);
+            json.put("photoId", photoId);
+            json.put("photoExpiresAt", photoExpiresAt);
             JSONArray history = new JSONArray();
             for (ItemEditEntry entry : editHistory) history.put(entry.toJson());
             json.put("editHistory", history);
@@ -9597,8 +11393,12 @@ public class MainActivity extends Activity {
             item.removed = json.optBoolean("removed", false);
             item.note = json.optString("note", "");
             item.barcode = json.optString("barcode", "");
+            item.category = json.optString("category", "");
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             item.stockId = json.optString("stockId", "");
+            item.photoUrl = json.optString("photoUrl", "");
+            item.photoId = json.optString("photoId", "");
+            item.photoExpiresAt = json.optLong("photoExpiresAt", 0);
             JSONArray history = json.optJSONArray("editHistory");
             if (history != null) {
                 for (int i = 0; i < history.length(); i++) {
@@ -9717,6 +11517,7 @@ public class MainActivity extends Activity {
         long addedAt;
         long updatedAt;
         long consumedAt;
+        long expiryAt;
         String sourceItemId = "";
         String category = "Outros";
 
@@ -9739,6 +11540,7 @@ public class MainActivity extends Activity {
             json.put("addedAt", addedAt);
             json.put("updatedAt", updatedAt);
             json.put("consumedAt", consumedAt);
+            json.put("expiryAt", expiryAt);
             json.put("sourceItemId", sourceItemId);
             json.put("category", category);
             return json;
@@ -9755,6 +11557,7 @@ public class MainActivity extends Activity {
             entry.id = json.optString("id", UUID.randomUUID().toString());
             entry.updatedAt = json.optLong("updatedAt", entry.addedAt);
             entry.consumedAt = json.optLong("consumedAt", 0);
+            entry.expiryAt = json.optLong("expiryAt", 0);
             entry.sourceItemId = json.optString("sourceItemId", "");
             entry.category = json.optString("category", "Outros");
             return entry;

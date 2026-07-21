@@ -8,5 +8,6 @@
         <item name="android:textColorPrimary">#0F172A</item>
         <item name="android:textColorSecondary">#475569</item>
         <item name="android:windowNoTitle">true</item>
+        <item name="android:forceDarkAllowed">false</item>
     </style>
 </resources>

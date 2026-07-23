@@ -4122,11 +4122,16 @@ public class MainActivity extends Activity {
             String accessKey = extractFiscalAccessKeyFromUrl(url);
             Exception lastError = null;
             boolean blockedByCaptcha = false;
+            boolean invalidQrPage = false;
             for (String candidate : fiscalUrlCandidates(url)) {
                 try {
                     lastContent = downloadText(candidate);
                     if (isFiscalCaptchaPage(lastContent)) {
                         blockedByCaptcha = true;
+                        continue;
+                    }
+                    if (isFiscalInvalidQrPage(lastContent)) {
+                        invalidQrPage = true;
                         continue;
                     }
                     ShoppingList imported = parseFiscalNote(lastContent);
@@ -4136,8 +4141,9 @@ public class MainActivity extends Activity {
                     lastError = e;
                 }
             }
-            if (blockedByCaptcha || isSslTrustError(lastError)) {
-                runOnUiThread(() -> showFiscalCaptchaScreen(url, accessKey));
+            if (blockedByCaptcha || invalidQrPage || isSslTrustError(lastError)) {
+                String lookupUrl = fiscalManualLookupUrl(url, accessKey);
+                runOnUiThread(() -> showFiscalCaptchaScreen(lookupUrl, accessKey));
                 return;
             }
             String page = lastContent;
@@ -4239,7 +4245,7 @@ public class MainActivity extends Activity {
         });
         screen.addView(webView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(screen);
-        webView.loadUrl(url.replace("|", "%7C"));
+        webView.loadUrl(url.replace(" ", "%20"));
     }
 
     private void importFiscalHtmlFromWebView(WebView view, boolean[] imported) {
@@ -4316,6 +4322,27 @@ public class MainActivity extends Activity {
         String raw = html.toLowerCase(Locale.ROOT);
         return raw.contains("txt_chave_acesso")
                 && (raw.contains("txt_cod_antirobo") || raw.contains("img_captcha") || raw.contains("anti_robo"));
+    }
+
+    private boolean isFiscalInvalidQrPage(String html) {
+        if (html == null) return false;
+        String raw = normalize(cleanFiscalText(html));
+        return raw.contains("qrcode")
+                && (raw.contains("identificador") || raw.contains("csc") || raw.contains("inexistente") || raw.contains("invalido"));
+    }
+
+    private String fiscalManualLookupUrl(String originalUrl, String accessKey) {
+        if (isBlank(originalUrl)) return originalUrl;
+        try {
+            Uri uri = Uri.parse(originalUrl);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            if (host.contains("sefaz.ba.gov.br") && !isBlank(accessKey)) {
+                String targetHost = host.startsWith("hnfe.") ? "hnfe.sefaz.ba.gov.br" : "nfe.sefaz.ba.gov.br";
+                return "http://" + targetHost + "/servicos/nfce/modulos/geral/NFCEC_consulta_chave_acesso.aspx";
+            }
+        } catch (Exception ignored) {
+        }
+        return originalUrl;
     }
 
     private String extractFiscalAccessKeyFromUrl(String url) {

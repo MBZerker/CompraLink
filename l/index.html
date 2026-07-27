@@ -1,0 +1,223 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Abrir lista Check Mercado</title>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Lista de compras Check Mercado">
+  <meta property="og:description" content="Toque para abrir esta lista compartilhada no Check Mercado.">
+  <meta property="og:image" content="https://mbzerker.github.io/CompraLink/assets/social-preview.png">
+  <meta property="og:url" content="https://mbzerker.github.io/CompraLink/l/">
+  <meta name="twitter:card" content="summary_large_image">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f0fdfa;
+      --ink: #0f172a;
+      --muted: #475569;
+      --card: #ffffff;
+      --brand: #0f766e;
+      --brand-2: #14b8a6;
+      --line: #ccfbf1;
+      --yellow: #facc15;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(20, 184, 166, .22), transparent 34rem),
+        linear-gradient(135deg, #ecfeff 0%, #f8fafc 48%, #fefce8 100%);
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      padding: 22px;
+    }
+    main {
+      width: min(920px, 100%);
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(280px, .95fr);
+      gap: 22px;
+      align-items: stretch;
+    }
+    .hero, .panel {
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 22px 70px rgba(15, 23, 42, .14);
+      overflow: hidden;
+    }
+    .hero {
+      min-height: 420px;
+      display: flex;
+      flex-direction: column;
+    }
+    .hero img {
+      width: 100%;
+      min-height: 280px;
+      object-fit: cover;
+      display: block;
+    }
+    .hero-copy {
+      padding: 22px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #ccfbf1;
+      color: #115e59;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    h1 {
+      margin: 14px 0 10px;
+      color: var(--brand);
+      font-size: clamp(30px, 6vw, 52px);
+      line-height: 1;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 16px;
+    }
+    .panel {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 14px;
+    }
+    .status {
+      padding: 14px;
+      border-radius: 16px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin-top: 6px;
+    }
+    a.button {
+      display: block;
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      text-align: center;
+      text-decoration: none;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+    .primary {
+      background: var(--brand);
+      color: white;
+    }
+    .secondary {
+      border: 1px solid #99f6e4;
+      background: #f0fdfa;
+      color: #115e59;
+    }
+    .note {
+      font-size: 13px;
+      color: #64748b;
+    }
+    .steps {
+      margin: 0;
+      padding-left: 20px;
+      color: #334155;
+      line-height: 1.55;
+      font-size: 14px;
+    }
+    .hidden { display: none; }
+    @media (max-width: 760px) {
+      main { grid-template-columns: 1fr; }
+      .hero { min-height: 0; }
+      .hero img { min-height: 220px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <img src="../assets/social-preview.png" alt="">
+      <div class="hero-copy">
+        <span class="badge">Check Mercado</span>
+        <h1>Lista compartilhada</h1>
+        <p>Abra a lista no app para salvar os produtos, marcar itens e comparar precos com compras anteriores.</p>
+      </div>
+    </section>
+    <section class="panel">
+      <div class="status" id="status">Tentando abrir o Check Mercado...</div>
+      <ol class="steps" id="steps">
+        <li>Baixe e instale o APK.</li>
+        <li>Volte para esta tela.</li>
+        <li>Toque em <strong>Abrir e salvar lista no app</strong>.</li>
+      </ol>
+      <div class="actions">
+        <a class="button primary" id="open" href="#">Abrir e salvar lista no app</a>
+        <a class="button secondary" id="download" href="../CompraLink.apk">Baixar Check Mercado APK</a>
+      </div>
+      <p class="note">Depois de instalar, volte para esta pagina e toque em Abrir e salvar lista no app.</p>
+    </section>
+  </main>
+  <script>
+    const payload = new URLSearchParams(location.search).get("payload") || "";
+    const appUrl = "compralink://list?payload=" + encodeURIComponent(payload);
+    const open = document.getElementById("open");
+    const download = document.getElementById("download");
+    const status = document.getElementById("status");
+    const steps = document.getElementById("steps");
+    open.href = appUrl;
+    if (payload) {
+      localStorage.setItem("compralink:lastPayload", payload);
+      download.href = "../CompraLink.apk?from=shared-list";
+    }
+    function tryOpenApp() {
+      if (!payload) return;
+      location.href = appUrl;
+    }
+    open.addEventListener("click", function () {
+      status.textContent = "Abrindo o Check Mercado para salvar a lista...";
+    });
+    async function copySharedLink() {
+      if (!payload || !navigator.clipboard) return false;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+    download.addEventListener("click", async function () {
+      const copied = await copySharedLink();
+      status.textContent = copied
+        ? "Link copiado. Instale o app, volte para esta pagina e toque em Abrir e salvar lista no app."
+        : "Instale o app. Depois volte aqui e toque em Abrir e salvar lista no app.";
+    });
+    if (payload) {
+      steps.classList.remove("hidden");
+      setTimeout(tryOpenApp, 300);
+      setTimeout(() => {
+        status.textContent = "Se voce ainda esta vendo esta tela, instale o app. Depois volte aqui e toque em Abrir e salvar lista no app.";
+      }, 1800);
+    } else {
+      steps.classList.add("hidden");
+      status.textContent = "Este link nao trouxe uma lista valida, mas voce ainda pode baixar o app.";
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && payload) {
+        status.textContent = "Se o app ja foi instalado, toque em Abrir e salvar lista no app.";
+      }
+    });
+  </script>
+</body>
+</html>
+

@@ -22,6 +22,7 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.Camera;
 import android.net.Uri;
@@ -173,6 +174,7 @@ public class MainActivity extends Activity {
     private static final String KEY_STOCK_HISTORY_PENDING = "stock_history_pending";
     private static final String KEY_STOCK_HISTORY_SORT_DESC = "stock_history_sort_desc";
     private static final String KEY_STOCK_SORT_MODE = "stock_sort_mode";
+    private static final String KEY_STOCK_SORT_DESC = "stock_sort_desc";
     private static final String KEY_STOCK_NOTIFICATIONS_ENABLED = "stock_notifications_enabled";
     private static final String KEY_STOCK_EXPIRY_NOTICE_DAYS = "stock_expiry_notice_days";
     private static final String KEY_SYNC_NOTIFICATIONS_ENABLED = "sync_notifications_enabled";
@@ -214,6 +216,7 @@ public class MainActivity extends Activity {
     private static final int STOCK_SORT_PRICE = 3;
     private static final int STOCK_SORT_CATEGORY = 4;
     private static final int STOCK_SORT_DAYS = 5;
+    private static final int STOCK_SORT_EXPIRY = 6;
     private static final int REQUEST_QR_SCAN = 9021;
     private static final int REQUEST_CAMERA_PERMISSION = 9022;
     private static final int REQUEST_BACKUP_SAVE = 9023;
@@ -262,6 +265,7 @@ public class MainActivity extends Activity {
     private boolean stockHistoryPending;
     private boolean stockHistorySortDesc = true;
     private int stockSortMode = STOCK_SORT_DATE;
+    private boolean stockSortDesc = true;
     private final LinkedHashSet<String> selectedStockIds = new LinkedHashSet<>();
     private final Map<String, Integer> scrollPositions = new HashMap<>();
     private TextView stockSelectionStatus;
@@ -293,6 +297,7 @@ public class MainActivity extends Activity {
     private boolean premiumUnlocked;
     private boolean premiumScreenOpen;
     private boolean playUpdateAvailable;
+    private boolean manualPlayUpdateCheck;
     private boolean updatePromptShown;
     private boolean syncLimitPromptShown;
     private boolean stockNotificationsEnabled;
@@ -314,6 +319,7 @@ public class MainActivity extends Activity {
         stockHistoryPending = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_PENDING, false);
         stockHistorySortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_HISTORY_SORT_DESC, true);
         stockSortMode = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_STOCK_SORT_MODE, STOCK_SORT_DATE);
+        stockSortDesc = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_SORT_DESC, true);
         premiumUnlocked = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_PREMIUM_UNLOCKED, false);
         stockNotificationsEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_STOCK_NOTIFICATIONS_ENABLED, false);
         syncNotificationsEnabled = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_SYNC_NOTIFICATIONS_ENABLED, false);
@@ -2395,10 +2401,12 @@ public class MainActivity extends Activity {
 
     private void checkForPlayUpdate(boolean promptUser) {
         initPlayUpdates();
+        final boolean manual = manualPlayUpdateCheck;
         appUpdateManager.getAppUpdateInfo().addOnSuccessListener(info -> {
             int availability = info.updateAvailability();
             if (availability == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS
                     && info.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE)) {
+                manualPlayUpdateCheck = false;
                 pendingPlayUpdate = info;
                 playUpdateAvailable = true;
                 startPlayUpdate();
@@ -2409,12 +2417,22 @@ public class MainActivity extends Activity {
             playUpdateAvailable = available;
             pendingPlayUpdate = available ? info : null;
             if (available && promptUser && shellReady && !updatePromptShown) {
+                manualPlayUpdateCheck = false;
                 updatePromptShown = true;
                 promptPlayUpdate();
+            } else if (manual) {
+                manualPlayUpdateCheck = false;
+                showAppMessage("Atualização", available
+                        ? "Atualização encontrada. Toque em Ver atualizações novamente para iniciar."
+                        : "Você já está usando a versão mais recente disponível pela Play Store.");
             }
         }).addOnFailureListener(error -> {
             playUpdateAvailable = false;
             pendingPlayUpdate = null;
+            if (manualPlayUpdateCheck) {
+                manualPlayUpdateCheck = false;
+                showAppMessage("Atualização", "Não foi possível verificar atualizações agora. Tente novamente em instantes.");
+            }
         });
     }
 
@@ -2430,6 +2448,8 @@ public class MainActivity extends Activity {
     private void startPlayUpdate() {
         if (appUpdateManager == null) initPlayUpdates();
         if (pendingPlayUpdate == null) {
+            manualPlayUpdateCheck = true;
+            Toast.makeText(this, "Verificando atualizações...", Toast.LENGTH_SHORT).show();
             checkForPlayUpdate(true);
             return;
         }
@@ -3564,7 +3584,7 @@ public class MainActivity extends Activity {
             TextView marker = label(selected ? "Selecionado" : "", 13, true, accent());
             marker.setPadding(0, selected ? dp(3) : 0, 0, 0);
             card.addView(marker);
-            applyStockSelectionState(card, marker, selected);
+            applyStockSelectionState(card, marker, selected, entry);
             card.setOnClickListener(v -> toggleStockSelection(entry, card, marker));
             String price = entry.price > 0 ? money.format(entry.price) : "sem preco";
             String total = entry.price > 0 ? money.format(entry.price * entry.quantity) : "sem preco";
@@ -3574,6 +3594,12 @@ public class MainActivity extends Activity {
             LinearLayout duration = iconText(R.drawable.ic_calendar_tiny, formatStockAge(entry), 14, false, accent(), accent());
             duration.setPadding(0, dp(5), 0, 0);
             card.addView(duration);
+            if (entry.expiryAt > 0) {
+                int expColor = expiryColor(entry);
+                LinearLayout expiry = iconText(R.drawable.ic_calendar_tiny, formatExpiryStatus(entry), 13, true, expColor, expColor);
+                expiry.setPadding(0, dp(4), 0, 0);
+                card.addView(expiry);
+            }
             LinearLayout category = iconText(R.drawable.ic_tag_tiny, "Categoria: " + categoryOf(entry), 13, false, mutedText(), mutedText());
             category.setPadding(0, dp(4), 0, 0);
             card.addView(category);
@@ -3597,16 +3623,25 @@ public class MainActivity extends Activity {
         } else {
             selectedStockIds.add(entry.id);
         }
-        applyStockSelectionState(card, marker, selectedStockIds.contains(entry.id));
+        applyStockSelectionState(card, marker, selectedStockIds.contains(entry.id), entry);
         updateStockSelectionStatus();
     }
 
-    private void applyStockSelectionState(LinearLayout card, TextView marker, boolean selected) {
-        card.setBackground(selected ? selectedCardBg() : glassCardBg(0));
+    private void applyStockSelectionState(LinearLayout card, TextView marker, boolean selected, StockEntry entry) {
+        card.setBackground(selected ? selectedCardBg() : stockCardBg(entry));
         if (marker != null) {
             marker.setText(selected ? "Selecionado" : "");
             marker.setPadding(0, selected ? dp(3) : 0, 0, 0);
         }
+    }
+
+    private Drawable stockCardBg(StockEntry entry) {
+        if (entry != null && entry.expiryAt > 0) {
+            long days = daysUntilExpiry(entry);
+            if (days < 0) return glassCardBg(Color.rgb(225, 29, 72));
+            if (days <= stockExpiryNoticeDays) return glassCardBg(Color.rgb(234, 179, 8));
+        }
+        return glassCardBg(0);
     }
 
     private void pruneSelectedStockIds() {
@@ -3625,35 +3660,94 @@ public class MainActivity extends Activity {
 
     private void sortStockRows(List<StockEntry> rows) {
         Collections.sort(rows, (a, b) -> {
+            int result;
             switch (stockSortMode) {
                 case STOCK_SORT_NAME:
-                    return normalize(a.name).compareTo(normalize(b.name));
+                    result = normalize(a.name).compareTo(normalize(b.name));
+                    break;
                 case STOCK_SORT_QUANTITY:
-                    return Double.compare(b.quantity, a.quantity);
+                    result = Double.compare(a.quantity, b.quantity);
+                    break;
                 case STOCK_SORT_PRICE:
-                    return Double.compare(b.price, a.price);
+                    result = Double.compare(a.price, b.price);
+                    break;
                 case STOCK_SORT_CATEGORY:
-                    return normalize(categoryOf(a)).compareTo(normalize(categoryOf(b)));
+                    result = normalize(categoryOf(a)).compareTo(normalize(categoryOf(b)));
+                    break;
                 case STOCK_SORT_DAYS:
-                    return Long.compare(stockDays(b), stockDays(a));
+                    result = Long.compare(stockDays(a), stockDays(b));
+                    break;
+                case STOCK_SORT_EXPIRY:
+                    result = Long.compare(expirySortValue(a), expirySortValue(b));
+                    break;
                 case STOCK_SORT_DATE:
                 default:
-                    return Long.compare(b.addedAt, a.addedAt);
+                    result = Long.compare(a.addedAt, b.addedAt);
+                    break;
             }
+            return stockSortDesc ? -result : result;
         });
     }
 
     private void promptStockSort() {
-        String[] options = new String[]{"Data", "Nome", "Unidade", "Pre\u00e7o", "Categoria", "Dias"};
-        int[] modes = new int[]{STOCK_SORT_DATE, STOCK_SORT_NAME, STOCK_SORT_QUANTITY, STOCK_SORT_PRICE, STOCK_SORT_CATEGORY, STOCK_SORT_DAYS};
+        String[] options = new String[]{"Data", "Nome", "Unidade", "Preço", "Categoria", "Dias", "Validade"};
+        int[] modes = new int[]{STOCK_SORT_DATE, STOCK_SORT_NAME, STOCK_SORT_QUANTITY, STOCK_SORT_PRICE, STOCK_SORT_CATEGORY, STOCK_SORT_DAYS, STOCK_SORT_EXPIRY};
+        LinearLayout list = dialogForm();
+        for (int i = 0; i < options.length; i++) {
+            final int mode = modes[i];
+            final String label = options[i];
+            list.addView(sortOptionRow(label, mode, () -> {
+                if (stockSortMode == mode) {
+                    stockSortDesc = !stockSortDesc;
+                } else {
+                    stockSortMode = mode;
+                    stockSortDesc = defaultStockSortDesc(mode);
+                }
+                getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putInt(KEY_STOCK_SORT_MODE, stockSortMode)
+                        .putBoolean(KEY_STOCK_SORT_DESC, stockSortDesc)
+                        .apply();
+                showStockWindow(false);
+            }), matchWrapWithTop(i == 0 ? 0 : dp(6)));
+        }
         dialog()
                 .setTitle("Ordenar despensa")
-                .setItems(options, (dialog, which) -> {
-                    stockSortMode = modes[which];
-                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(KEY_STOCK_SORT_MODE, stockSortMode).apply();
-                    showStockWindow(false);
-                })
+                .setView(list)
                 .show();
+    }
+
+    private View sortOptionRow(String text, int mode, Runnable action) {
+        boolean active = stockSortMode == mode;
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setBackground(round(active ? withAlpha(accent(), isDarkTheme() ? 54 : 28) : inputBg(), dp(12), active ? accent() : stroke(), 1));
+        row.setOnClickListener(v -> action.run());
+
+        TextView check = label(active ? "✓" : "", 16, true, active ? accent() : mutedText());
+        check.setGravity(Gravity.CENTER);
+        row.addView(check, new LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        TextView label = label(text, 15, true, active ? accent() : primaryText());
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        if (active) {
+            ImageView arrow = new ImageView(this);
+            arrow.setImageResource(stockSortDesc ? R.drawable.ic_arrow_down : R.drawable.ic_arrow_up);
+            arrow.setColorFilter(accent());
+            row.addView(arrow, new LinearLayout.LayoutParams(dp(22), dp(22)));
+        }
+        return row;
+    }
+
+    private boolean defaultStockSortDesc(int mode) {
+        return mode == STOCK_SORT_DATE || mode == STOCK_SORT_QUANTITY || mode == STOCK_SORT_PRICE || mode == STOCK_SORT_DAYS;
+    }
+
+    private long expirySortValue(StockEntry entry) {
+        if (entry == null || entry.expiryAt <= 0) return Long.MAX_VALUE;
+        return daysUntilExpiry(entry);
     }
 
     private void addSpendingScreen() {
@@ -6367,6 +6461,12 @@ public class MainActivity extends Activity {
             category.setPadding(0, dp(2), 0, 0);
             itemText.addView(category, matchWrap());
         }
+        if (item.expiryAt > 0) {
+            int expColor = expiryColor(item.expiryAt);
+            LinearLayout expiry = iconText(R.drawable.ic_calendar_tiny, formatExpiryStatus(item.expiryAt), 12, true, expColor, expColor);
+            expiry.setPadding(0, dp(2), 0, 0);
+            itemText.addView(expiry, matchWrap());
+        }
 
         TextView price = new TextView(this);
         price.setText(priceText);
@@ -6518,6 +6618,8 @@ public class MainActivity extends Activity {
         configureSelectAll(unit);
         AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         setupItemCategorySuggestions(category);
+        EditText expiry = dialogInput("Validade (DD/MM/AAAA)", InputType.TYPE_CLASS_DATETIME);
+        setDateInput(expiry, true);
         EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         note.setSingleLine(false);
         note.setMinLines(2);
@@ -6543,6 +6645,7 @@ public class MainActivity extends Activity {
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
         form.addView(category, matchWrapWithTop(dp(8)));
+        form.addView(expiry, matchWrapWithTop(dp(8)));
         form.addView(note, matchWrapWithTop(dp(8)));
         dialog()
                 .setTitle("Adicionar item")
@@ -6555,6 +6658,12 @@ public class MainActivity extends Activity {
                     ShoppingItem item = new ShoppingItem(text, parsePrice(price.getText().toString()), unitText);
                     item.note = note.getText().toString().trim();
                     item.category = category.getText().toString().trim();
+                    long expiryAt = parseBrazilDateEndOfDay(expiry.getText().toString());
+                    if (expiryAt < 0) {
+                        showAppMessage("Validade", "Use o formato DD/MM/AAAA ou deixe o campo vazio.");
+                        return;
+                    }
+                    item.expiryAt = expiryAt;
                     item.barcode = cleanBarcode;
                     ShoppingList list = lists.get(selectedIndex);
                     list.items.add(item);
@@ -6776,6 +6885,7 @@ public class MainActivity extends Activity {
                 existing.quantity = amount;
                 existing.unit = unit == null || unit.isEmpty() ? "un" : unit;
                 existing.price = item.price;
+                existing.expiryAt = item.expiryAt;
                 existing.updatedAt = now;
                 if (isBlankCategory(existing.category)) existing.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
                 saveStock();
@@ -6788,6 +6898,7 @@ public class MainActivity extends Activity {
             linked.quantity = amount;
             linked.unit = unit == null || unit.isEmpty() ? "un" : unit;
             linked.price = item.price;
+            linked.expiryAt = item.expiryAt;
             linked.updatedAt = now;
             if (isBlankCategory(linked.category)) linked.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
             item.stockId = linked.id;
@@ -6795,6 +6906,7 @@ public class MainActivity extends Activity {
             return;
         }
         StockEntry entry = new StockEntry(item.name, amount, unit, item.price, now);
+        entry.expiryAt = item.expiryAt;
         entry.sourceItemId = item.id;
         entry.category = !isBlank(item.category) ? item.category : latestCategoryForProduct(item.name);
         stock.add(0, entry);
@@ -6913,6 +7025,7 @@ public class MainActivity extends Activity {
         String oldUnit = safeText(item.unit);
         String oldNote = safeText(item.note);
         String oldCategory = safeText(item.category);
+        long oldExpiry = item.expiryAt;
         LinearLayout form = dialogForm();
         AutoCompleteTextView name = dialogAutoCompleteInput("Produto", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         name.setText(item.name);
@@ -6927,6 +7040,12 @@ public class MainActivity extends Activity {
         AutoCompleteTextView category = dialogAutoCompleteInput("Categoria", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         category.setText(item.category == null ? "" : item.category);
         setupItemCategorySuggestions(category);
+        EditText expiry = dialogInput("Validade (DD/MM/AAAA)", InputType.TYPE_CLASS_DATETIME);
+        setDateInput(expiry, true);
+        if (item.expiryAt > 0) {
+            expiry.setText(formatShortDate(item.expiryAt));
+            expiry.setSelection(expiry.getText().length());
+        }
         EditText note = dialogInput("Nota", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         note.setSingleLine(false);
         note.setMinLines(2);
@@ -6936,6 +7055,7 @@ public class MainActivity extends Activity {
         form.addView(price, matchWrapWithTop(dp(8)));
         form.addView(unit, matchWrapWithTop(dp(8)));
         form.addView(category, matchWrapWithTop(dp(8)));
+        form.addView(expiry, matchWrapWithTop(dp(8)));
         form.addView(note, matchWrapWithTop(dp(8)));
         dialog()
                 .setTitle("Editar item")
@@ -6948,25 +7068,33 @@ public class MainActivity extends Activity {
                     if (newUnit.isEmpty()) newUnit = "1";
                     String newNote = note.getText().toString().trim();
                     String newCategory = category.getText().toString().trim();
+                    long newExpiry = parseBrazilDateEndOfDay(expiry.getText().toString());
+                    if (newExpiry < 0) {
+                        showAppMessage("Validade", "Use o formato DD/MM/AAAA ou deixe o campo vazio.");
+                        return;
+                    }
                     long editedAt = System.currentTimeMillis();
                     ShoppingList list = selectedIndex >= 0 ? lists.get(selectedIndex) : null;
                     boolean changed = itemEditChanged(oldName, newName)
                             || Math.abs(oldPrice - newPrice) > 0.000001
                             || itemEditChanged(oldUnit.isEmpty() ? "1" : oldUnit, newUnit)
                             || itemEditChanged(oldNote, newNote)
-                            || itemEditChanged(oldCategory, newCategory);
+                            || itemEditChanged(oldCategory, newCategory)
+                            || oldExpiry != newExpiry;
                     if (changed && isSharedList(list)) {
                         addItemEditHistory(item, "Produto", oldName, newName, editedAt);
                         addItemEditHistory(item, "Pre\u00e7o", formatEditPrice(oldPrice), formatEditPrice(newPrice), editedAt);
                         addItemEditHistory(item, "Un", oldUnit.isEmpty() ? "1" : oldUnit, newUnit, editedAt);
                         addItemEditHistory(item, "Nota", displayEditValue(oldNote), displayEditValue(newNote), editedAt);
                         addItemEditHistory(item, "Categoria", displayEditValue(oldCategory), displayEditValue(newCategory), editedAt);
+                        addItemEditHistory(item, "Validade", displayEditDate(oldExpiry), displayEditDate(newExpiry), editedAt);
                     }
                     item.name = newName;
                     item.price = newPrice;
                     item.unit = newUnit;
                     item.note = newNote;
                     item.category = newCategory;
+                    item.expiryAt = newExpiry;
                     if (changed) item.updatedAt = editedAt;
                     if (item.checked && selectedIndex >= 0 && lists.get(selectedIndex).saveCheckedToStock) {
                         addToStock(item, quantityOf(item), autoUnitForQuantity(quantityOf(item)));
@@ -7003,6 +7131,10 @@ public class MainActivity extends Activity {
     private String displayEditValue(String value) {
         String clean = safeText(value);
         return clean.isEmpty() ? "(vazio)" : clean;
+    }
+
+    private String displayEditDate(long when) {
+        return when > 0 ? formatShortDate(when) : "(vazio)";
     }
 
     private String formatEditPrice(double value) {
@@ -9265,27 +9397,39 @@ public class MainActivity extends Activity {
     }
 
     private int expiryColor(StockEntry entry) {
-        long days = daysUntilExpiry(entry);
+        return expiryColor(entry == null ? 0 : entry.expiryAt);
+    }
+
+    private int expiryColor(long expiryAt) {
+        long days = daysUntilExpiry(expiryAt);
         if (days < 0) return Color.rgb(225, 29, 72);
         if (days <= stockExpiryNoticeDays) return Color.rgb(234, 179, 8);
         return Color.rgb(22, 163, 74);
     }
 
     private String formatExpiryStatus(StockEntry entry) {
-        long days = daysUntilExpiry(entry);
-        String date = formatShortDate(entry.expiryAt);
+        return formatExpiryStatus(entry == null ? 0 : entry.expiryAt);
+    }
+
+    private String formatExpiryStatus(long expiryAt) {
+        long days = daysUntilExpiry(expiryAt);
+        String date = formatShortDate(expiryAt);
         if (days < 0) {
             long late = Math.abs(days);
-            return "Validade: " + date + " - vencido h\u00e1 " + late + (late == 1 ? " dia" : " dias");
+            return "Validade: " + date + " - vencido há " + late + (late == 1 ? " dia" : " dias");
         }
         if (days == 0) return "Validade: " + date + " - vence hoje";
         return "Validade: " + date + " - faltam " + days + (days == 1 ? " dia" : " dias");
     }
 
     private long daysUntilExpiry(StockEntry entry) {
-        if (entry == null || entry.expiryAt <= 0) return Long.MAX_VALUE;
+        return daysUntilExpiry(entry == null ? 0 : entry.expiryAt);
+    }
+
+    private long daysUntilExpiry(long expiryAt) {
+        if (expiryAt <= 0) return Long.MAX_VALUE;
         long today = startOfDay(System.currentTimeMillis());
-        long expiry = startOfDay(entry.expiryAt);
+        long expiry = startOfDay(expiryAt);
         return (expiry - today) / 86400000L;
     }
 
@@ -11373,6 +11517,7 @@ public class MainActivity extends Activity {
         String note = "";
         String barcode = "";
         String category = "";
+        long expiryAt;
         long updatedAt;
         String stockId = "";
         String photoUrl = "";
@@ -11398,6 +11543,7 @@ public class MainActivity extends Activity {
             json.put("note", note);
             json.put("barcode", barcode);
             json.put("category", category);
+            json.put("expiryAt", expiryAt);
             json.put("updatedAt", updatedAt);
             json.put("stockId", stockId);
             json.put("photoUrl", photoUrl);
@@ -11421,6 +11567,7 @@ public class MainActivity extends Activity {
             item.note = json.optString("note", "");
             item.barcode = json.optString("barcode", "");
             item.category = json.optString("category", "");
+            item.expiryAt = json.optLong("expiryAt", 0);
             item.updatedAt = json.optLong("updatedAt", System.currentTimeMillis());
             item.stockId = json.optString("stockId", "");
             item.photoUrl = json.optString("photoUrl", "");

@@ -21,8 +21,8 @@ android {
         applicationId "com.codex.compralink"
         minSdk 23
         targetSdk 35
-        versionCode 123
-        versionName "4.92-play"
+        versionCode 124
+        versionName "4.93-play"
     }
 
     signingConfigs {

@@ -115,7 +115,7 @@ public class StockExpiryReceiver extends BroadcastReceiver {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(context, CHANNEL_ID)
                 : new Notification.Builder(context);
-        builder.setSmallIcon(R.drawable.ic_box)
+        builder.setSmallIcon(R.drawable.ic_notification_cart)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new Notification.BigTextStyle().bigText(body))

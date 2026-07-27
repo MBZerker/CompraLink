@@ -2276,7 +2276,7 @@ public class MainActivity extends Activity {
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, SYNC_NOTIFICATION_CHANNEL_ID)
                 : new Notification.Builder(this);
-        builder.setSmallIcon(R.drawable.ic_share_nodes)
+        builder.setSmallIcon(R.drawable.ic_notification_cart)
                 .setContentTitle("Lista compartilhada atualizada")
                 .setContentText(list.name + " foi alterada por outra pessoa.")
                 .setStyle(new Notification.BigTextStyle().bigText(list.name + " foi alterada por outra pessoa."))
@@ -3690,13 +3690,48 @@ public class MainActivity extends Activity {
     }
 
     private void promptStockSort() {
-        String[] options = new String[]{"Data", "Nome", "Unidade", "Preço", "Categoria", "Dias", "Validade"};
+        String[] options = new String[]{"Data", "Nome", "Unidade", "Pre\u00e7o", "Categoria", "Dias", "Validade"};
         int[] modes = new int[]{STOCK_SORT_DATE, STOCK_SORT_NAME, STOCK_SORT_QUANTITY, STOCK_SORT_PRICE, STOCK_SORT_CATEGORY, STOCK_SORT_DAYS, STOCK_SORT_EXPIRY};
-        LinearLayout list = dialogForm();
+
+        LinearLayout content = dialogForm();
+        content.setPadding(dp(4), dp(2), dp(4), dp(4));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(4), 0, 0, dp(8));
+        TextView title = label("Ordenar despensa", 20, true, primaryText());
+        header.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView close = label("X", 18, true, primaryText());
+        close.setGravity(Gravity.CENTER);
+        close.setContentDescription("Fechar");
+        close.setBackground(round(inputBg(), dp(14), stroke(), 1));
+        header.addView(close, new LinearLayout.LayoutParams(dp(44), dp(40)));
+        content.addView(header, matchWrap());
+
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        content.addView(rows, matchWrap());
+
+        final Runnable[] render = new Runnable[1];
+        render[0] = () -> renderStockSortRows(rows, options, modes, () -> {
+            refreshStockRowsAfterSortChange();
+            render[0].run();
+        });
+        render[0].run();
+
+        AlertDialog alert = dialog()
+                .setView(content)
+                .show();
+        close.setOnClickListener(v -> alert.dismiss());
+    }
+
+    private void renderStockSortRows(LinearLayout rows, String[] options, int[] modes, Runnable afterChange) {
+        rows.removeAllViews();
         for (int i = 0; i < options.length; i++) {
             final int mode = modes[i];
             final String label = options[i];
-            list.addView(sortOptionRow(label, mode, () -> {
+            rows.addView(sortOptionRow(label, mode, () -> {
                 if (stockSortMode == mode) {
                     stockSortDesc = !stockSortDesc;
                 } else {
@@ -3707,13 +3742,15 @@ public class MainActivity extends Activity {
                         .putInt(KEY_STOCK_SORT_MODE, stockSortMode)
                         .putBoolean(KEY_STOCK_SORT_DESC, stockSortDesc)
                         .apply();
-                showStockWindow(false);
+                if (afterChange != null) afterChange.run();
             }), matchWrapWithTop(i == 0 ? 0 : dp(6)));
         }
-        dialog()
-                .setTitle("Ordenar despensa")
-                .setView(list)
-                .show();
+    }
+
+    private void refreshStockRowsAfterSortChange() {
+        if (homeTab == 1 && selectedIndex < 0 && root != null && searchResultsStartIndex >= 0) {
+            refreshSearchResults(this::addStockScreen);
+        }
     }
 
     private View sortOptionRow(String text, int mode, Runnable action) {
@@ -3721,23 +3758,24 @@ public class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
-        row.setBackground(round(active ? withAlpha(accent(), isDarkTheme() ? 54 : 28) : inputBg(), dp(12), active ? accent() : stroke(), 1));
+        row.setPadding(dp(12), dp(11), dp(12), dp(11));
+        int border = active ? accent() : softDividerColor();
+        int bg = active ? withAlpha(accent(), isDarkTheme() ? 72 : 36) : inputBg();
+        row.setBackground(round(bg, dp(14), border, active ? 2 : 1));
         row.setOnClickListener(v -> action.run());
 
-        TextView check = label(active ? "✓" : "", 16, true, active ? accent() : mutedText());
+        TextView check = label(active ? "\u2713" : "", 17, true, active ? accent() : mutedText());
         check.setGravity(Gravity.CENTER);
-        row.addView(check, new LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.WRAP_CONTENT));
+        row.addView(check, new LinearLayout.LayoutParams(dp(30), ViewGroup.LayoutParams.WRAP_CONTENT));
 
         TextView label = label(text, 15, true, active ? accent() : primaryText());
         row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        if (active) {
-            ImageView arrow = new ImageView(this);
-            arrow.setImageResource(stockSortDesc ? R.drawable.ic_arrow_down : R.drawable.ic_arrow_up);
-            arrow.setColorFilter(accent());
-            row.addView(arrow, new LinearLayout.LayoutParams(dp(22), dp(22)));
-        }
+        ImageView arrow = new ImageView(this);
+        arrow.setImageResource(stockSortDesc ? R.drawable.ic_arrow_down : R.drawable.ic_arrow_up);
+        arrow.setColorFilter(active ? accent() : mutedText());
+        arrow.setAlpha(active ? 1f : 0.28f);
+        row.addView(arrow, new LinearLayout.LayoutParams(dp(22), dp(22)));
         return row;
     }
 
